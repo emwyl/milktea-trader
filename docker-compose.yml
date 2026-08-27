@@ -1,0 +1,18 @@
+# 加油赚奶茶钱 · 云服务器一键部署
+# 用法:
+#   1. 把整个项目上传到云服务器(含 backend/frontend/Dockerfile 本文件)
+#   2. 服务器装好 Docker + Docker Compose
+#   3. 执行: docker compose up -d --build
+#   4. 浏览器打开 http://服务器公网IP:8000  (记得在安全组/防火墙放行 8000 端口)
+# 数据: SQLite 保存在 ./data(宿主机),容器重建不丢。
+services:
+  milktea:
+    build: .
+    container_name: milktea-trader
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/backend/data   # 持久化:登录账号/持仓/规则/行情缓存
+    environment:
+      - TZ=Asia/Shanghai
+    restart: unless-stopped

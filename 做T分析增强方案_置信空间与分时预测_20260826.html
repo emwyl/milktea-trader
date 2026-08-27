@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>做T分析增强方案：置信空间 + 分时/次日预测</title>
+  <style>
+    :root{
+      --tea:#2563eb;--tea-d:#1d4ed8;--milk:#f5f7fa;--ink:#1e293b;--line:#e2e8f0;
+      --ok:#16a34a;--warn:#f59e0b;--danger:#dc2626;--muted:#64748b;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--milk);color:var(--ink);line-height:1.6}
+    .wrap{max-width:920px;margin:24px auto;padding:24px;background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,.06)}
+    h1{font-size:24px;margin:0 0 8px;color:var(--tea-d)}
+    h2{font-size:18px;margin:28px 0 12px;padding-bottom:8px;border-bottom:2px solid var(--tea);color:var(--tea-d)}
+    h3{font-size:15px;margin:18px 0 8px;color:var(--ink)}
+    p{margin:8px 0}
+    .tag{display:inline-block;font-size:12px;padding:2px 8px;border-radius:12px;background:#eff6ff;color:var(--tea-d);margin-right:6px}
+    table{width:100%;border-collapse:collapse;margin:12px 0;font-size:13px}
+    th,td{padding:10px 12px;border:1px solid var(--line);text-align:left;vertical-align:top}
+    th{background:#f8fafc;color:var(--tea-d);font-weight:600}
+    tr:nth-child(even){background:#fafbfc}
+    code{background:#f1f5f9;padding:2px 6px;border-radius:4px;font-family:Consolas,monospace;font-size:12px}
+    .formula{background:#f8fafc;border-left:4px solid var(--tea);padding:12px 16px;border-radius:6px;margin:12px 0;font-family:Consolas,monospace;font-size:13px;overflow-x:auto}
+    .note{background:#fff7ed;border-left:4px solid var(--warn);padding:10px 14px;border-radius:6px;margin:12px 0;font-size:13px}
+    .danger{background:#fef2f2;border-left:4px solid var(--danger);padding:10px 14px;border-radius:6px;margin:12px 0;font-size:13px}
+    .ok{background:#f0fdf4;border-left:4px solid var(--ok);padding:10px 14px;border-radius:6px;margin:12px 0;font-size:13px}
+    ul{margin:8px 0;padding-left:20px}
+    li{margin:5px 0}
+    .decision{background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:14px 16px;margin:14px 0}
+    .decision h3{margin-top:0;color:var(--tea-d)}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <h1>做T分析增强方案</h1>
+  <p><span class="tag">置信空间</span><span class="tag">分时走势</span><span class="tag">次日短线</span><span class="tag">持仓感知</span></p>
+  <p style="color:var(--muted)">文档版本：2026-08-26 &nbsp;|&nbsp; 当前基于专业投资者方法论（price-action / trade-plan / risk-stress）设计，未写代码，先沟通确认。</p>
+
+  <h2>一、现状与问题</h2>
+  <p>你截图中的个股做T页当前输出：</p>
+  <ul>
+    <li><b>极简短线辅助信号</b>：MA5 对比、量价匹配（仅 2 项）</li>
+    <li><b>动态风险提醒</b>：量比、缩量阴跌、禁止开新T仓</li>
+    <li><b>操作建议</b>：观望 / 低吸 / 高抛 / 可做T（已加入持仓感知）</li>
+  </ul>
+  <p><b>缺失</b>：没有可执行的价格网格；风险提示虽然告诉「不要做」，但没告诉「到什么价格可以做」；也没有分时走势解读和次日预案。对盘中决策帮助有限。</p>
+
+  <h2>二、需求拆解</h2>
+  <table>
+    <tr><th style="width:18%">需求</th><th style="width:42%">你要什么</th><th style="width:40%">我们给什么</th></tr>
+    <tr>
+      <td><b>盘间决策</b></td>
+      <td>盘中动态点位、抛压、3 组置信空间的买卖参考价</td>
+      <td>基于箱体 + ATR + 压力支撑的 3 档高抛/低吸价位；实时根据现价和分钟走势更新触发概率提示</td>
+    </tr>
+    <tr>
+      <td><b>分时走势</b></td>
+      <td>根据分钟图走势给动态建议</td>
+      <td>分时 VWAP/均价趋势、量价背离、早盘/午盘方向、关键放量节点；输出一句可执行建议</td>
+    </tr>
+    <tr>
+      <td><b>次日短线</b></td>
+      <td>第二天操作的 3 组建议</td>
+      <td>收盘后生成次日开盘推演、3 档高抛/低吸预案、关键触发条件、失效条件</td>
+    </tr>
+    <tr>
+      <td><b>指标监测</b></td>
+      <td>告诉用户通过哪些指标监测</td>
+      <td>专业指标清单（趋势/箱体/量能/波动/压力支撑/形态/资金流向/持仓），并说明为什么选这些</td>
+    </tr>
+  </table>
+
+  <h2>三、指标体系（专业投资经理/研究员视角）</h2>
+  <p>按 price-action-tools 的「多维度形态识别 + 三维投票」框架，选出对<b>短线做T</b>高价值的指标：</p>
+  <table>
+    <tr><th style="width:14%">维度</th><th style="width:26%">指标</th><th style="width:40%">用途</th><th style="width:20%">数据来源</th></tr>
+    <tr>
+      <td rowspan="2"><b>趋势</b></td>
+      <td>EMA5 / EMA10 / EMA20</td>
+      <td>判断短期趋势方向；价格站在 EMA5 上方偏强，跌破偏弱</td>
+      <td>日线 OHLCV 本地计算</td>
+    </tr>
+    <tr>
+      <td>ADX(14)</td>
+      <td>趋势强度；ADX&gt;25 有趋势，&lt;20 震荡，震荡市更适合做T</td>
+      <td>日线 OHLCV 本地计算</td>
+    </tr>
+    <tr>
+      <td rowspan="2"><b>箱体</b></td>
+      <td>20 日箱体上沿/下沿</td>
+      <td>压力区高抛、支撑区低吸的锚定价位</td>
+      <td>日线 OHLCV</td>
+    </tr>
+    <tr>
+      <td>价格箱体位置 %</td>
+      <td>量化当前价格在箱体中的相对位置（0%=下轨，100%=上轨）</td>
+      <td>本地计算</td>
+    </tr>
+    <tr>
+      <td rowspan="3"><b>量能</b></td>
+      <td>量比</td>
+      <td>交投活跃度；&lt;0.5 冷清，0.8~2.5 正常，&gt;2.5 放量</td>
+      <td>腾讯实时盘口</td>
+    </tr>
+    <tr>
+      <td>OBV</td>
+      <td>量价配合：价升 OBV 升 = 健康；价升 OBV 降 = 背离</td>
+      <td>日线 OHLCV 本地计算</td>
+    </tr>
+    <tr>
+      <td>换手率 / 成交额</td>
+      <td>流动性与筹码活跃度；3%~10% 是做T较优区间</td>
+      <td>实时盘口 / 日线</td>
+    </tr>
+    <tr>
+      <td rowspan="2"><b>波动</b></td>
+      <td>ATR(14)</td>
+      <td>真实波幅，计算置信价位和止损位的核心输入</td>
+      <td>日线 OHLCV 本地计算</td>
+    </tr>
+    <tr>
+      <td>近 20 日收益率标准差</td>
+      <td>波动率参考；肥尾环境下配合 ATR 使用</td>
+      <td>日线 OHLCV 本地计算</td>
+    </tr>
+    <tr>
+      <td rowspan="3"><b>压力支撑</b></td>
+      <td>斐波那契回撤 38.2% / 50% / 61.8%</td>
+      <td>日内回踩或反弹时的高概率止跌/止涨区</td>
+      <td>日线 OHLCV 本地计算</td>
+    </tr>
+    <tr>
+      <td>成交量分布 POC / VWAP</td>
+      <td>日内筹码集中区；价格远离 VWAP 过远容易回归</td>
+      <td>分钟数据 / 日线</td>
+    </tr>
+    <tr>
+      <td>前高 / 前低</td>
+      <td>短期心理压力位与支撑位</td>
+      <td>日线 OHLCV</td>
+    </tr>
+    <tr>
+      <td rowspan="2"><b>形态</b></td>
+      <td>K 线组合（锤子/吞噬/晨星/三白兵等）</td>
+      <td>识别日内/日级别反转或延续信号</td>
+      <td>日线 / 分钟 OHLCV</td>
+    </tr>
+    <tr>
+      <td>顶底分型</td>
+      <td>短期高低点结构，辅助判断回踩是否结束</td>
+      <td>日线 / 分钟 OHLCV</td>
+    </tr>
+    <tr>
+      <td rowspan="2"><b>市场/资金</b></td>
+      <td>大盘状态（上证/沪深300 涨跌幅）</td>
+      <td>系统性风险过滤：大盘大跌时降低仓位或放弃做T</td>
+      <td>已有 get_market_status</td>
+    </tr>
+    <tr>
+      <td>板块强度（可选）</td>
+      <td>个股所属行业/概念当日强度；跟风股成功率低</td>
+      <td>需新增数据源</td>
+    </tr>
+    <tr>
+      <td rowspan="2"><b>持仓</b></td>
+      <td>成本价、止盈位、止损位</td>
+      <td>让建议与持仓状态一致，避免该止盈时却建议加仓</td>
+      <td>用户持仓 + 本地配置</td>
+    </tr>
+    <tr>
+      <td>移动止盈</td>
+      <td>保护浮盈；盈利持仓回撤 6% 提示减仓</td>
+      <td>本地计算</td>
+    </tr>
+  </table>
+
+  <h2>四、核心算法：3 组置信空间</h2>
+  <p><b>目标</b>：给出一组「到什么价格可以高抛 / 低吸」的参考，并用 90% / 80% / 70% 三档表示策略的激进程度。</p>
+  <div class="note">
+    <b>重要口径</b>：这里的「置信度」不是统计学上的真实概率预测，而是<b>基于历史波动率和压力支撑结构给出的策略激进程度标签</b>——90% 最保守（价位远离现价，难触发但成功后空间大），70% 最激进（价位靠近现价，易触发但容易被震）。输出时必须向用户说明这一点。
+  </div>
+
+  <h3>4.1 输入变量</h3>
+  <ul>
+    <li><code>P</code>：当前价（盘中用实时价，次日用昨日收盘价）</li>
+    <li><code>S</code>：箱体下沿 / 支撑位（20日低点、斐波那契 61.8% 回撤、VWAP 等取合理最小/最大）</li>
+    <li><code>R</code>：箱体上沿 / 压力位（20日高点、斐波那契 38.2% 回撤等）</li>
+    <li><code>ATR</code>：14日真实波幅</li>
+    <li><code>σ</code>：近20日对数收益率标准差</li>
+  </ul>
+
+  <h3>4.2 盘间动态价位公式</h3>
+  <div class="formula">
+    高抛参考价 H(c) = min(R, P + c × ATR)<br>
+    低吸参考价 L(c) = max(S, P − c × ATR)
+  </div>
+  <p>其中 <code>c</code> 是随「置信度」变化的波动率乘数：</p>
+  <table>
+    <tr><th>标签</th><th>含义</th><th>波动率乘数 c</th><th>适用场景</th></tr>
+    <tr><td><b>90% 置信</b></td><td>保守型</td><td>1.5</td><td>只有价格显著偏离箱体才操作，成功率高、触发少</td></tr>
+    <tr><td><b>80% 置信</b></td><td>平衡型</td><td>1.0</td><td>日常做T主用档位</td></tr>
+    <tr><td><b>70% 置信</b></td><td>激进型</td><td>0.5</td><td>波动小的票，贴近现价频繁做T</td></tr>
+  </table>
+
+  <h3>4.3 抛压/承接评估</h3>
+  <ul>
+    <li><b>抛压</b>：价格接近 R 且量比 &gt;1.5、换手率放大 → 高抛信号增强；若缩量靠近 R → 可能突破，不宜高抛。</li>
+    <li><b>承接</b>：价格接近 S 且缩量止跌 / 出现锤子/十字星 → 低吸信号增强；若放量跌破 S → 支撑失效，不宜低吸。</li>
+  </ul>
+
+  <h3>4.4 次日短线预案</h3>
+  <p>用昨日收盘 <code>P_close</code> 替代盘中 <code>P</code>，并加入 K 线形态和隔夜信息修正：</p>
+  <div class="formula">
+    次日高抛参考 H_next(c) = min(R, P_close + c × ATR)<br>
+    次日低吸参考 L_next(c) = max(S, P_close − c × ATR)
+  </div>
+  <p>触发条件会根据隔夜/集合竞价再做一次过滤：如果当日是放量长上影线，次日 H 档位成功率下降；如果是缩量十字星，次日 L 档位成功率上升。</p>
+
+  <h2>五、分时走势模块设计</h2>
+  <p>后端已存在 <code>_fetch_intraday()</code> 可拉取分钟级价格序列（腾讯/东财互备），当前只用于算均价。可扩展为分时分析引擎：</p>
+  <table>
+    <tr><th style="width:24%">分析项</th><th style="width:38%">计算逻辑</th><th style="width:38%">输出建议</th></tr>
+    <tr>
+      <td>分时 VWAP / 均价趋势</td>
+      <td>计算最新 30 分钟/60 分钟 VWAP 斜率</td>
+      <td>斜率向上 + 现价&gt;VWAP →「日内偏强，回踩均价可考虑低吸」；斜率向下 →「日内偏弱，反弹宜高抛」</td>
+    </tr>
+    <tr>
+      <td>量价背离</td>
+      <td>价格创新高但成交量未创新高（或相反）</td>
+      <td>顶背离 →「追涨动能不足，接近压力位分批高抛」；底背离 →「杀跌动能减弱，接近支撑位可试低吸」</td>
+    </tr>
+    <tr>
+      <td>早盘/午盘方向</td>
+      <td>开盘后 30 分钟涨跌幅 + 成交量占昨日全天比例</td>
+      <td>放量高开高走 →「早盘强势，回调不破均价可跟」；缩量高开低走 →「早盘诱多，反弹宜减仓」</td>
+    </tr>
+    <tr>
+      <td>关键放量节点</td>
+      <td>识别成交量突增且价格未同步突破的异常量柱</td>
+      <td>放量滞涨 →「抛压显现」；放量止跌 →「承接有力」</td>
+    </tr>
+    <tr>
+      <td>现价相对分时均线位置</td>
+      <td>(P − VWAP) / VWAP × 100%</td>
+      <td>偏离 &gt;+1% → 超买回归风险；偏离 &lt;−1% → 超跌反弹机会（结合趋势）</td>
+    </tr>
+  </table>
+
+  <h2>六、前端展示方案</h2>
+  <p>在不破坏现有 6 分区结构的前提下，在「极简短线辅助信号」下方新增两个卡片：</p>
+
+  <h3>6.1 新增卡片 A：盘间动态价位与置信空间</h3>
+  <table>
+    <tr><th>置信度</th><th>高抛价</th><th>低吸价</th><th>触发条件</th><th>当前状态</th></tr>
+    <tr><td>90% 保守</td><td>14.95</td><td>12.94</td><td>价格触及箱体上下沿附近</td><td>现价 14.15，距离高抛 5.7%</td></tr>
+    <tr><td>80% 平衡</td><td>14.60</td><td>13.20</td><td>价格偏离现价 1×ATR</td><td>接近高抛区</td></tr>
+    <tr><td>70% 激进</td><td>14.30</td><td>13.50</td><td>价格偏离现价 0.5×ATR</td><td>可留意高抛机会</td></tr>
+  </table>
+  <p>表格下方跟一句动态总结：「<b>日内偏强，现价接近 80% 高抛区，若量能配合可考虑分批减仓；若缩量冲高不建议追。</b>」</p>
+
+  <h3>6.2 新增卡片 B：分时走势解读</h3>
+  <p>一句话 + 3 个关键标签，例如：</p>
+  <div class="ok">
+    <b>分时结论</b>：早盘放量站上均价，午盘维持均线上方运行，量价配合健康。<br>
+    标签：均价趋势 ↑ &nbsp;|&nbsp; 量价配合 健康 &nbsp;|&nbsp; 相对均价 +0.6%
+  </div>
+
+  <h3>6.3 新增卡片 C：次日短线预案</h3>
+  <p>收盘后显示（盘中隐藏或显示为「基于当前价的预演」）：</p>
+  <table>
+    <tr><th>置信度</th><th>次日高抛</th><th>次日低吸</th><th>触发条件</th><th>失效条件</th></tr>
+    <tr><td>90%</td><td>15.10</td><td>12.80</td><td>开盘不大幅跳空</td><td>开盘跳空 &gt;3% 且反向运行</td></tr>
+    <tr><td>80%</td><td>14.75</td><td>13.15</td><td>维持当前箱体</td><td>放量跌破箱体下沿</td></tr>
+    <tr><td>70%</td><td>14.45</td><td>13.45</td><td>早盘方向延续</td><td>缩量横盘 &lt;30 分钟</td></tr>
+  </table>
+
+  <h2>七、数据源与沙箱影响</h2>
+  <table>
+    <tr><th style="width:22%">数据</th><th style="width:40%">当前状态</th><th style="width:38%">对本次增强的影响</th></tr>
+    <tr>
+      <td>日线 OHLCV</td>
+      <td>已本地缓存，支持 120 日回溯</td>
+      <td>可计算箱体、EMA、ATR、斐波那契、K线形态</td>
+    </tr>
+    <tr>
+      <td>实时盘口</td>
+      <td>腾讯 qt.gtimg.cn，沙箱内返回伪造数据</td>
+      <td>量比/换手/现价可能失真；演示时可用 demo 数据，真实网络更准确</td>
+    </tr>
+    <tr>
+      <td>分钟数据</td>
+      <td><code>_fetch_intraday()</code> 已支持腾讯/东财，当前只用于均价</td>
+      <td>可直接扩展为分时分析；沙箱下分钟数据同样可能失真</td>
+    </tr>
+    <tr>
+      <td>板块强度</td>
+      <td>当前未接入</td>
+      <td>列为二期，首期可用大盘状态替代</td>
+    </tr>
+  </table>
+
+  <h2>八、需要你确认的几个点</h2>
+  <div class="decision">
+    <h3>1. 三档置信度的定义方式</h3>
+    <p>方案 A（推荐）：用「保守 / 平衡 / 激进」+ 波动率乘数 1.5 / 1.0 / 0.5，不标真实概率。</p>
+    <p>方案 B：保留 90% / 80% / 70% 标签，但文案明确写成「90% 保守策略」而非「90% 概率」。</p>
+    <p>你倾向哪种？标签用什么（90/80/70 还是 高/中/低）？</p>
+  </div>
+
+  <div class="decision">
+    <h3>2. 价位的锚定</h3>
+    <p>方案 A（推荐）：高抛 = min(压力位, 现价 + c×ATR)，低吸 = max(支撑位, 现价 − c×ATR)。</p>
+    <p>方案 B：完全基于现价 ± 固定百分比（如 ±3% / ±5% / ±8%），简单但忽略个股波动差异。</p>
+    <p>你倾向哪种？</p>
+  </div>
+
+  <div class="decision">
+    <h3>3. 是否引入 MACD / KDJ / 布林带 等基础指标</h3>
+    <p>当前扩展区已有「技术指标速览」但只展示快照。是否把它纳入做T建议的评分体系（如三维投票），还是只做展示？</p>
+  </div>
+
+  <div class="decision">
+    <h3>4. 次日预案的展示时机</h3>
+    <p>方案 A：盘中也显示，但标注为「基于当前价的预演」，收盘后自动刷新为正式次日预案。</p>
+    <p>方案 B：只在收盘后显示，盘中隐藏或折叠。</p>
+  </div>
+
+  <div class="decision">
+    <h3>5. 是否画分时图</h3>
+    <p>当前页面无分时图。是否增加一条简单的日内折线（价格 + 均价），帮助你看走势？</p>
+  </div>
+
+  <div class="decision">
+    <h3>6. 板块/概念强度</h3>
+    <p>是否需要接入同花顺/东财的板块涨幅数据？对做T成功率影响较大，但会引入新的数据源依赖和延迟。</p>
+  </div>
+
+  <h2>九、下一步</h2>
+  <ol>
+    <li>你确认上述 6 个决策点后，我输出正式 PRD 与交互原型。</li>
+    <li>按确认方案修改 <code>backend/app/services/t_analysis.py</code> 新增置信空间计算、分时分析、次日预案模块。</li>
+    <li>修改 <code>frontend/index.html</code> 新增三个卡片展示。</li>
+    <li>在 8001 后端验证并用 300377 实测。</li>
+  </ol>
+
+  <div class="danger">
+    <b>合规提示</b>：本功能输出的价位、建议均为基于公开历史数据与量化规则的辅助参考，不构成投资建议。市场有风险，投资需谨慎。任何投资决策应结合个人风险承受能力、资金状况和投资目标独立判断，必要时咨询持牌专业机构。
+  </div>
+</div>
+</body>
+</html>
