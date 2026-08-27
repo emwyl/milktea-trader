@@ -7,7 +7,7 @@
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, HTTPException
 
 from app.db import SessionLocal, get_db
 from app.deps import get_current_user
@@ -31,8 +31,8 @@ def _row_to_dict(row, exclude=("id",)):
     return d
 
 
-@router.get("/export")
-def export_data(user: User = Depends(get_current_user), db: SessionLocal = Depends(get_db)):
+def _export_user(db, user: User) -> dict:
+    """导出单个用户的全部个人数据（不含 id 主键，便于导入重新生成）。"""
     data: dict = {}
     for m in _SIMPLE_TABLES:
         rows = db.query(m).filter(m.user_id == user.id).all()
@@ -54,11 +54,22 @@ def export_data(user: User = Depends(get_current_user), db: SessionLocal = Depen
     data["screen_results"] = results
 
     return {
+        "username": user.username,
+        "role": user.role,
+        "is_guest": user.is_guest,
+        "data": data,
+    }
+
+
+@router.get("/export")
+def export_data(user: User = Depends(get_current_user), db: SessionLocal = Depends(get_db)):
+    u = _export_user(db, user)
+    return {
         "app": "milktea-trader",
         "version": 1,
         "exported_at": _now(),
-        "username": user.username,
-        "data": data,
+        "username": u["username"],
+        "data": u["data"],
     }
 
 
@@ -126,3 +137,22 @@ async def import_data(request: Request,
 
     db.commit()
     return {"ok": True, "msg": "导入完成", "counts": counts}
+
+
+@router.get("/export-all")
+def export_all_users(user: User = Depends(get_current_user), db: SessionLocal = Depends(get_db)):
+    """admin 专用：导出所有账号的个人数据（按用户名分组），用于整库备份 / 迁移。"""
+    if user.role != "admin":
+        raise HTTPException(status_code=403, detail="需要管理员权限")
+    users = db.query(User).order_by(User.id).all()
+    out: dict = {}
+    for u in users:
+        out[u.username] = _export_user(db, u)
+    return {
+        "app": "milktea-trader",
+        "version": 1,
+        "exported_at": _now(),
+        "scope": "all-users",
+        "count": len(out),
+        "users": out,
+    }

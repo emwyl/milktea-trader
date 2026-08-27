@@ -58,6 +58,7 @@
   label{font-size:13px;color:#4b5563}
   .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
   .muted{color:#9ca3af;font-size:12px}
+  .warnbox{background:rgba(245,158,11,.12);border-left:4px solid var(--warn);padding:10px 12px;border-radius:8px;font-size:12.5px;line-height:1.7;color:var(--ink)}
   .kv{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px dashed var(--line);font-size:13px}
   .login{max-width:360px;margin:80px auto;padding:28px}
   .advice{background:#eff6ff;border-left:4px solid var(--tea);padding:10px 12px;border-radius:8px;font-size:13px;white-space:pre-wrap}
@@ -624,7 +625,10 @@
           <button @click="saveAi">保存</button><span class="muted"> {{ai.configured?'已配置':'未配置'}}</span>
         </div>
         <div class="card"><h3 style="margin-top:0">数据迁移（备份 / 恢复）</h3>
-          <p class="muted">把当前账号的选股模型、加减仓规则、短线可投池、偏好画像、通知配置、用户设置导出为 JSON；可在另一台部署（如 Cloud Studio）登录同账号后导入恢复。不含行情等全局数据。</p>
+          <div class="warnbox">
+            <b>用途：</b>把当前账号的选股模型、加减仓规则、短线可投池、偏好画像、通知配置、用户设置备份成 JSON；在另一台部署（如 Cloud Studio）<b>登录同账号</b>后导入即可恢复。不含行情等全局数据。<br>
+            <b style="color:var(--danger)">⚠ 导入是「覆盖式」的：</b>会替换你当前账号的同名数据。导入前请务必先用「导出我的数据」备份一份！
+          </div>
           <div class="row">
             <button @click="exportData">导出我的数据</button>
             <button class="ghost" @click="$refs.impFile.click()">导入数据</button>
@@ -663,6 +667,11 @@
             </tbody>
           </table>
           <p class="muted">删除账号会同步删除该账号的短线可投池、规则、信号、偏好等个人数据，且不可恢复。</p>
+        </div>
+        <div class="card" v-if="me.role==='admin'" style="border-left:4px solid var(--tea)">
+          <h3 style="margin-top:0">批量导出全部用户数据（admin）</h3>
+          <div class="warnbox">一键导出<b>所有账号</b>的个人数据（按用户名分组），用于整库备份或迁移到新服务器。不含行情等全局数据。该文件较大，请妥善保管。</div>
+          <div class="row"><button @click="exportAll">导出全部用户数据</button></div>
         </div>
         <div class="card muted">数据全部本地存储（D:\\腾讯小龙虾\\milktea-trader），仅对外拉行情与（你配置的）AI/通知。</div>
       </div>
@@ -1268,6 +1277,21 @@ const app = createApp({
         a.download=`milktea-data-${obj.username||'user'}-${d}.json`; a.click();
         URL.revokeObjectURL(a.href);
         alert('已导出当前账号的全部个人数据（'+Object.keys(obj.data||{}).length+' 类）');
+      }catch(e){ alert('导出失败：'+e.message); }
+    },
+    async exportAll(){
+      const tk=localStorage.getItem('tk');
+      try{
+        const res=await fetch('/api/data/export-all',{headers:{'Authorization':'Bearer '+tk}});
+        if(res.status===403){ alert('需要管理员权限'); return; }
+        if(!res.ok){ alert('导出失败：HTTP '+res.status); return; }
+        const obj=await res.json();
+        const blob=new Blob([JSON.stringify(obj,null,2)],{type:'application/json'});
+        const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+        const d=new Date().toISOString().slice(0,10);
+        a.download=`milktea-data-all-users-${d}.json`; a.click();
+        URL.revokeObjectURL(a.href);
+        alert('已导出 '+obj.count+' 个账号的全部个人数据');
       }catch(e){ alert('导出失败：'+e.message); }
     },
     async importData(e){
