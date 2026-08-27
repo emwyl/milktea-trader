@@ -21,5 +21,10 @@ backend/data/*.log
 # ===== 后端一次性维护脚本 =====
 /backend/_*.py
 
+# ===== 运行时生成的密钥/进程文件（含 JWT 密钥，严禁入库） =====
+/backend/.secret
+/backend/server.pid
+/backend/server.log
+
 # ===== 项目记忆（不入库） =====
 .workbuddy/
