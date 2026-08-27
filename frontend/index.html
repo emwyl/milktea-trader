@@ -623,6 +623,14 @@
           <label>模型</label><input v-model="ai.model" placeholder="deepseek-chat" />
           <button @click="saveAi">保存</button><span class="muted"> {{ai.configured?'已配置':'未配置'}}</span>
         </div>
+        <div class="card"><h3 style="margin-top:0">数据迁移（备份 / 恢复）</h3>
+          <p class="muted">把当前账号的选股模型、加减仓规则、短线可投池、偏好画像、通知配置、用户设置导出为 JSON；可在另一台部署（如 Cloud Studio）登录同账号后导入恢复。不含行情等全局数据。</p>
+          <div class="row">
+            <button @click="exportData">导出我的数据</button>
+            <button class="ghost" @click="$refs.impFile.click()">导入数据</button>
+            <input ref="impFile" type="file" accept="application/json" style="display:none" @change="importData" />
+          </div>
+        </div>
         <div class="card"><h3 style="margin-top:0">通知</h3>
           <label>通道</label>
           <select v-model="nt.channel"><option value="console">console(本地打印)</option><option value="serverchan">Server酱</option><option value="pushplus">推送加</option></select>
@@ -1248,6 +1256,29 @@ const app = createApp({
     async saveAi(){ await API('/settings/ai',{method:'POST',body:JSON.stringify({base_url:this.ai.base,model:this.ai.model,api_key:this.ai.key})}); alert('已保存'); this.loadSettings(); },
     async saveNt(){ await API('/notify/config',{method:'POST',body:JSON.stringify({channel:this.nt.channel,config:JSON.parse(this.nt.config||'{}'),daily_review_cron:this.nt.cron,enabled:true})}); alert('已保存'); },
     async testNt(){ const r=await API('/notify/test',{method:'POST'}); alert(JSON.stringify(r)); },
+    async exportData(){
+      const tk=localStorage.getItem('tk');
+      try{
+        const res=await fetch('/api/data/export',{headers:{'Authorization':'Bearer '+tk}});
+        if(!res.ok){ alert('导出失败：HTTP '+res.status); return; }
+        const obj=await res.json();
+        const blob=new Blob([JSON.stringify(obj,null,2)],{type:'application/json'});
+        const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+        const d=new Date().toISOString().slice(0,10);
+        a.download=`milktea-data-${obj.username||'user'}-${d}.json`; a.click();
+        URL.revokeObjectURL(a.href);
+        alert('已导出当前账号的全部个人数据（'+Object.keys(obj.data||{}).length+' 类）');
+      }catch(e){ alert('导出失败：'+e.message); }
+    },
+    async importData(e){
+      const file=e.target.files&&e.target.files[0]; if(!file) return;
+      let obj; try{ obj=JSON.parse(await file.text()); }catch(err){ alert('文件不是有效 JSON'); e.target.value=''; return; }
+      if(obj.app && obj.app!=='milktea-trader'){ alert('文件来源不匹配，已拒绝导入'); e.target.value=''; return; }
+      if(!confirm('导入将覆盖你当前账号的选股模型/规则/自选池/偏好/通知等数据，确定继续？')){ e.target.value=''; return; }
+      const r=await API('/data/import',{method:'POST',body:JSON.stringify(obj)});
+      if(r&&r.ok){ alert('导入成功：'+JSON.stringify(r.counts)); } else { alert('导入失败：'+((r&&r.msg)||'未知错误')); }
+      e.target.value='';
+    },
     async changePw(){ await API('/auth/password',{method:'PUT',body:JSON.stringify({old_password:this.pw.old,new_password:this.pw.nw})}); alert('密码已修改'); this.pw={old:'',nw:''}; },
     async loadT(silent){
       if(!this.t.code) return;
