@@ -8,12 +8,14 @@ cd "$(dirname "$0")/backend"
 
 # 1) 虚拟环境（已存在则跳过创建）
 if [ ! -d venv ]; then
-  python3 -m venv venv
+  # 部分精简镜像缺 venv 模块，先补装
+  python3 -m venv venv 2>/dev/null || { apt-get update -qq && apt-get install -y python3-venv python3-pip; python3 -m venv venv; }
 fi
 # shellcheck disable=SC1091
 source venv/bin/activate
 pip install --upgrade pip -q
-pip install -r requirements.txt -q
+# 国内环境优先用腾讯云 PyPI 镜像，更快更稳（失败自动回退官方源）
+pip install -r requirements.txt -q -i https://mirrors.cloud.tencent.com/pypi/simple/ || pip install -r requirements.txt -q
 
 # 2) 生产密钥：首次随机生成并持久化，重启不失效
 SECRET_FILE=".secret"
