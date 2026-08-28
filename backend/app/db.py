@@ -39,6 +39,7 @@ def run_migrations(engine):
             ("users", "role", "VARCHAR(16) DEFAULT 'user'"),
             ("users", "is_guest", "BOOLEAN DEFAULT 0"),
             ("users", "is_active", "BOOLEAN DEFAULT 1"),
+            ("users", "last_ip", "VARCHAR(48)"),
             ("screens", "user_id", "INTEGER"),
             ("tracked_pool", "user_id", "INTEGER"),
             ("position_rules", "user_id", "INTEGER"),

@@ -25,6 +25,7 @@ class User(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[str] = mapped_column(String(32), default=_now)
     last_login_at: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    last_ip: Mapped[str | None] = mapped_column(String(48), nullable=True)  # 最近一次登录 IP
     must_change_pw: Mapped[bool] = mapped_column(Boolean, default=False)  # 强制首登改密
 
 

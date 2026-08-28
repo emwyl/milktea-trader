@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from app.db import SessionLocal
 from app.models import User
@@ -23,8 +23,16 @@ def _require_admin(user: User) -> User:
     return user
 
 
+def _client_ip(request: Request) -> str:
+    """取真实客户端 IP（兼容 Cloud Studio / Render 等反向代理）。"""
+    xff = request.headers.get("x-forwarded-for")
+    if xff:
+        return xff.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
 @router.post("/login", response_model=LoginOut)
-def login(body: LoginIn):
+def login(request: Request, body: LoginIn):
     db = SessionLocal()
     try:
         user = db.query(User).filter(User.username == body.username).first()
@@ -33,6 +41,7 @@ def login(body: LoginIn):
         if not user.is_active:
             raise HTTPException(status_code=403, detail="账号已被禁用")
         user.last_login_at = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(timespec="seconds")
+        user.last_ip = _client_ip(request)
         db.commit()
         token = make_token(user.username)
         return LoginOut(token=token, user={"username": user.username, "role": user.role,
@@ -42,7 +51,7 @@ def login(body: LoginIn):
 
 
 @router.post("/register", response_model=LoginOut)
-def register(body: LoginIn):
+def register(request: Request, body: LoginIn):
     db = SessionLocal()
     try:
         if not _USERNAME_RE.match(body.username):
@@ -52,7 +61,8 @@ def register(body: LoginIn):
         if db.query(User).filter(User.username == body.username).first():
             raise HTTPException(status_code=400, detail="用户名已存在")
         h, s = hash_password(body.password)
-        user = User(username=body.username, password_hash=h, salt=s, role="user", is_guest=False)
+        user = User(username=body.username, password_hash=h, salt=s, role="user", is_guest=False,
+                    last_ip=_client_ip(request))
         db.add(user)
         db.commit()
         db.refresh(user)
@@ -64,13 +74,14 @@ def register(body: LoginIn):
 
 
 @router.post("/guest", response_model=LoginOut)
-def guest_login():
+def guest_login(request: Request):
     db = SessionLocal()
     try:
         username = f"游客_{uuid.uuid4().hex[:8]}"
         raw_pw = uuid.uuid4().hex
         h, s = hash_password(raw_pw)
-        user = User(username=username, password_hash=h, salt=s, role="user", is_guest=True)
+        user = User(username=username, password_hash=h, salt=s, role="user", is_guest=True,
+                    last_ip=_client_ip(request))
         db.add(user)
         db.commit()
         db.refresh(user)
@@ -125,7 +136,8 @@ def list_users(user: User = Depends(get_current_user)):
     try:
         rows = db.query(User).order_by(User.id.desc()).all()
         return [{"id": u.id, "username": u.username, "role": u.role, "is_guest": u.is_guest,
-                 "is_active": u.is_active, "created_at": u.created_at, "last_login_at": u.last_login_at}
+                 "is_active": u.is_active, "created_at": u.created_at, "last_login_at": u.last_login_at,
+                 "last_ip": u.last_ip}
                 for u in rows]
     finally:
         db.close()
