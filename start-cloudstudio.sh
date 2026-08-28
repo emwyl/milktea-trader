@@ -40,5 +40,6 @@ if [ -f server.pid ] && kill -0 "$(cat server.pid)" 2>/dev/null; then
 fi
 
 echo ">>> 启动 milktea-trader on 0.0.0.0:${PORT} (前台运行，Cloud Studio 端口插件将自动识别)"
-echo ">>> 如需停止：按 Ctrl+C，或在另一个终端执行 kill $(cat server.pid 2>/dev/null || echo <PID>)"
+PID_HINT="$(cat server.pid 2>/dev/null || echo '某PID')"
+echo ">>> 如需停止：按 Ctrl+C，或在另一个终端执行 kill $PID_HINT"
 uvicorn app.main:app --host 0.0.0.0 --port "$PORT"
