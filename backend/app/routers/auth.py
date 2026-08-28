@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from app.db import SessionLocal
 from app.models import User
-from app.schemas import LoginIn, LoginOut
+from app.schemas import LoginIn, LoginOut, PasswordChange, PasswordResetIn
 from app.security import verify_password, make_token, hash_password
 from app.deps import get_current_user
 
@@ -93,13 +93,17 @@ def logout(user: User = Depends(get_current_user)):
 
 
 @router.put("/password")
-def change_password(old_password: str, new_password: str, user: User = Depends(get_current_user)):
+def change_password(body: PasswordChange, user: User = Depends(get_current_user)):
+    if len(body.new_password) < 4:
+        raise HTTPException(400, "新密码至少4位")
     db = SessionLocal()
     try:
         u = db.query(User).filter(User.username == user.username).first()
-        if not verify_password(old_password, u.salt, u.password_hash):
+        if not u:
+            raise HTTPException(404, "用户不存在")
+        if not verify_password(body.old_password, u.salt, u.password_hash):
             raise HTTPException(400, "原密码错误")
-        h, s = hash_password(new_password)
+        h, s = hash_password(body.new_password)
         u.password_hash = h
         u.salt = s
         u.must_change_pw = False
@@ -164,6 +168,27 @@ def delete_user(uid: int, user: User = Depends(get_current_user)):
             except Exception:
                 pass
         db.delete(u)
+        db.commit()
+        return {"ok": True}
+    finally:
+        db.close()
+
+
+@router.put("/users/{uid}/reset-password")
+def reset_password(uid: int, body: PasswordResetIn, user: User = Depends(get_current_user)):
+    """管理员重置指定账号密码（免原密码）。重置后要求该账号下次登录改密。"""
+    _require_admin(user)
+    if len(body.new_password) < 4:
+        raise HTTPException(400, "新密码至少4位")
+    db = SessionLocal()
+    try:
+        u = db.query(User).filter(User.id == uid).first()
+        if not u:
+            raise HTTPException(404, "用户不存在")
+        h, s = hash_password(body.new_password)
+        u.password_hash = h
+        u.salt = s
+        u.must_change_pw = True
         db.commit()
         return {"ok": True}
     finally:

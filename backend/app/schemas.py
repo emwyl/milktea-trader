@@ -20,6 +20,15 @@ class Msg(BaseModel):
     msg: str = ""
 
 
+class PasswordChange(BaseModel):
+    old_password: str
+    new_password: str
+
+
+class PasswordResetIn(BaseModel):
+    new_password: str
+
+
 class SchemeTypeOut(BaseModel):
     key: str
     name: str
