@@ -27,4 +27,5 @@ VOLUME ["/app/backend/data"]
 EXPOSE 8000
 
 # 0.0.0.0:任何来源可访问;生产建议前面套 nginx/HTTPS,并把默认账号改密
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# 端口取环境变量 $PORT(Render 等平台注入),缺省 8000(本地/Compose 兼容)
+CMD uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}

@@ -4,8 +4,12 @@ import os
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent  # backend/
-DATA_DIR = BASE_DIR / "data"
-DATA_DIR.mkdir(exist_ok=True)
+# 数据目录可经环境变量覆盖（部署到 Render 等平台时挂载持久盘用）
+DATA_DIR = Path(os.getenv("STOCK_ADVISOR_DATA_DIR", str(BASE_DIR / "data")))
+try:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+except Exception:
+    pass  # 挂载盘可能已存在或只读
 
 DB_PATH = DATA_DIR / "app.db"
 SQLITE_URL = f"sqlite:///{DB_PATH}"

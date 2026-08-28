@@ -1,0 +1,26 @@
+# Render 一键部署配置（Docker 构建）
+# 详细步骤见仓库根目录 DEPLOY-RENDER.md
+services:
+  - type: web
+    name: milktea-trader
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/health
+    envVars:
+      - key: STOCK_ADVISOR_SECRET
+        generateValue: true          # 自动生成登录签名密钥，生产安全
+      - key: STOCK_ADVISOR_AKSHARE
+        value: "1"                    # 启用 akshare 扩展行情（不可用时自动降级演示数据）
+      - key: STOCK_ADVISOR_DATA_DIR
+        value: /app/backend/data      # SQLite 数据目录（与下方挂载盘路径一致）
+      - key: PYTHONUNBUFFERED
+        value: "1"
+    # ===== 持久化磁盘（可选，需升级到 Starter 及以上套餐）=====
+    # 免费套餐没有持久盘：每次重启/重新部署后 SQLite 数据会清空。
+    # 缓解：应用内「数据迁移 → 导出」可备份，重启后再「导入」。
+    # 想永久保存：在 Render 控制台为该服务挂载磁盘（mountPath 填下面路径）并取消注释：
+    # disks:
+    #   - name: milktea-data
+    #     mountPath: /app/backend/data
+    #     sizeGB: 1
