@@ -60,8 +60,26 @@
   .muted{color:#9ca3af;font-size:12px}
   .warnbox{background:rgba(245,158,11,.12);border-left:4px solid var(--warn);padding:10px 12px;border-radius:8px;font-size:12.5px;line-height:1.7;color:var(--ink)}
   .kv{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px dashed var(--line);font-size:13px}
-  .login{max-width:360px;margin:80px auto;padding:28px}
   .advice{background:#eff6ff;border-left:4px solid var(--tea);padding:10px 12px;border-radius:8px;font-size:13px;white-space:pre-wrap}
+  /* 登录 / 注册 / 游客：Ant Design 风格居中卡片 */
+  .login-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;background:linear-gradient(160deg,#f0f5ff 0%,#fff 55%,#f6ffed 100%);padding:20px}
+  .login-card{width:100%;max-width:420px;background:#fff;border-radius:16px;box-shadow:0 8px 32px rgba(17,24,39,.08);padding:40px 36px 36px;border:0}
+  .login-brand{text-align:center;margin-bottom:30px}
+  .login-brand .logo{width:52px;height:52px;margin:0 auto 14px;background:linear-gradient(135deg,var(--tea),#4f8dfc);border-radius:14px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:26px;box-shadow:0 4px 12px rgba(37,99,235,.25)}
+  .login-brand h1{margin:0 0 6px;font-size:26px;font-weight:700;color:#111827;letter-spacing:-.5px}
+  .login-brand p{margin:0;font-size:14px;color:#6b7280}
+  .login-tabs{display:flex;border-bottom:1px solid var(--line);margin-bottom:24px;gap:0}
+  .login-tab{flex:1;padding:11px 0;background:transparent;border:0;border-bottom:2px solid transparent;color:#6b7280;font-size:15px;font-weight:500;cursor:pointer;transition:all .2s;border-radius:0}
+  .login-tab.active{color:var(--tea);border-bottom-color:var(--tea)}
+  .login-tab:hover{color:#374151}
+  .login-field{margin-bottom:18px}
+  .login-field label{display:block;margin-bottom:6px;font-size:13px;font-weight:500;color:#374151}
+  .login-field input{width:100%;padding:11px 14px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;transition:border-color .2s,box-shadow .2s;margin:0}
+  .login-field input:focus{outline:none;border-color:var(--tea);box-shadow:0 0 0 3px rgba(37,99,235,.12)}
+  .login-field input::placeholder{color:#9ca3af}
+  .login-btn{width:100%;padding:12px 16px;font-size:15px;font-weight:600;border-radius:8px;margin-top:6px}
+  .login-error{margin-top:14px;padding:10px 12px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;color:#dc2626;font-size:13px}
+  .login-guest-hint{color:#6b7280;font-size:13px;line-height:1.7;margin:8px 0 18px;padding:12px 14px;background:#f9fafb;border-radius:8px}
   .tag{font-size:11px;background:#eff6ff;color:#1d4ed8;border-radius:6px;padding:1px 6px;margin-right:4px}
   canvas{max-width:100%}
   .red{color:var(--danger);font-weight:600}
@@ -161,30 +179,35 @@
 </script>
 <div id="app">
   <!-- 登录 / 注册 / 游客 -->
-  <div v-if="!token" class="card login">
-    <h2 style="margin-top:0">加油赚奶茶钱</h2>
-    <p class="muted">小散户的纪律化看盘笔记 · 多人账户隔离版</p>
-    <div class="row" style="justify-content:center;gap:4px;margin-bottom:12px">
-      <button :class="authMode==='login'?'':'ghost'" @click="authMode='login'">登录</button>
-      <button :class="authMode==='register'?'':'ghost'" @click="authMode='register'">注册</button>
-      <button :class="authMode==='guest'?'':'ghost'" @click="authMode='guest'">游客</button>
+  <div v-if="!token" class="login-wrap">
+    <div class="login-card">
+      <div class="login-brand">
+        <div class="logo">🧋</div>
+        <h1>加油赚奶茶钱</h1>
+        <p>小散户的纪律化看盘笔记 · 多人账户隔离版</p>
+      </div>
+      <div class="login-tabs">
+        <button class="login-tab" :class="{active:authMode==='login'}" @click="authMode='login'">登录</button>
+        <button class="login-tab" :class="{active:authMode==='register'}" @click="authMode='register'">注册</button>
+        <button class="login-tab" :class="{active:authMode==='guest'}" @click="authMode='guest'">游客</button>
+      </div>
+      <div v-if="authMode==='login'">
+        <div class="login-field"><label>用户名</label><input v-model="login.u" placeholder="请输入用户名" /></div>
+        <div class="login-field"><label>密码</label><input v-model="login.p" type="password" placeholder="请输入密码" @keyup.enter="doLogin" /></div>
+        <button class="login-btn" @click="doLogin">登 录</button>
+      </div>
+      <div v-if="authMode==='register'">
+        <div class="login-field"><label>用户名</label><input v-model="reg.u" placeholder="2-20位，支持中文/字母/数字/下划线" /></div>
+        <div class="login-field"><label>密码</label><input v-model="reg.p" type="password" placeholder="至少4位" /></div>
+        <div class="login-field"><label>确认密码</label><input v-model="reg.p2" type="password" placeholder="再次输入密码" @keyup.enter="doRegister" /></div>
+        <button class="login-btn" @click="doRegister">注册并登录</button>
+      </div>
+      <div v-if="authMode==='guest'">
+        <p class="login-guest-hint">游客账号数据会保存在服务端；换浏览器 / 清缓存后无法找回，但可继续在当前设备使用。</p>
+        <button class="login-btn" @click="doGuest">生成游客账号</button>
+      </div>
+      <p v-if="err" class="login-error">{{err}}</p>
     </div>
-    <div v-if="authMode==='login'">
-      <label>用户名</label><input v-model="login.u" />
-      <label>密码</label><input v-model="login.p" type="password" @keyup.enter="doLogin" />
-      <div class="row" style="margin-top:10px"><button @click="doLogin">登录</button></div>
-    </div>
-    <div v-if="authMode==='register'">
-      <label>用户名</label><input v-model="reg.u" placeholder="2-20位，支持中文/字母/数字/下划线" />
-      <label>密码</label><input v-model="reg.p" type="password" placeholder="至少4位" />
-      <label>确认密码</label><input v-model="reg.p2" type="password" @keyup.enter="doRegister" />
-      <div class="row" style="margin-top:10px"><button @click="doRegister">注册并登录</button></div>
-    </div>
-    <div v-if="authMode==='guest'">
-      <p class="muted">游客账号数据会保存在服务端；换浏览器/清缓存后无法找回，但可继续在当前设备使用。</p>
-      <div class="row" style="margin-top:10px"><button @click="doGuest">生成游客账号</button></div>
-    </div>
-    <p v-if="err" style="color:var(--danger)">{{err}}</p>
   </div>
 
   <!-- 主框架 -->
