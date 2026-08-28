@@ -444,11 +444,21 @@
           <button @click="addPool">加入</button>
           <button class="ghost" @click="loadPool">刷新跟踪数据</button></div></div>
         <div class="card">
-          <div class="batchbar" v-if="pool.length">
-            <input type="checkbox" :checked="poolSelected.length===pool.length && pool.length>0" @change="selectAllPool" title="全选/取消全选" />
-            <span class="count">已选 <b>{{poolSelected.length}}</b> 只</span>
-            <button class="ghost btn-sm" :disabled="!poolSelected.length" @click="batchRemovePool" style="color:var(--danger);border-color:var(--danger)">批量移除</button>
-            <span class="muted" v-if="poolSelected.length" style="font-size:12px">提示：active 状态会软删除（可恢复），archive+持仓 会彻底删除</span>
+          <!-- 筛选与批量操作工具条 -->
+          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid #e5e7eb">
+            <div class="batchbar" style="margin:0">
+              <input type="checkbox" :checked="poolSelected.length===pool.length && pool.length>0" @change="selectAllPool" title="全选/取消全选" />
+              <span class="count">已选 <b>{{poolSelected.length}}</b> 只</span>
+              <button @click="openAddPoolModal">新增</button>
+              <button class="ghost btn-sm" :disabled="!poolSelected.length" @click="batchDeletePool" style="color:var(--danger);border-color:var(--danger)">删除</button>
+              <span class="muted" v-if="poolSelected.length" style="font-size:12px">提示：active 状态会软删除（可恢复），archive+持仓 会彻底删除</span>
+            </div>
+            <div class="row" style="gap:8px;margin:0">
+              <input v-model="poolFilter.q" placeholder="证券代码/名称" style="max-width:150px" />
+              <input v-model="poolFilter.note" placeholder="备注" style="max-width:130px" />
+              <button @click="loadPool">查询</button>
+              <button class="ghost" @click="resetPoolFilter">重置</button>
+            </div>
           </div>
           <div class="tracktbl-wrap">
           <table class="tracktbl"><thead><tr>
@@ -1041,7 +1051,7 @@ const app = createApp({
     building:false, seeding:false, stocksCount:0, cachedCount:0, warmup:{running:false,done:0,total:0,errors:0,msg:''}, warmupTimer:null,
     industries:[],  // 申万一级行业列表(后端返回,前端 chip 多选)
     seedingInd:false,  // 行业补全按钮 loading
-    pool:[], np:{code:'',note:''}, rules:[], nr:{name:'',scope:'all',action:'reduce',conditions:'{"logic":"AND","conditions":[{"type":"below_ma","ma":20,"days":3}]}'},
+    pool:[], poolFilter:{q:'',note:''}, np:{code:'',note:''}, rules:[], nr:{name:'',scope:'all',action:'reduce',conditions:'{"logic":"AND","conditions":[{"type":"below_ma","ma":20,"days":3}]}'},
     poolTab:'manual',  // 可投池页 tab: manual|recommend
     poolSelected:[],  // 可投池表格当前勾选中的 code
     showRulesModal:false,  // 加减仓规则弹窗显隐
@@ -1258,7 +1268,20 @@ const app = createApp({
       for(const code of codes){ await API('/pool',{method:'POST',body:JSON.stringify({code})}); }
       this.screenSelected=[]; this.loadPool();
     },
-    async loadPool(){ const r=await API('/pool'); this.pool=r; this.poolCodes=r.map(p=>p.code); this.poolSelected=[]; },
+    async loadPool(){
+      const params = new URLSearchParams();
+      if(this.poolFilter.q) params.append('q', this.poolFilter.q.trim());
+      if(this.poolFilter.note) params.append('note', this.poolFilter.note.trim());
+      const r=await API('/pool' + (params.toString() ? '?'+params.toString() : ''));
+      this.pool=r; this.poolCodes=r.map(p=>p.code); this.poolSelected=[];
+    },
+    resetPoolFilter(){ this.poolFilter={q:'',note:''}; this.loadPool(); },
+    openAddPoolModal(){
+      const code = prompt('请输入要加入观测池的股票代码或名称（如 600519 或 贵州茅台）：');
+      if(code===null || !code.trim()) return;
+      this.np={code:code.trim(),note:''};
+      this.addPool();
+    },
     async loadRecommendations(){ const r=await API('/pool/recommendations'); this.recommendations=r; },
     async addRecToPool(code){ await API('/pool',{method:'POST',body:JSON.stringify({code})}); this.loadPool(); this.loadRecommendations(); },
     // —— 可投池表格「持仓/成本」整行编辑(点保存才提交,避免鼠标移动即误保存) ——
@@ -1331,22 +1354,23 @@ const app = createApp({
     selectAllPool(e){
       this.poolSelected = e.target.checked ? this.pool.map(p=>p.code) : [];
     },
-    async batchRemovePool(){
+    async batchDeletePool(){
       const codes = this.poolSelected.slice();
-      if(!codes.length) return;
+      if(!codes.length){ alert('请先勾选要删除的记录'); return; }
       const archiveCodes = codes.filter(c=>{ const p=this.pool.find(x=>x.code===c); return p && p.status==='archive'; });
       const detail = archiveCodes.length
         ? `其中 ${archiveCodes.length} 只已归档且有持仓，将彻底删除且无法恢复。`
         : '选中记录将软删除（可恢复），持仓数据保留。';
-      if(!confirm(`确定要批量移除 ${codes.length} 只股票吗？${detail}`)) return;
+      if(!confirm(`确定要删除选中的 ${codes.length} 只股票吗？${detail}`)) return;
       const r = await API('/pool/batch-delete',{method:'POST',body:JSON.stringify({codes})});
       if(r && r.ok){
         const hard = (r.hard_deleted||[]).length;
-        this.poolMsg = `已批量移除 ${r.removed} 只股票${hard?'（'+hard+' 只彻底删除）':''}`;
+        this.poolMsg = `已删除 ${r.removed} 只股票${hard?'（'+hard+' 只彻底删除）':''}`;
       } else {
-        this.poolMsg = '批量移除失败';
+        this.poolMsg = '删除失败';
       }
       setTimeout(()=>{ this.poolMsg=''; }, 3000);
+      this.poolSelected=[];
       this.loadPool();
     },
     async restorePool(p){

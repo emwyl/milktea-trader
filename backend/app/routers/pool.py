@@ -4,7 +4,7 @@ import datetime as dt
 import json
 import re as _re
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.db import SessionLocal, get_db
 from app.deps import get_current_user
@@ -13,6 +13,7 @@ from app.schemas import PoolBatchDeleteIn, PoolIn, PoolOut
 from app.services.data_fetcher import ensure_stock_name, get_pool_track
 from app.services.preference import match_scheme
 from app.services.screener import get_screener
+from sqlalchemy import or_
 
 _CODE_RE = _re.compile(r'^\d{6}$')
 
@@ -46,10 +47,30 @@ def _user_pool_q(db, user_id: int):
 
 
 @router.get("")
-def list_pool(db: SessionLocal = Depends(get_db), user: User = Depends(get_current_user)):
-    # 同时返回 active 与「有持仓的 archive」:用户的真实持仓可能因误点移除而被归档,
-    # 但持仓股数还在(>0),应继续在池中可见,避免「明明还持着,却看不到」的状态错位。
-    rows = _user_pool_q(db, user.id).order_by(TrackedPool.id).all()
+def list_pool(
+    q: str = Query("", description="证券代码或名称模糊查询"),
+    note: str = Query("", description="备注模糊查询"),
+    db: SessionLocal = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """列出当前用户的可投池。
+    支持按证券代码/名称(q)和备注(note)模糊过滤；空值表示不过滤。
+    """
+    query = _user_pool_q(db, user.id)
+
+    # 代码/名称模糊：同时匹配 code 与 stock name
+    q = (q or "").strip()
+    if q:
+        query = query.join(Stock, Stock.code == TrackedPool.code, isouter=True).filter(
+            or_(TrackedPool.code.like(f"%{q}%"), Stock.name.like(f"%{q}%"))
+        )
+
+    # 备注模糊
+    note = (note or "").strip()
+    if note:
+        query = query.filter(TrackedPool.note.like(f"%{note}%"))
+
+    rows = query.order_by(TrackedPool.id).all()
     # 同一 code 重复时(如历史添加/移除循环),优先保留「有持仓」的那条
     seen: dict[str, TrackedPool] = {}
     for p in rows:
