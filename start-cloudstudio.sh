@@ -27,15 +27,33 @@ export STOCK_ADVISOR_PASS="${STOCK_ADVISOR_PASS:-admin123}"
 
 # 3) 清掉已占用 8003 的旧进程（包括之前 start.sh 起的后台实例）
 PORT="${PORT:-8003}"
+echo ">>> 清理旧实例 ..."
+# 先按进程名强杀（兼容 start.sh 起的 nohup 后台）
+pkill -f "uvicorn app.main:app" 2>/dev/null || true
+pkill -f "python.*app/main.py" 2>/dev/null || true
+# 再按端口/ PID 文件补刀
 PID=$(ss -ltnp 2>/dev/null | grep ":$PORT " | sed -n 's/.*pid=\([0-9]*\).*/\1/p' | head -1)
 if [ -n "$PID" ]; then
   echo ">>> 端口 $PORT 被 PID=$PID 占用，先停止旧进程"
   kill "$PID" 2>/dev/null || true
-  sleep 1
 fi
 if [ -f server.pid ] && kill -0 "$(cat server.pid)" 2>/dev/null; then
   echo ">>> 停止旧实例 PID=$(cat server.pid)"
   kill "$(cat server.pid)" 2>/dev/null || true
+fi
+# 等待端口释放 + SQLite 文件锁释放
+for i in 1 2 3 4 5; do
+  if ! ss -ltn 2>/dev/null | grep -q ":$PORT "; then
+    break
+  fi
+  echo ">>> 等待端口 $PORT 释放 ($i/5)"
+  sleep 1
+done
+# 若仍有残留，强制终止
+if ss -ltn 2>/dev/null | grep -q ":$PORT "; then
+  echo ">>> 端口仍被占用，强制结束相关进程"
+  pkill -9 -f "uvicorn" 2>/dev/null || true
+  pkill -9 -f "python.*app/main" 2>/dev/null || true
   sleep 1
 fi
 
