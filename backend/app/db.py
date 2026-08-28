@@ -5,7 +5,7 @@ from sqlalchemy.orm import sessionmaker, DeclarativeBase
 
 from app.config import SQLITE_URL
 
-engine = create_engine(SQLITE_URL, connect_args={"check_same_thread": False}, future=True)
+engine = create_engine(SQLITE_URL, connect_args={"check_same_thread": False, "timeout": 30}, future=True)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
 
 

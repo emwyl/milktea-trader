@@ -75,6 +75,9 @@ EXAMPLE_RULES = [
 
 
 def seed_all() -> None:
+    # 先初始化股票池（独立 session），避免与下方 admin/scheme/rule 写入产生 SQLite 写锁冲突
+    seed_stock_universe()
+
     db = SessionLocal()
     try:
         admin = db.query(User).filter(User.username == DEFAULT_USERNAME).first()
@@ -83,21 +86,23 @@ def seed_all() -> None:
             admin = User(username=DEFAULT_USERNAME, password_hash=h, salt=s, role="admin", must_change_pw=True)
             db.add(admin)
             db.flush()  # 取得 admin.id
-        seed_stock_universe()
+            db.commit()  # 释放写锁，避免后续长事务阻塞
         if db.query(SchemeType).count() == 0:
             for st in BUILTIN_SCHEMES:
                 db.add(SchemeType(key=st["key"], name=st["name"], risk_level=st["risk_level"],
                                   screener_json=json.dumps(st["screener_json"]),
                                   signal_json=json.dumps(st["signal_json"]),
                                   risk_json=json.dumps(st["risk_json"]), builtin=True))
+            db.commit()
         if db.query(PositionRule).count() == 0:
             for r in EXAMPLE_RULES:
                 db.add(PositionRule(user_id=admin.id, name=r["name"], scope=r["scope"],
                                     conditions_json=json.dumps(r["conditions"]),
                                     action=r["action"], priority=r["priority"], enabled=r["enabled"],
                                     scheme_type=r["scheme_type"]))
+            db.commit()
         if db.query(TrackedPool).count() == 0:
             db.add(TrackedPool(user_id=admin.id, code="000725", note="示例标的：观察面板板块箱体突破", scheme_type="custom"))
-        db.commit()
+            db.commit()
     finally:
         db.close()
