@@ -691,9 +691,31 @@
           <p class="muted">删除账号会同步删除该账号的短线可投池、规则、信号、偏好等个人数据，且不可恢复。</p>
         </div>
         <div class="card" v-if="me.role==='admin'" style="border-left:4px solid var(--tea)">
-          <h3 style="margin-top:0">批量导出全部用户数据（admin）</h3>
-          <div class="warnbox">一键导出<b>所有账号</b>的个人数据（按用户名分组），用于整库备份或迁移到新服务器。不含行情等全局数据。该文件较大，请妥善保管。</div>
-          <div class="row"><button @click="exportAll">导出全部用户数据</button></div>
+          <h3 style="margin-top:0">自动备份（admin）</h3>
+          <div class="warnbox">
+            系统每天 <b>15:35</b> 自动把所有账号的个人数据（选股模型、规则、短线可投池、偏好、通知配置等）备份到服务器 <b>data/backups/</b>，自动保留最近 <b>14</b> 份，可随时在下方下载。<br>
+            <b style="color:var(--danger)">⚠ 服务器备份不能防止环境重置/工作空间删除</b>（如 Cloud Studio 重置）。重要数据请<b>定期点击「下载」保存到自己电脑</b>，重置后可在新环境「导入数据」恢复。
+          </div>
+          <div class="warnbox" v-if="bkDaysSince===null || bkDaysSince>3" style="border-color:#d97706;background:#fffbeb">
+            📌 {{ bkDaysSince===null ? '你还没有在本地保存过备份' : '距上次下载备份已 '+bkDaysSince+' 天' }}，建议现在下载一份到本机。
+          </div>
+          <div class="row">
+            <button @click="backupNow" :disabled="backing">{{backing?'备份中…':'立即备份'}}</button>
+            <button class="ghost" @click="loadBackups">刷新列表</button>
+            <button class="ghost" @click="exportAll">导出全部用户数据(直接下载)</button>
+          </div>
+          <table class="tracktbl" v-if="backups.length" style="margin-top:10px">
+            <thead><tr><th>备份文件</th><th>大小</th><th>时间</th><th>操作</th></tr></thead>
+            <tbody>
+              <tr v-for="b in backups" :key="b.name">
+                <td>{{b.name}}</td>
+                <td>{{(b.size/1024).toFixed(1)}} KB</td>
+                <td>{{b.mtime}}</td>
+                <td><button class="ghost" @click="downloadBackup(b.name)">下载</button></td>
+              </tr>
+            </tbody>
+          </table>
+          <p class="muted" v-else>暂无自动备份文件，可点「立即备份」生成第一份。</p>
         </div>
         <div class="card muted">数据全部本地存储（D:\\腾讯小龙虾\\milktea-trader），仅对外拉行情与（你配置的）AI/通知。</div>
       </div>
@@ -990,10 +1012,17 @@ const app = createApp({
     ai:{key:'',base:'',model:''}, nt:{channel:'console',config:'',cron:'30 15 * * 1-5'},
     poolCodes:[],  // 当前可投池中的 code 集合(每次 loadPool 后更新),用于选股结果页判「已在池」
     poolMsg:'',  // 短线可投池页面顶部轻量提示(如「已彻底删除」),2.5s 自动消失
+    backups:[], backing:false,  // admin 自动备份列表 / 备份按钮 loading
     editRow:{code:'',qty:'',cost:'',note:'',saving:false},  // 可投池表格「整行编辑」状态(持仓/成本/备注)
     editModal:{show:false, code:'', qty:'', cost:'', note:'', saving:false, name:''},  // 可投池行编辑弹窗
   }},
   computed:{
+    // 距上次把备份下载到本机的天数(null=从未下载过),用于备份提醒
+    bkDaysSince(){
+      const t=+localStorage.getItem('lastBkDl');
+      if(!t) return null;
+      return Math.floor((Date.now()-t)/86400000);
+    },
     // 选股模型运行结果中,尚未加入可投池的 code(用于"一键全部加入"按钮)
     pendingCodes(){ return (this.screenResult||[]).filter(c=>!this.poolCodes.includes(c.code)).map(c=>c.code); },
     // 投资偏好画像与当前选股风格是否一致
@@ -1030,7 +1059,7 @@ const app = createApp({
   },
   beforeUnmount(){ if(this._timer) clearInterval(this._timer); if(this._keydown) document.removeEventListener('keydown', this._keydown); },
   methods:{
-    go(v){ this.view=v; if(v==='dash')this.loadDash(); if(v==='screens'){this.loadScreens();this.loadIndustries();this.refreshCounts();this.checkWarmup();this.loadPref();} if(v==='pool'){this.loadPool(); if(this.poolTab==='recommend') this.loadRecommendations();} if(v==='pref')this.loadPref(); if(v==='settings'){this.loadSettings(); if(this.me.role==='admin') this.loadUsers();} if(v==='t')this.loadT(); },
+    go(v){ this.view=v; if(v==='dash')this.loadDash(); if(v==='screens'){this.loadScreens();this.loadIndustries();this.refreshCounts();this.checkWarmup();this.loadPref();} if(v==='pool'){this.loadPool(); if(this.poolTab==='recommend') this.loadRecommendations();} if(v==='pref')this.loadPref(); if(v==='settings'){this.loadSettings(); if(this.me.role==='admin'){this.loadUsers(); this.loadBackups();}} if(v==='t')this.loadT(); },
     openRulesModal(){ this.showRulesModal=true; this.loadRules(); },
     async doLogin(){ this.err=''; const r=await API('/auth/login',{method:'POST',body:JSON.stringify({username:this.login.u,password:this.login.p})}); if(r.token){ this.token=r.token; localStorage.setItem('tk',r.token); this.me=r.user; this.loadDash(); } else this.err=(r.detail||'登录失败'); },
     async doRegister(){ this.err=''; if(!this.reg.u||!this.reg.p){ this.err='请填写用户名和密码'; return; } if(this.reg.p!==this.reg.p2){ this.err='两次密码不一致'; return; } const r=await API('/auth/register',{method:'POST',body:JSON.stringify({username:this.reg.u,password:this.reg.p})}); if(r.token){ this.token=r.token; localStorage.setItem('tk',r.token); this.me=r.user; this.reg={u:'',p:'',p2:''}; this.loadDash(); } else this.err=(r.detail||'注册失败'); },
@@ -1325,6 +1354,33 @@ const app = createApp({
         URL.revokeObjectURL(a.href);
         alert('已导出 '+obj.count+' 个账号的全部个人数据');
       }catch(e){ alert('导出失败：'+e.message); }
+    },
+    async loadBackups(){
+      try{
+        const r=await API('/data/backups');
+        this.backups=(r&&r.items)||[];
+      }catch(e){ /* 静默：列表加载失败不影响页面 */ }
+    },
+    async backupNow(){
+      if(this.backing) return; this.backing=true;
+      try{
+        const r=await API('/data/backup-now',{method:'POST'});
+        if(r&&r.ok){ alert('备份完成：'+r.file+'（含 '+r.count+' 个账号）'); this.loadBackups(); }
+        else{ alert('备份失败：'+((r&&r.msg)||'未知错误')); }
+      }catch(e){ alert('备份失败：'+(e.message||'网络错误')); }
+      this.backing=false;
+    },
+    async downloadBackup(name){
+      const tk=localStorage.getItem('tk');
+      try{
+        const res=await fetch('/api/data/backups/'+encodeURIComponent(name),{headers:{'Authorization':'Bearer '+tk}});
+        if(!res.ok){ alert('下载失败：HTTP '+res.status); return; }
+        const blob=await res.blob();
+        const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+        a.download=name; a.click();
+        URL.revokeObjectURL(a.href);
+        localStorage.setItem('lastBkDl', String(Date.now()));
+      }catch(e){ alert('下载失败：'+e.message); }
     },
     async importData(e){
       const file=e.target.files&&e.target.files[0]; if(!file) return;

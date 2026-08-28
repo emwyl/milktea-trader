@@ -6,6 +6,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 
 from app.db import SessionLocal
 from app.models import NotifyConfig, NotifyLog, Signal, TrackedPool, User
+from app.routers.data import run_auto_backup
 from app.services.runner import run_engine
 from app.services.notifier import get_notifier
 from app.services.data_fetcher import ensure_quotes
@@ -68,5 +69,8 @@ def start_scheduler() -> BackgroundScheduler:
     _sched.add_job(daily_review, "cron", hour=15, minute=30, day_of_week="mon-fri", id="daily_review")
     # 每个交易日 16:00 盘后自动预热全 A 日线(方案 C:每天盘后拉,第二天全市场可筛)
     _sched.add_job(start_warmup, "cron", hour=16, minute=0, day_of_week="mon-fri", id="daily_warmup")
+    # 每天 15:35（复盘任务之后）自动整库备份到 data/backups/，保留最近 14 份
+    _sched.add_job(run_auto_backup, "cron", hour=15, minute=35, id="daily_backup",
+                   misfire_grace_time=3600)
     _sched.start()
     return _sched

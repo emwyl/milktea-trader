@@ -7,8 +7,15 @@
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Request, HTTPException
+import json
+import re
+from datetime import datetime
+from pathlib import Path
 
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import FileResponse
+
+from app.config import DATA_DIR
 from app.db import SessionLocal, get_db
 from app.deps import get_current_user
 from app.models import (
@@ -20,6 +27,60 @@ router = APIRouter(prefix="/api/data", tags=["data"])
 
 # 随用户迁移的个人数据表（一对一/一对多的简单表）
 _SIMPLE_TABLES = [TrackedPool, UserProfile, NotifyConfig, UserSetting, PositionRule]
+
+# ---------- 定期自动备份 ----------
+BACKUP_DIR = Path(DATA_DIR) / "backups"   # 跟数据目录走，可被 STOCK_ADVISOR_DATA_DIR 覆盖
+BACKUP_KEEP = 14                          # 服务器上保留最近 14 份，超出自动清理
+_BACKUP_NAME_RE = re.compile(r"^backup-\d{8}-\d{6}\.json$")
+
+
+def _build_all_export(db) -> dict:
+    """构建整库（所有用户）导出字典。"""
+    users = db.query(User).order_by(User.id).all()
+    out: dict = {}
+    for u in users:
+        out[u.username] = _export_user(db, u)
+    return {
+        "app": "milktea-trader",
+        "version": 1,
+        "exported_at": _now(),
+        "scope": "all-users",
+        "count": len(out),
+        "users": out,
+    }
+
+
+def run_auto_backup() -> dict:
+    """把所有账号数据导出为 JSON 落盘到 backups/ 目录，并只保留最近 BACKUP_KEEP 份。
+
+    供定时任务与「立即备份」接口共用。任何异常都不抛出（备份失败不影响主流程）。
+    """
+    try:
+        BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+        db = SessionLocal()
+        try:
+            payload = _build_all_export(db)
+        finally:
+            db.close()
+        name = f"backup-{datetime.now().strftime('%Y%m%d-%H%M%S')}.json"
+        path = BACKUP_DIR / name
+        path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, default=str),
+                        encoding="utf-8")
+        # 清理超出保留份数的旧备份
+        old = sorted(p for p in BACKUP_DIR.glob("backup-*.json"))
+        for p in old[:-BACKUP_KEEP]:
+            try:
+                p.unlink()
+            except Exception:
+                pass
+        return {"ok": True, "file": name, "count": payload.get("count", 0)}
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "msg": str(e)}
+
+
+def _require_admin(user: User):
+    if user.role != "admin":
+        raise HTTPException(status_code=403, detail="需要管理员权限")
 
 
 def _row_to_dict(row, exclude=("id",)):
@@ -142,17 +203,42 @@ async def import_data(request: Request,
 @router.get("/export-all")
 def export_all_users(user: User = Depends(get_current_user), db: SessionLocal = Depends(get_db)):
     """admin 专用：导出所有账号的个人数据（按用户名分组），用于整库备份 / 迁移。"""
-    if user.role != "admin":
-        raise HTTPException(status_code=403, detail="需要管理员权限")
-    users = db.query(User).order_by(User.id).all()
-    out: dict = {}
-    for u in users:
-        out[u.username] = _export_user(db, u)
-    return {
-        "app": "milktea-trader",
-        "version": 1,
-        "exported_at": _now(),
-        "scope": "all-users",
-        "count": len(out),
-        "users": out,
-    }
+    _require_admin(user)
+    return _build_all_export(db)
+
+
+@router.post("/backup-now")
+def backup_now(user: User = Depends(get_current_user)):
+    """admin 专用：立即在服务器上生成一份自动备份文件。"""
+    _require_admin(user)
+    return run_auto_backup()
+
+
+@router.get("/backups")
+def list_backups(user: User = Depends(get_current_user)):
+    """admin 专用：列出服务器上的自动备份文件（新 → 旧）。"""
+    _require_admin(user)
+    items = []
+    if BACKUP_DIR.exists():
+        for p in BACKUP_DIR.glob("backup-*.json"):
+            st = p.stat()
+            items.append({
+                "name": p.name,
+                "size": st.st_size,
+                "mtime": datetime.fromtimestamp(st.st_mtime).strftime("%Y-%m-%d %H:%M:%S"),
+            })
+    items.sort(key=lambda x: x["name"], reverse=True)
+    return {"ok": True, "count": len(items), "items": items, "keep": BACKUP_KEEP}
+
+
+@router.get("/backups/{name}")
+def download_backup(name: str, user: User = Depends(get_current_user)):
+    """admin 专用：下载指定的自动备份文件。文件名白名单校验，防路径穿越。"""
+    _require_admin(user)
+    if not _BACKUP_NAME_RE.match(name):
+        raise HTTPException(status_code=400, detail="非法的备份文件名")
+    path = BACKUP_DIR / name
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="备份文件不存在")
+    return FileResponse(str(path), media_type="application/json",
+                        filename=name)
