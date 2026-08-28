@@ -101,7 +101,7 @@
   .boxbar small.up{color:var(--danger);font-weight:600}
   .boxbar i.up{background:var(--danger)}
   .info{display:inline-block;width:15px;height:15px;line-height:15px;border-radius:50%;background:var(--tea);color:#fff;font-size:11px;text-align:center;cursor:help;margin-left:2px;font-style:normal}
-  /* 数据时效标识：【实时】盘口直读 / 【预测】模型推算 —— 全系统统一 */
+  /* 数据时效标识：【实时】盘口直读 / 【参考】模型推算 —— 全系统统一 */
   .dtag{display:inline-block;font-size:10px;line-height:1.6;padding:0 5px;border-radius:4px;margin-left:5px;font-weight:600;vertical-align:middle;white-space:nowrap}
   .dtag.live{background:#dcfce7;color:#047857;border:1px solid #6ee7b7}
   .dtag.pred{background:#ede9fe;color:#6d28d9;border:1px solid #c4b5fd}
@@ -258,7 +258,7 @@
           </div>
         </div>
         <div class="card"><h3 style="margin-top:0">最新信号（风险优先）</h3>
-          <table><thead><tr><th>代码</th><th>名称</th><th>类型</th><th>风险</th><th>置信度</th><th>原因</th><th>风控建议</th></tr></thead>
+          <table><thead><tr><th>代码</th><th>名称</th><th>类型</th><th>风险</th><th>置信度</th><th>原因</th><th>风控提示</th></tr></thead>
           <tbody>
             <tr v-for="s in dash.recent_signals" :key="s.id" @click="openAnalysis(s.code)" style="cursor:pointer">
               <td>{{s.code}}</td><td>{{s.name}}</td><td><span class="pill" :class="s.signal_type">{{s.signal_type}}</span></td>
@@ -288,13 +288,13 @@
               <div v-if="prefMatch.matched" class="pill" style="background:#d8f0e4;color:var(--ok)">✅ 与当前选股风格一致</div>
               <div v-else>
                 <div class="pill" style="background:#fde8d0;color:#c44b00;margin-bottom:8px">⚠️ 风格偏差：画像偏{{prefMatch.prefLabel}}，当前偏{{prefMatch.currentLabel}}</div>
-                <button class="ghost" @click="applyPrefScheme" style="font-size:12px">按画像推荐调整</button>
+                <button class="ghost" @click="applyPrefScheme" style="font-size:12px">按画像自动调整</button>
               </div>
             </div>
           </div>
         </div>
         <div class="card" v-else style="background:#fff7ed;border-left:4px solid var(--warn)">
-          <b>还未完成投资偏好分析</b> <span class="muted">系统无法判断你的真实风险承受力。建议先去「智能选股 → 偏好分析」完成问卷，避免选股风格与自身偏差过大。</span>
+          <b>还未完成投资偏好分析</b> <span class="muted">系统无法判断你的真实风险承受力。请先去「智能选股 → 偏好分析」完成问卷，避免选股风格与自身偏差过大。</span>
           <button class="ghost" @click="go('pref')" style="margin-left:10px">去填写</button>
         </div>
 
@@ -394,7 +394,7 @@
                   <th>证券名称</th>
                   <th>价格</th>
                   <th>振幅</th>
-                  <th>推荐原因</th>
+                  <th>匹配原因</th>
                   <th>操作</th>
                 </tr>
               </thead>
@@ -431,7 +431,7 @@
       <div v-if="view==='pool'">
         <div class="row" style="margin-bottom:10px">
           <button :class="poolTab==='manual'?'':'ghost'" @click="poolTab='manual'">手工筛选</button>
-          <button :class="poolTab==='recommend'?'':'ghost'" @click="poolTab='recommend';loadRecommendations()">智能推荐</button>
+          <button :class="poolTab==='recommend'?'':'ghost'" @click="poolTab='recommend';loadRecommendations()">智能筛选</button>
         </div>
 
         <!-- 手工筛选 -->
@@ -538,16 +538,16 @@
         </div>
         </div>
 
-        <!-- 智能推荐 -->
+        <!-- 智能筛选 -->
         <div v-if="poolTab==='recommend'">
           <div class="hintbar">基于你的「偏好分析」结果，系统自动匹配方案并筛选全市场标的。已有持仓/已加入可投池的会自动过滤。</div>
-          <div class="card"><div class="row"><b>智能推荐</b>
-            <button @click="loadRecommendations">刷新推荐</button>
+          <div class="card"><div class="row"><b>智能筛选</b>
+            <button @click="loadRecommendations">刷新筛选</button>
             <span v-if="recommendations" class="muted">{{recommendations.msg}}</span>
           </div></div>
           <div class="card">
-            <div v-if="!recommendations" class="muted">点击上方「智能推荐」标签加载</div>
-            <div v-else-if="!recommendations.items.length" class="muted">暂无推荐。可能原因：① 未完成偏好分析 ② 筛选条件过严 ③ 全市场暂无符合条件标的。可先去「偏好分析」或「选股模型」调整。</div>
+            <div v-if="!recommendations" class="muted">点击上方「智能筛选」标签加载</div>
+            <div v-else-if="!recommendations.items.length" class="muted">暂无符合。可能原因：① 未完成偏好分析 ② 筛选条件过严 ③ 全市场暂无符合条件标的。可先去「偏好分析」或「选股模型」调整。</div>
             <div v-for="c in recommendations.items" :key="c.code" style="padding:8px 0;border-bottom:1px dashed var(--line)">
               <div class="kv" style="border-bottom:none">
                 <span><b>{{c.name}} {{c.code}}</b>
@@ -617,7 +617,7 @@
           <h3 style="margin-top:0">你的画像：{{pref.archetype}} <span class="pill" :class="pref.archetype?'中':''">{{pref.summary}}</span></h3>
           <div class="kv" v-for="(v,k) in pref.scores" :key="k"><span>{{k}}</span><b>{{v}}</b></div>
           <div class="kv"><span>匹配方案类型</span><b>{{pref.matched_scheme}}</b></div>
-          <div class="advice" style="margin-top:10px"><b>AI 建议（基础参考，最终决策在你）：</b><br>{{pref.ai_advice || '（未配置 AI Key，仅规则评分。设置页填入 DeepSeek Key 后生效）'}}</div>
+          <div class="advice" style="margin-top:10px"><b>AI 参考（基础参考，最终决策在你）：</b><br>{{pref.ai_advice || '（未配置 AI Key，仅规则评分。设置页填入 DeepSeek Key 后生效）'}}</div>
           <button class="ghost" @click="prefDone=false" style="margin-top:8px">重新填写</button>
         </div>
       </div>
@@ -710,7 +710,7 @@
         </div>
         <div class="row muted" style="margin-top:2px">
           数据口径图例：<span class="dtag live">实时</span>盘口／行情直读或由实际成交数据计算，客观事实
-          <span class="dtag pred">预测</span>模型基于历史与当前数据推算的参考值，非承诺，仅供决策参考
+          <span class="dtag pred">参考</span>模型基于历史与当前数据推算的参考值，非承诺，仅供决策参考
         </div></div>
 
         <div v-if="t.data">
@@ -781,14 +781,14 @@
             </div>
           </div>
 
-          <!-- 分区6：建议 -->
-          <div class="card" style="border-left:4px solid var(--tea)"><h3 style="margin-top:0">操作建议<span class="dtag pred">预测</span></h3>
+          <!-- 分区6：参考 -->
+          <div class="card" style="border-left:4px solid var(--tea)"><h3 style="margin-top:0">操作参考<span class="dtag pred">参考</span></h3>
             <div class="advice" style="font-size:15px"><b>{{t.data.section6.title}}</b><br>{{t.data.section6.text}}</div>
           </div>
 
           <!-- 分区7a：盘间三档置信空间（P0/P1/P2） -->
           <div v-if="enh" class="card" style="border-left:4px solid #6d28d9">
-            <h3 style="margin-top:0">盘间三档置信空间 · 高抛/低吸参考价<span class="dtag pred">预测</span>
+            <h3 style="margin-top:0">盘间三档置信空间 · 高抛/低吸参考价<span class="dtag pred">参考</span>
               <i class="info" :title="enh.confidence.note">i</i>
             </h3>
             <div class="row" style="margin-bottom:8px">
@@ -837,7 +837,7 @@
 
           <!-- 分区7c：次日短线预案 -->
           <div v-if="enh" class="card">
-            <h3 style="margin-top:0">次日短线预案<span class="dtag pred">预测</span></h3>
+            <h3 style="margin-top:0">次日短线预案<span class="dtag pred">参考</span></h3>
             <div class="muted" style="margin-bottom:8px">{{enh.nextday.note}}</div>
             <table class="tiertbl">
               <thead><tr><th>档位</th><th>策略口径</th><th>高抛价</th><th>低吸价</th><th>触发前提</th><th>失效条件（放弃做T）</th></tr></thead>
@@ -856,7 +856,7 @@
 
           <!-- 分区7d：三维技术投票 + 板块强度 -->
           <div v-if="enh" class="card">
-            <h3 style="margin-top:0">三维技术投票（MACD／KDJ／布林）<span class="dtag pred">预测</span></h3>
+            <h3 style="margin-top:0">三维技术投票（MACD／KDJ／布林）<span class="dtag pred">参考</span></h3>
             <div class="kv"><span>综合结论</span>
               <b :class="enh.vote.overall==='偏多'?'up':(enh.vote.overall==='偏空'?'down':'flat')">{{enh.vote.overall}}（看多 {{enh.vote.bull}} ／ 看空 {{enh.vote.bear}} ／ 中性 {{enh.vote.neutral}}）</b>
             </div>
@@ -867,7 +867,7 @@
               </div>
             </div>
             <div class="kv" style="margin-top:4px">
-              <span style="flex:0 0 auto">板块强度<span class="dtag pred">预测</span></span>
+              <span style="flex:0 0 auto">板块强度<span class="dtag pred">参考</span></span>
               <b style="max-width:72%;text-align:right;font-weight:500">{{enh.sector.text}}</b>
             </div>
           </div>
@@ -913,7 +913,7 @@
                   <div v-for="s in ext.data.signals" :key="s.id" class="advice" style="margin-bottom:8px">
                     <span class="pill" :class="s.risk_level">{{s.risk_level}}</span>
                     <b>{{s.signal_type}}</b> · {{s.reason}}
-                    <div class="muted">风控建议:{{s.risk_advice}}({{s.generated_at}})</div>
+                    <div class="muted">风控提示:{{s.risk_advice}}({{s.generated_at}})</div>
                   </div>
                   <p v-if="!ext.data.signals.length" class="muted">暂无信号,去「看板总览」点"运行引擎"后这里会显示</p>
                 </div>
