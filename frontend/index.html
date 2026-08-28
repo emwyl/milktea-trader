@@ -438,11 +438,6 @@
         <div v-if="poolTab==='manual'">
         <div class="hintbar">短线可投池 = <b>你自己积攒的股票池</b>(手工输入代码加入)。系统每日跟踪 <b>箱体上下沿 / MA5·MA20 / 量比 / 换手 / 涨跌幅</b>,辅助你判断趋势与决策。</div>
         <div v-if="poolMsg" class="hintbar" style="background:#e8f4ed;border-left-color:var(--ok);color:var(--ok)">{{poolMsg}}</div>
-        <div class="card"><div class="row"><b>短线可投池</b>
-          <stock-search v-model="np.code" placeholder="代码 / 名称 如 科技" :input-style="{maxWidth:'180px'}"></stock-search>
-          <input v-model="np.note" placeholder="备注" style="max-width:160px" />
-          <button @click="addPool">加入</button>
-          <button class="ghost" @click="loadPool">刷新跟踪数据</button></div></div>
         <div class="card">
           <!-- 筛选与批量操作工具条 -->
           <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid #e5e7eb">
@@ -451,18 +446,24 @@
               <span class="count">已选 <b>{{poolSelected.length}}</b> 只</span>
               <button @click="openAddPoolModal">新增</button>
               <button class="ghost btn-sm" :disabled="!poolSelected.length" @click="batchDeletePool" style="color:var(--danger);border-color:var(--danger)">删除</button>
+              <button class="ghost btn-sm" @click="openTagManager">标签分类</button>
               <span class="muted" v-if="poolSelected.length" style="font-size:12px">提示：active 状态会软删除（可恢复），archive+持仓 会彻底删除</span>
             </div>
             <div class="row" style="gap:8px;margin:0">
               <input v-model="poolFilter.q" placeholder="证券代码/名称" style="max-width:150px" />
+              <select v-model="poolFilter.tag" style="max-width:130px">
+                <option value="">全部标签</option>
+                <option v-for="t in poolTags" :key="t.id" :value="t.id">{{t.name}}</option>
+              </select>
               <input v-model="poolFilter.note" placeholder="备注" style="max-width:130px" />
-              <button @click="loadPool">查询</button>
+              <button @click="searchPool">查询</button>
               <button class="ghost" @click="resetPoolFilter">重置</button>
             </div>
           </div>
           <div class="tracktbl-wrap">
           <table class="tracktbl"><thead><tr>
             <th><input v-if="pool.length" type="checkbox" :checked="poolSelected.length===pool.length && pool.length>0" @change="selectAllPool" title="全选/取消全选" /></th>
+            <th>标签</th>
             <th>代码/名称</th>
             <th>现价/涨跌幅</th>
             <th>成交额（万）<i class="info" title="当天成交额 / 近20日日均成交额，单位：万元。当天>20日均额时标红，表示今日资金活跃度高于近期平均水平">?</i></th>
@@ -482,6 +483,10 @@
           </tr></thead>
           <tbody><tr v-for="p in pool" :key="p.id" :class="{'selected-row':poolSelected.includes(p.code)}">
             <td><input type="checkbox" :checked="poolSelected.includes(p.code)" @change.stop="togglePoolSelect(p.code)" /></td>
+            <td>
+              <span v-if="p.tag" class="pill" :style="{background:p.tag.color,color:'#fff'}">{{p.tag.name}}</span>
+              <span v-else class="muted">-</span>
+            </td>
             <td>
               <b>{{p.name}}</b>
               <span v-if="p.status==='archive'" class="pill" style="background:#f3f4f6;color:#6b7280;margin-left:3px" title="已从可投池移除(数据保留),点「恢复」可重新启用">已归档</span>
@@ -545,6 +550,12 @@
           </div>
           <p v-if="!pool.length" class="muted">空，先加入或选股后推送</p>
           <p v-if="pool.length" class="muted" style="margin-top:6px">数据源: {{pool[0]&&pool[0].track&&pool[0].track.src||'加载中'}} · 60s 缓存 · 单击进个股分析</p>
+          <div v-if="poolTotal>poolPageSize" class="row" style="justify-content:flex-end;gap:8px;margin-top:10px">
+            <span class="muted">共 {{poolTotal}} 条 · {{Math.ceil(poolTotal/poolPageSize)}} 页</span>
+            <button class="ghost btn-sm" :disabled="poolPage<=1" @click="poolPage--; loadPool()">上一页</button>
+            <span class="muted">第 {{poolPage}} 页</span>
+            <button class="ghost btn-sm" :disabled="poolPage*poolPageSize>=poolTotal" @click="poolPage++; loadPool()">下一页</button>
+          </div>
         </div>
         </div>
 
@@ -642,11 +653,80 @@
           <div class="modal-body">
             <label>持仓数量</label><input v-model="editModal.qty" type="number" step="100" placeholder="未持仓留空" />
             <label>成本价</label><input v-model="editModal.cost" type="number" step="0.001" placeholder="未记录留空" />
+            <label>标签</label>
+            <select v-model="editModal.tag_id">
+              <option value="">无标签</option>
+              <option v-for="t in poolTags" :key="t.id" :value="t.id">{{t.name}}</option>
+            </select>
             <label>备注</label><input v-model="editModal.note" type="text" placeholder="备注" />
           </div>
           <div class="modal-foot">
             <button type="button" class="ghost" @click="cancelEdit">取消</button>
             <button type="button" @click="saveRow" :disabled="editModal.saving">{{editModal.saving?'保存中…':'保存'}}</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 可投池新增弹窗 -->
+      <div v-if="addPoolModal.show" class="modal" @click.self="closeAddPoolModal">
+        <div class="modal-box" style="max-width:420px">
+          <div class="modal-head">
+            <h3>新增到观测池</h3>
+            <button type="button" class="close-x" @click="closeAddPoolModal" aria-label="关闭">×</button>
+          </div>
+          <div class="modal-body">
+            <label>股票代码/名称</label>
+            <stock-search v-model="addPoolModal.code" placeholder="代码 / 名称 如 贵州茅台" :input-style="{maxWidth:'100%'}"></stock-search>
+            <label>标签</label>
+            <select v-model="addPoolModal.tag_id">
+              <option value="">无标签</option>
+              <option v-for="t in poolTags" :key="t.id" :value="t.id">{{t.name}}</option>
+            </select>
+            <label>备注</label><input v-model="addPoolModal.note" type="text" placeholder="备注" />
+          </div>
+          <div class="modal-foot">
+            <button type="button" class="ghost" @click="closeAddPoolModal">取消</button>
+            <button type="button" @click="doAddPool" :disabled="addPoolModal.saving">{{addPoolModal.saving?'保存中…':'确认加入'}}</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 可投池标签管理弹窗 -->
+      <div v-if="tagModal.show" class="modal" @click.self="closeTagManager">
+        <div class="modal-box" style="max-width:520px">
+          <div class="modal-head">
+            <h3>标签分类</h3>
+            <button type="button" class="close-x" @click="closeTagManager" aria-label="关闭">×</button>
+          </div>
+          <div class="modal-body">
+            <div style="display:flex;gap:10px;align-items:flex-end;margin-bottom:16px">
+              <div style="flex:1">
+                <label>标签名称</label>
+                <input v-model="tagModal.name" type="text" placeholder="如 重点关注" />
+              </div>
+              <div style="width:90px">
+                <label>颜色</label>
+                <input v-model="tagModal.color" type="color" style="padding:2px;height:34px" />
+              </div>
+              <button @click="saveTag" :disabled="tagModal.saving">{{tagModal.id?'保存':'新增'}}</button>
+            </div>
+            <table class="tracktbl">
+              <thead><tr><th>颜色</th><th>名称</th><th>操作</th></tr></thead>
+              <tbody>
+                <tr v-for="t in poolTags" :key="t.id">
+                  <td><span class="pill" :style="{background:t.color,color:'#fff'}">&nbsp;</span></td>
+                  <td>{{t.name}}</td>
+                  <td>
+                    <button class="ghost btn-sm" @click="editTag(t)">修改</button>
+                    <button class="ghost btn-sm" @click="deleteTag(t)" style="color:var(--danger);border-color:var(--danger)">删除</button>
+                  </td>
+                </tr>
+                <tr v-if="!poolTags.length"><td colspan="3" class="muted">暂无标签，上方新增一个</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="modal-foot">
+            <button type="button" class="ghost" @click="closeTagManager">关闭</button>
           </div>
         </div>
       </div>
@@ -1051,9 +1131,10 @@ const app = createApp({
     building:false, seeding:false, stocksCount:0, cachedCount:0, warmup:{running:false,done:0,total:0,errors:0,msg:''}, warmupTimer:null,
     industries:[],  // 申万一级行业列表(后端返回,前端 chip 多选)
     seedingInd:false,  // 行业补全按钮 loading
-    pool:[], poolFilter:{q:'',note:''}, np:{code:'',note:''}, rules:[], nr:{name:'',scope:'all',action:'reduce',conditions:'{"logic":"AND","conditions":[{"type":"below_ma","ma":20,"days":3}]}'},
+    pool:[], poolFilter:{q:'',note:'',tag:''}, poolPage:1, poolPageSize:15, poolTotal:0, rules:[], nr:{name:'',scope:'all',action:'reduce',conditions:'{"logic":"AND","conditions":[{"type":"below_ma","ma":20,"days":3}]}'},
     poolTab:'manual',  // 可投池页 tab: manual|recommend
     poolSelected:[],  // 可投池表格当前勾选中的 code
+    poolTags:[],  // 当前用户的可投池自定义标签列表
     showRulesModal:false,  // 加减仓规则弹窗显隐
     recommendations:null,  // {items,msg,archetype,scheme,source}
     questionnaire:[], indicators:[], answers:{}, focus:[], prefDone:false, pref:{},
@@ -1064,7 +1145,9 @@ const app = createApp({
     cosStatus:{enabled:false,bucket:'',region:'',prefix:''},  // 腾讯云 COS 连接状态
     cosBks:[], cosBusy:false,  // COS 云端备份列表 / 同步按钮 loading
     editRow:{code:'',qty:'',cost:'',note:'',saving:false},  // 可投池表格「整行编辑」状态(持仓/成本/备注)
-    editModal:{show:false, code:'', qty:'', cost:'', note:'', saving:false, name:''},  // 可投池行编辑弹窗
+    editModal:{show:false, code:'', qty:'', cost:'', note:'', tag_id:'', saving:false, name:''},  // 可投池行编辑弹窗
+    addPoolModal:{show:false, code:'', note:'', tag_id:'', saving:false},  // 可投池新增弹窗
+    tagModal:{show:false, id:null, name:'', color:'#3b82f6', saving:false},  // 可投池标签管理弹窗
   }},
   computed:{
     // 距上次把备份下载到本机的天数(null=从未下载过),用于备份提醒
@@ -1109,7 +1192,7 @@ const app = createApp({
   },
   beforeUnmount(){ if(this._timer) clearInterval(this._timer); if(this._keydown) document.removeEventListener('keydown', this._keydown); },
   methods:{
-    go(v){ this.view=v; if(v==='dash')this.loadDash(); if(v==='screens'){this.loadScreens();this.loadIndustries();this.refreshCounts();this.checkWarmup();this.loadPref();} if(v==='pool'){this.loadPool(); if(this.poolTab==='recommend') this.loadRecommendations();} if(v==='pref')this.loadPref(); if(v==='settings'){this.loadSettings(); if(this.me.role==='admin'){this.loadUsers(); this.loadBackups(); this.loadCosStatus();}} if(v==='t')this.loadT(); },
+    go(v){ this.view=v; if(v==='dash')this.loadDash(); if(v==='screens'){this.loadScreens();this.loadIndustries();this.refreshCounts();this.checkWarmup();this.loadPref();} if(v==='pool'){this.loadPool(); this.loadPoolTags(); if(this.poolTab==='recommend') this.loadRecommendations();} if(v==='pref')this.loadPref(); if(v==='settings'){this.loadSettings(); if(this.me.role==='admin'){this.loadUsers(); this.loadBackups(); this.loadCosStatus();}} if(v==='t')this.loadT(); },
     openRulesModal(){ this.showRulesModal=true; this.loadRules(); },
     async doLogin(){ this.err=''; const r=await API('/auth/login',{method:'POST',body:JSON.stringify({username:this.login.u,password:this.login.p})}); if(r.token){ this.token=r.token; localStorage.setItem('tk',r.token); this.me=r.user; this.loadDash(); } else this.err=(r.detail||'登录失败'); },
     async doRegister(){ this.err=''; if(!this.reg.u||!this.reg.p){ this.err='请填写用户名和密码'; return; } if(this.reg.p!==this.reg.p2){ this.err='两次密码不一致'; return; } const r=await API('/auth/register',{method:'POST',body:JSON.stringify({username:this.reg.u,password:this.reg.p})}); if(r.token){ this.token=r.token; localStorage.setItem('tk',r.token); this.me=r.user; this.reg={u:'',p:'',p2:''}; this.loadDash(); } else this.err=(r.detail||'注册失败'); },
@@ -1272,20 +1355,59 @@ const app = createApp({
       const params = new URLSearchParams();
       if(this.poolFilter.q) params.append('q', this.poolFilter.q.trim());
       if(this.poolFilter.note) params.append('note', this.poolFilter.note.trim());
-      const r=await API('/pool' + (params.toString() ? '?'+params.toString() : ''));
-      this.pool=r; this.poolCodes=r.map(p=>p.code); this.poolSelected=[];
+      if(this.poolFilter.tag) params.append('tag', this.poolFilter.tag);
+      params.append('page', this.poolPage || 1);
+      params.append('page_size', this.poolPageSize || 15);
+      const r=await API('/pool?' + params.toString());
+      this.pool=r.items || []; this.poolTotal=r.total || 0; this.poolCodes=this.pool.map(p=>p.code); this.poolSelected=[];
+      const totalPages = Math.ceil(this.poolTotal/this.poolPageSize)||1;
+      if(this.poolPage>totalPages && this.poolTotal){ this.poolPage=totalPages; return this.loadPool(); }
     },
-    resetPoolFilter(){ this.poolFilter={q:'',note:''}; this.loadPool(); },
-    openAddPoolModal(){
-      const code = prompt('请输入要加入观测池的股票代码或名称（如 600519 或 贵州茅台）：');
-      if(code===null || !code.trim()) return;
-      this.np={code:code.trim(),note:''};
-      this.addPool();
+    searchPool(){ this.poolPage=1; this.loadPool(); },
+    async loadPoolTags(){ this.poolTags=await API('/pool/tags'); },
+    openTagManager(){ this.tagModal={show:true, id:null, name:'', color:'#3b82f6', saving:false}; },
+    closeTagManager(){ this.tagModal={show:false, id:null, name:'', color:'#3b82f6', saving:false}; },
+    editTag(t){ this.tagModal={show:true, id:t.id, name:t.name, color:t.color, saving:false}; },
+    async saveTag(){
+      if(this.tagModal.saving) return;
+      const name = (this.tagModal.name||'').trim();
+      if(!name){ alert('请输入标签名称'); return; }
+      const body = {name, color: this.tagModal.color || '#3b82f6'};
+      this.tagModal.saving=true;
+      try{
+        if(this.tagModal.id){
+          await API('/pool/tags/'+this.tagModal.id,{method:'PUT',body:JSON.stringify(body)});
+        } else {
+          await API('/pool/tags',{method:'POST',body:JSON.stringify(body)});
+        }
+        await this.loadPoolTags();
+        this.tagModal={show:true, id:null, name:'', color:'#3b82f6', saving:false};
+      }catch(e){ alert('保存失败：'+(e.message||'请重试')); }
+      finally{ this.tagModal.saving=false; }
+    },
+    async deleteTag(t){
+      if(!confirm(`确定要删除标签「${t.name}」吗？已打该标签的股票将变为无标签。`)) return;
+      await API('/pool/tags/'+t.id,{method:'DELETE'});
+      await this.loadPoolTags();
+      await this.loadPool();
+    },
+    resetPoolFilter(){ this.poolFilter={q:'',note:'',tag:''}; this.poolPage=1; this.loadPool(); },
+    openAddPoolModal(){ this.addPoolModal={show:true, code:'', note:'', tag_id:'', saving:false}; },
+    closeAddPoolModal(){ this.addPoolModal={show:false, code:'', note:'', tag_id:'', saving:false}; },
+    async doAddPool(){
+      if(this.addPoolModal.saving) return;
+      const code = (this.addPoolModal.code||'').trim();
+      if(!code){ alert('请输入股票代码或名称'); return; }
+      this.addPoolModal.saving=true;
+      try{
+        await this.addPool(code, this.addPoolModal.note, this.addPoolModal.tag_id||null);
+        this.closeAddPoolModal();
+      }finally{ this.addPoolModal.saving=false; }
     },
     async loadRecommendations(){ const r=await API('/pool/recommendations'); this.recommendations=r; },
     async addRecToPool(code){ await API('/pool',{method:'POST',body:JSON.stringify({code})}); this.loadPool(); this.loadRecommendations(); },
     // —— 可投池表格「持仓/成本」整行编辑(点保存才提交,避免鼠标移动即误保存) ——
-    startEdit(p){ this.editModal={show:true, code:p.code, name:p.name, qty:(p.position_qty??''), cost:(p.cost_price??''), note:(p.note??''), saving:false}; },
+    startEdit(p){ this.editModal={show:true, code:p.code, name:p.name, qty:(p.position_qty??''), cost:(p.cost_price??''), note:(p.note??''), tag_id:(p.tag_id??''), saving:false}; },
     async saveRow(){
       if(this.editModal.saving) return;
       this.editModal.saving=true;
@@ -1297,12 +1419,17 @@ const app = createApp({
         if(this.editModal.cost!=='') qs.push('cost_price='+encodeURIComponent(c));
         const p=this.pool.find(x=>x.code===this.editModal.code);
         if(this.editModal.note!==(p?.note??'')) qs.push('note='+encodeURIComponent(this.editModal.note));
+        // 标签：空字符串/0 视为取消标签
+        const tagId = this.editModal.tag_id ? parseInt(this.editModal.tag_id) : 0;
+        if(tagId !== (p?.tag_id || 0)) qs.push('tag_id='+encodeURIComponent(tagId||''));
         if(!qs.length) throw new Error('没有可保存的内容');
         await API('/pool/'+this.editModal.code+'?'+qs.join('&'), {method:'PUT'});
         if(p){
           if(this.editModal.qty!=='') p.position_qty=q;
           if(this.editModal.cost!=='') p.cost_price=c;
           p.note = this.editModal.note;
+          p.tag_id = tagId || null;
+          p.tag = this.poolTags.find(t=>t.id===(tagId||0)) || null;
         }
         this.cancelEdit();
       }catch(e){
@@ -1310,7 +1437,7 @@ const app = createApp({
         this.editModal.saving=false;
       }
     },
-    cancelEdit(){ this.editModal={show:false, code:'', name:'', qty:'', cost:'', note:'', saving:false}; },
+    cancelEdit(){ this.editModal={show:false, code:'', name:'', qty:'', cost:'', note:'', tag_id:'', saving:false}; },
     formatPass(v){
       if(Array.isArray(v)) return v.length ? v.length+'项' : '-';
       if(typeof v==='number') return v;
@@ -1320,17 +1447,17 @@ const app = createApp({
       if(Array.isArray(v) && v.length) return v.join('、');
       return '';
     },
-    async addPool(){
-      if(!this.np.code) return;
-      let code = this.np.code.trim();
+    async addPool(rawCode, note='', tagId=null){
+      if(!rawCode) return;
+      let code = rawCode.trim();
       if(!/^\d{6}$/.test(code)){
         const res = await API('/stocks/search?q='+encodeURIComponent(code)+'&limit=1');
         if(res && res.length){ code = res[0].code; }
-        else { alert('未找到证券：'+this.np.code); return; }
+        else { alert('未找到证券：'+rawCode); return; }
       }
-      const r = await API('/pool',{method:'POST',body:JSON.stringify({code,note:this.np.note})});
+      const r = await API('/pool',{method:'POST',body:JSON.stringify({code, note, tag_id: tagId})});
       if(r && r.detail){ alert(r.detail); return; }
-      this.np={code:'',note:''}; this.loadPool();
+      this.poolPage=1; this.loadPool();
     },
     async removePool(code, name){
       // 二次确认防误点(尤其 archive+持仓的会真删,不可恢复)

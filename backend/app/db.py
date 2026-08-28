@@ -42,6 +42,7 @@ def run_migrations(engine):
             ("users", "last_ip", "VARCHAR(48)"),
             ("screens", "user_id", "INTEGER"),
             ("tracked_pool", "user_id", "INTEGER"),
+            ("tracked_pool", "tag_id", "INTEGER"),
             ("position_rules", "user_id", "INTEGER"),
             ("signals", "user_id", "INTEGER"),
             ("user_profile", "user_id", "INTEGER"),
@@ -100,3 +101,23 @@ def run_migrations(engine):
                         FROM stock_tconfig_legacy
                     """), {"uid": admin_id})
                 conn.execute(text("DROP TABLE stock_tconfig_legacy"))
+
+        # 可投池自定义标签表（pool_tags）：用户级标签名称 + 填充色
+        if not _has_table(conn, "pool_tags"):
+            conn.execute(text("""
+                CREATE TABLE pool_tags (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER,
+                    name VARCHAR(64) DEFAULT '',
+                    color VARCHAR(16) DEFAULT '#3b82f6',
+                    created_at VARCHAR(32) DEFAULT '',
+                    FOREIGN KEY(user_id) REFERENCES users(id)
+                )
+            """))
+            conn.execute(text("CREATE INDEX ix_pool_tags_user_id ON pool_tags(user_id)"))
+
+        # 索引 tracked_pool.tag_id，便于按标签筛选
+        try:
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_tracked_pool_tag_id ON tracked_pool(tag_id)"))
+        except Exception:
+            pass

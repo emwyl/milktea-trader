@@ -92,6 +92,17 @@ class TrackedPool(Base):
     position_pct: Mapped[float | None] = mapped_column(Float, nullable=True)  # 仓位占比 %
     scheme_type: Mapped[str] = mapped_column(String(32), default="custom")
     status: Mapped[str] = mapped_column(String(16), default="active")  # active/archive
+    tag_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("pool_tags.id"), nullable=True, index=True)
+
+
+class PoolTag(Base):
+    """短线可投池自定义标签（名称 + 填充颜色）。"""
+    __tablename__ = "pool_tags"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    name: Mapped[str] = mapped_column(String(64), default="")
+    color: Mapped[str] = mapped_column(String(16), default="#3b82f6")  # 默认蓝色
+    created_at: Mapped[str] = mapped_column(String(32), default=_now)
 
 
 class PositionRule(Base):

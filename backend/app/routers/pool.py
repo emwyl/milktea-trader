@@ -8,14 +8,16 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.db import SessionLocal, get_db
 from app.deps import get_current_user
-from app.models import SchemeType, Stock, TrackedPool, User, UserProfile
-from app.schemas import PoolBatchDeleteIn, PoolIn, PoolOut
+from app.models import PoolTag, SchemeType, Stock, TrackedPool, User, UserProfile, _now
+from app.schemas import PoolBatchDeleteIn, PoolIn, PoolOut, TagIn, TagOut
 from app.services.data_fetcher import ensure_stock_name, get_pool_track
 from app.services.preference import match_scheme
 from app.services.screener import get_screener
 from sqlalchemy import or_
 
 _CODE_RE = _re.compile(r'^\d{6}$')
+# 颜色格式校验（#RGB / #RRGGBB）
+_HEX_COLOR_RE = _re.compile(r"^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$")
 
 router = APIRouter(prefix="/api/pool", tags=["pool"])
 
@@ -31,11 +33,17 @@ def _industry(code: str, db) -> str:
 
 
 def _to_out(p: TrackedPool, db) -> PoolOut:
+    tag = None
+    if p.tag_id:
+        t = db.query(PoolTag).filter(PoolTag.id == p.tag_id).first()
+        if t:
+            tag = {"id": t.id, "name": t.name, "color": t.color}
     return PoolOut(id=p.id, code=p.code, name=_name(p.code, db), industry=_industry(p.code, db),
                    note=p.note,
                    cost_price=p.cost_price, position_qty=p.position_qty,
                    position_pct=p.position_pct,
-                   scheme_type=p.scheme_type, status=p.status, added_at=str(p.added_at))
+                   scheme_type=p.scheme_type, status=p.status, added_at=str(p.added_at),
+                   tag_id=p.tag_id, tag=tag)
 
 
 def _user_pool_q(db, user_id: int):
@@ -50,11 +58,15 @@ def _user_pool_q(db, user_id: int):
 def list_pool(
     q: str = Query("", description="证券代码或名称模糊查询"),
     note: str = Query("", description="备注模糊查询"),
+    tag: str = Query("", description="按标签 ID 筛选(多个用逗号分隔)"),
+    page: int = Query(1, ge=1, description="页码，从 1 开始"),
+    page_size: int = Query(15, ge=1, le=100, description="每页条数，默认 15"),
     db: SessionLocal = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """列出当前用户的可投池。
-    支持按证券代码/名称(q)和备注(note)模糊过滤；空值表示不过滤。
+    """列出当前用户的可投池（分页返回）。
+    支持按证券代码/名称(q)、备注(note)、标签(tag)过滤；空值表示不过滤。
+    返回: { items, total, page, page_size }
     """
     query = _user_pool_q(db, user.id)
 
@@ -70,6 +82,16 @@ def list_pool(
     if note:
         query = query.filter(TrackedPool.note.like(f"%{note}%"))
 
+    # 标签筛选：支持单个 ID 或多个逗号分隔 ID
+    tag = (tag or "").strip()
+    if tag:
+        try:
+            tag_ids = [int(x) for x in tag.split(",") if x.strip()]
+        except ValueError:
+            raise HTTPException(status_code=400, detail="标签参数必须是数字 ID")
+        if tag_ids:
+            query = query.filter(TrackedPool.tag_id.in_(tag_ids))
+
     rows = query.order_by(TrackedPool.id).all()
     # 同一 code 重复时(如历史添加/移除循环),优先保留「有持仓」的那条
     seen: dict[str, TrackedPool] = {}
@@ -78,14 +100,19 @@ def list_pool(
         if cur is None or (p.position_qty and (not cur.position_qty or p.position_qty > cur.position_qty)):
             seen[p.code] = p
     rows = list(seen.values())
+    total = len(rows)
+
+    # 分页(在合并重复 code 之后切分,保证总数准确)
+    start = (page - 1) * page_size
+    page_rows = rows[start:start + page_size]
 
     # 名称补全 + 「每日跟踪数据」并发拉取:4 只股票同时拉实时+日线,1~2s 完成,
     # 单只失败不阻塞其他。所有跟踪数据带 60s 内存缓存,重复刷新秒开。
     tracks: dict[str, dict] = {}
-    with ThreadPoolExecutor(max_workers=min(8, max(2, len(rows)))) as ex:
-        track_futs = {ex.submit(get_pool_track, p.code, db): p.code for p in rows}
+    with ThreadPoolExecutor(max_workers=min(8, max(2, len(page_rows)))) as ex:
+        track_futs = {ex.submit(get_pool_track, p.code, db): p.code for p in page_rows}
         name_futs = {}
-        for p in rows:
+        for p in page_rows:
             if not _name(p.code, db):
                 name_futs[ex.submit(ensure_stock_name, p.code, db)] = p.code
         for f in as_completed(track_futs):
@@ -102,11 +129,11 @@ def list_pool(
                 pass
 
     result = []
-    for p in rows:
+    for p in page_rows:
         o = _to_out(p, db).model_dump()
         o["track"] = tracks.get(p.code, {})
         result.append(o)
-    return result
+    return {"items": result, "total": total, "page": page, "page_size": page_size}
 
 
 # 「系统推荐」基于偏好 + 选股模型
@@ -213,7 +240,7 @@ def add_to_pool(body: PoolIn, db: SessionLocal = Depends(get_db), user: User = D
         raise HTTPException(400, "已在可投池")
     p = TrackedPool(user_id=user.id, code=code, note=body.note, cost_price=body.cost_price,
                     position_qty=body.position_qty, position_pct=body.position_pct,
-                    scheme_type=body.scheme_type)
+                    scheme_type=body.scheme_type, tag_id=body.tag_id)
     db.add(p)
     db.commit()
     db.refresh(p)
@@ -296,6 +323,7 @@ def restore(code: str, db: SessionLocal = Depends(get_db), user: User = Depends(
 @router.put("/{code}")
 def update_pool(code: str, note: str = "", cost_price: float | None = None,
                 position_qty: float | None = None, position_pct: float | None = None,
+                tag_id: int | None = Query(None, description="标签ID,不传或传空则取消标签"),
                 db: SessionLocal = Depends(get_db), user: User = Depends(get_current_user)):
     # 复用 list_pool 的可见范围(active + archive 且有持仓),避免对 archive 持仓更新时
     # 查不到而「新建一条重复记录」——那是之前造成 id=6/id=7 重复的根因。
@@ -318,5 +346,55 @@ def update_pool(code: str, note: str = "", cost_price: float | None = None,
         exists.position_qty = position_qty
     if position_pct is not None:
         exists.position_pct = position_pct
+    if tag_id is not None:
+        # 空字符串/0 都视为取消标签
+        exists.tag_id = tag_id if tag_id else None
+@router.get("/tags")
+def list_tags(db: SessionLocal = Depends(get_db), user: User = Depends(get_current_user)):
+    """列出当前用户的可投池自定义标签。"""
+    rows = db.query(PoolTag).filter(PoolTag.user_id == user.id).order_by(PoolTag.id).all()
+    return [TagOut(id=t.id, name=t.name, color=t.color, created_at=t.created_at or "").model_dump() for t in rows]
+
+
+@router.post("/tags")
+def create_tag(body: TagIn, db: SessionLocal = Depends(get_db), user: User = Depends(get_current_user)):
+    """新建自定义标签。"""
+    name = (body.name or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="标签名称不能为空")
+    color = (body.color or "").strip() or "#3b82f6"
+    if not _HEX_COLOR_RE.match(color):
+        raise HTTPException(status_code=400, detail="颜色格式不正确")
+    t = PoolTag(user_id=user.id, name=name, color=color, created_at=_now())
+    db.add(t); db.commit(); db.refresh(t)
+    return TagOut(id=t.id, name=t.name, color=t.color, created_at=t.created_at or "").model_dump()
+
+
+@router.put("/tags/{tid}")
+def update_tag(tid: int, body: TagIn, db: SessionLocal = Depends(get_db), user: User = Depends(get_current_user)):
+    """修改标签名称/颜色。"""
+    t = db.query(PoolTag).filter(PoolTag.id == tid, PoolTag.user_id == user.id).first()
+    if not t:
+        raise HTTPException(status_code=404, detail="标签不存在")
+    name = (body.name or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="标签名称不能为空")
+    color = (body.color or "").strip() or "#3b82f6"
+    if not _HEX_COLOR_RE.match(color):
+        raise HTTPException(status_code=400, detail="颜色格式不正确")
+    t.name = name
+    t.color = color
+    db.commit(); db.refresh(t)
+    return TagOut(id=t.id, name=t.name, color=t.color, created_at=t.created_at or "").model_dump()
+
+
+@router.delete("/tags/{tid}")
+def delete_tag(tid: int, db: SessionLocal = Depends(get_db), user: User = Depends(get_current_user)):
+    """删除标签；被引用的 tracked_pool.tag_id 会被置空。"""
+    t = db.query(PoolTag).filter(PoolTag.id == tid, PoolTag.user_id == user.id).first()
+    if not t:
+        raise HTTPException(status_code=404, detail="标签不存在")
+    db.query(TrackedPool).filter(TrackedPool.user_id == user.id, TrackedPool.tag_id == tid).update({"tag_id": None}, synchronize_session=False)
+    db.delete(t)
     db.commit()
-    return _to_out(exists, db)
+    return {"ok": True}
