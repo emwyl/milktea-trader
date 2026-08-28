@@ -12,7 +12,7 @@ import re
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
 
 from app.config import DATA_DIR
@@ -22,6 +22,7 @@ from app.models import (
     User, _now,
     TrackedPool, UserProfile, NotifyConfig, UserSetting, PositionRule, Screen, ScreenResult,
 )
+from app.services import cos_backup
 
 router = APIRouter(prefix="/api/data", tags=["data"])
 
@@ -73,7 +74,18 @@ def run_auto_backup() -> dict:
                 p.unlink()
             except Exception:
                 pass
-        return {"ok": True, "file": name, "count": payload.get("count", 0)}
+        # 若配置了腾讯云 COS，则同步上传一份到云端（异地灾备，防环境重置丢数据）
+        cos_upload = None
+        if cos_backup.cos_enabled():
+            try:
+                r = cos_backup.upload_file(name, path)
+                cos_upload = r.get("ok") and r.get("key") or None
+            except Exception as e:  # noqa: BLE001
+                cos_upload = f"upload failed: {e}"
+        ret = {"ok": True, "file": name, "count": payload.get("count", 0)}
+        if cos_upload is not None:
+            ret["cos"] = cos_upload
+        return ret
     except Exception as e:  # noqa: BLE001
         return {"ok": False, "msg": str(e)}
 
@@ -118,6 +130,12 @@ def _export_user(db, user: User) -> dict:
         "username": user.username,
         "role": user.role,
         "is_guest": user.is_guest,
+        # 账号自身字段（含密码哈希），用于整库恢复时原样还原账号与登录密码
+        "account": {
+            "password_hash": user.password_hash,
+            "salt": user.salt,
+            "is_active": user.is_active,
+        },
         "data": data,
     }
 
@@ -134,23 +152,12 @@ def export_data(user: User = Depends(get_current_user), db: SessionLocal = Depen
     }
 
 
-@router.post("/import")
-async def import_data(request: Request,
-                      user: User = Depends(get_current_user),
-                      db: SessionLocal = Depends(get_db)):
-    try:
-        body = await request.json()
-    except Exception:
-        return {"ok": False, "msg": "JSON 解析失败"}
-    if not isinstance(body, dict) or "data" not in body:
-        return {"ok": False, "msg": "文件格式不正确（缺少 data 字段）"}
-    if body.get("app") and body.get("app") != "milktea-trader":
-        return {"ok": False, "msg": "文件来源不匹配，已拒绝导入"}
-    data = body["data"]
-    if not isinstance(data, dict):
-        return {"ok": False, "msg": "data 字段应为对象"}
+def _replace_user_data(db, user: User, data: dict) -> dict:
+    """替换式导入：清空该用户当前数据，按传入 data 重建（screens/results 重新关联）。
 
-    # 替换式导入：先清空当前用户在这些表的数据（导入前请确认已备份）
+    供单用户导入与 admin 整库恢复共用。调用方负责 commit。
+    """
+    # 先清空当前用户在这些表的数据（导入前请确认已备份）
     for m in _SIMPLE_TABLES:
         db.query(m).filter(m.user_id == user.id).delete(synchronize_session=False)
     my_screen_ids = [s.id for s in db.query(Screen.id).filter(Screen.user_id == user.id).all()]
@@ -195,7 +202,26 @@ async def import_data(request: Request,
         cnt_res += 1
     counts["screens"] = len(data.get("screens", []) or [])
     counts["screen_results"] = cnt_res
+    return counts
 
+
+@router.post("/import")
+async def import_data(request: Request,
+                      user: User = Depends(get_current_user),
+                      db: SessionLocal = Depends(get_db)):
+    try:
+        body = await request.json()
+    except Exception:
+        return {"ok": False, "msg": "JSON 解析失败"}
+    if not isinstance(body, dict) or "data" not in body:
+        return {"ok": False, "msg": "文件格式不正确（缺少 data 字段）"}
+    if body.get("app") and body.get("app") != "milktea-trader":
+        return {"ok": False, "msg": "文件来源不匹配，已拒绝导入"}
+    data = body["data"]
+    if not isinstance(data, dict):
+        return {"ok": False, "msg": "data 字段应为对象"}
+
+    counts = _replace_user_data(db, user, data)
     db.commit()
     return {"ok": True, "msg": "导入完成", "counts": counts}
 
@@ -242,3 +268,122 @@ def download_backup(name: str, user: User = Depends(get_current_user)):
         raise HTTPException(status_code=404, detail="备份文件不存在")
     return FileResponse(str(path), media_type="application/json",
                         filename=name)
+
+
+# ---------- 腾讯云 COS 云备份（异地灾备） ----------
+@router.get("/cos-status")
+def cos_status(user: User = Depends(get_current_user)):
+    """admin 专用：查询 COS 云备份配置状态（是否已连接）。"""
+    _require_admin(user)
+    return cos_backup.cos_status()
+
+
+@router.post("/cos-sync")
+def cos_sync(user: User = Depends(get_current_user)):
+    """admin 专用：把服务器上所有本地备份同步上传到 COS（云端缺的才传）。"""
+    _require_admin(user)
+    if not cos_backup.cos_enabled():
+        return {"ok": False, "msg": "COS 未配置（需在 backend/data/cos.json 或环境变量填写密钥）"}
+    try:
+        cloud_names = {i["name"] for i in cos_backup.list_backups()}
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "msg": f"读取云端列表失败：{e}"}
+    uploaded, skipped = [], []
+    files = sorted(BACKUP_DIR.glob("backup-*.json")) if BACKUP_DIR.exists() else []
+    for p in files:
+        if p.name in cloud_names:
+            skipped.append(p.name)
+            continue
+        try:
+            cos_backup.upload_file(p.name, p)
+            uploaded.append(p.name)
+        except Exception as e:  # noqa: BLE001
+            return {"ok": False, "msg": f"上传 {p.name} 失败：{e}"}
+    return {"ok": True, "uploaded": uploaded, "skipped": skipped}
+
+
+@router.get("/cos-backups")
+def list_cos_backups(user: User = Depends(get_current_user)):
+    """admin 专用：列出 COS 云端备份文件（新 → 旧）。"""
+    _require_admin(user)
+    if not cos_backup.cos_enabled():
+        return {"ok": False, "msg": "COS 未配置"}
+    try:
+        items = cos_backup.list_backups()
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "msg": f"读取云端列表失败：{e}"}
+    return {"ok": True, "count": len(items), "items": items}
+
+
+@router.get("/cos-backups/{name}")
+def download_cos_backup(name: str, user: User = Depends(get_current_user)):
+    """admin 专用：从 COS 下载备份。优先复用本地同名文件，否则拉取云端。"""
+    _require_admin(user)
+    if not _BACKUP_NAME_RE.match(name):
+        raise HTTPException(status_code=400, detail="非法的备份文件名")
+    if not cos_backup.cos_enabled():
+        raise HTTPException(status_code=503, detail="COS 未配置")
+    local = BACKUP_DIR / name
+    if not local.is_file():
+        try:
+            cos_backup.download_file(name, local)
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(status_code=502, detail=f"从 COS 下载失败：{e}")
+    return FileResponse(str(local), media_type="application/json", filename=name)
+
+
+@router.post("/import-all")
+async def import_all(request: Request,
+                     user: User = Depends(get_current_user),
+                     db: SessionLocal = Depends(get_db)):
+    """admin 专用：整库恢复（覆盖式）。接受「自动备份 / 导出全部用户数据」的文件。
+
+    逐账号恢复：同名账号覆盖其个人数据（密码保持原样）；备份里存在但当前系统没有的
+    账号自动创建（密码哈希一并还原，登录密码不变）。
+    """
+    _require_admin(user)
+    try:
+        body = await request.json()
+    except Exception:
+        return {"ok": False, "msg": "JSON 解析失败"}
+    if not isinstance(body, dict) or body.get("app") != "milktea-trader":
+        return {"ok": False, "msg": "文件不是 milktea-trader 的备份"}
+    if body.get("scope") != "all-users" or not isinstance(body.get("users"), dict):
+        return {"ok": False, "msg": "文件不是整库备份格式（缺少 all-users 数据）"}
+    users_payload = body["users"]
+    if not users_payload:
+        return {"ok": False, "msg": "备份里没有任何用户数据"}
+
+    # 恢复前先自动备份当前状态，防止误操作无法回退
+    run_auto_backup()
+
+    created, updated = [], []
+    for username, udata in users_payload.items():
+        if not isinstance(udata, dict) or not isinstance(udata.get("data"), dict):
+            continue
+        acct = udata.get("account") or {}
+        u = db.query(User).filter(User.username == username).first()
+        if u is None:
+            u = User(
+                username=username,
+                password_hash=acct.get("password_hash") or "!",
+                salt=acct.get("salt") or "",
+                role=udata.get("role") or "user",
+                is_guest=bool(udata.get("is_guest", False)),
+                is_active=bool(acct.get("is_active", True)),
+                must_change_pw=not bool(acct.get("password_hash")),
+            )
+            db.add(u)
+            db.flush()
+            created.append(username)
+        else:
+            # 已存在账号：密码不覆盖（保持当前密码），仅恢复个人数据
+            updated.append(username)
+        _replace_user_data(db, u, udata["data"])
+    db.commit()
+    return {
+        "ok": True,
+        "msg": f"整库恢复完成：新建 {len(created)} 个账号，覆盖 {len(updated)} 个账号的数据",
+        "created": created,
+        "updated": updated,
+    }

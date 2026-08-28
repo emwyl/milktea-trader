@@ -717,6 +717,44 @@
           </table>
           <p class="muted" v-else>暂无自动备份文件，可点「立即备份」生成第一份。</p>
         </div>
+        <div class="card" v-if="me.role==='admin'" style="border-left:4px solid #06b6d4">
+          <h3 style="margin-top:0">云端备份（腾讯云 COS）</h3>
+          <div class="warnbox">
+            自动备份文件可同步上传到腾讯云 COS 对象存储，<b>与服务器工作空间隔离</b>——即使 Cloud Studio 环境被重置，云端备份依然在，可在新环境一键整库恢复。<br>
+            <span v-if="cosStatus.enabled" style="color:var(--tea)">✓ 已连接：{{cosStatus.bucket}}（{{cosStatus.region}}，目录 {{cosStatus.prefix}}）</span>
+            <span v-else style="color:var(--danger)">✗ 未配置：需在服务器 <b>backend/data/cos.json</b> 填入腾讯云密钥后重启生效（模板见部署文档）。未配置时本区域不可用，但不影响本地自动备份。</span>
+          </div>
+          <div class="row">
+            <button @click="cosSync" :disabled="cosBusy">{{cosBusy?'同步中…':'同步到云端'}}</button>
+            <button class="ghost" @click="loadCosBackups">刷新云端列表</button>
+          </div>
+          <table class="tracktbl" v-if="cosBks.length" style="margin-top:10px">
+            <thead><tr><th>云端备份文件</th><th>大小</th><th>时间(UTC)</th><th>操作</th></tr></thead>
+            <tbody>
+              <tr v-for="b in cosBks" :key="b.name">
+                <td>{{b.name}}</td>
+                <td>{{(b.size/1024).toFixed(1)}} KB</td>
+                <td>{{(b.last_modified||'').slice(0,19).replace('T',' ')}}</td>
+                <td>
+                  <button class="ghost" @click="downloadCosBackup(b.name)">下载</button>
+                  <button class="ghost" @click="restoreAllFromCloud(b.name)" style="color:var(--danger)">恢复</button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <p class="muted" v-else-if="cosStatus.enabled">云端暂无备份文件，可点「同步到云端」把本地备份传上去。</p>
+        </div>
+        <div class="card" v-if="me.role==='admin'" style="border-left:4px solid var(--danger)">
+          <h3 style="margin-top:0">整库恢复（admin）</h3>
+          <div class="warnbox" style="border-color:var(--danger)">
+            <b style="color:var(--danger)">⚠ 危险操作：整库恢复会覆盖所有账号的当前数据</b>（选股模型、规则、短线可投池、偏好、通知等）。恢复前系统会自动先备份一份当前状态到服务器，可回退。恢复后密码与原备份一致。
+          </div>
+          <div class="row">
+            <button class="ghost" @click="$refs.restoreFile.click()">选择本地备份文件恢复…</button>
+            <input ref="restoreFile" type="file" accept="application/json" style="display:none" @change="restoreAllFromFile" />
+            <span class="muted">或在上方「云端备份」列表直接点「恢复」。</span>
+          </div>
+        </div>
         <div class="card muted">数据全部本地存储（D:\\腾讯小龙虾\\milktea-trader），仅对外拉行情与（你配置的）AI/通知。</div>
       </div>
 
@@ -1013,6 +1051,8 @@ const app = createApp({
     poolCodes:[],  // 当前可投池中的 code 集合(每次 loadPool 后更新),用于选股结果页判「已在池」
     poolMsg:'',  // 短线可投池页面顶部轻量提示(如「已彻底删除」),2.5s 自动消失
     backups:[], backing:false,  // admin 自动备份列表 / 备份按钮 loading
+    cosStatus:{enabled:false,bucket:'',region:'',prefix:''},  // 腾讯云 COS 连接状态
+    cosBks:[], cosBusy:false,  // COS 云端备份列表 / 同步按钮 loading
     editRow:{code:'',qty:'',cost:'',note:'',saving:false},  // 可投池表格「整行编辑」状态(持仓/成本/备注)
     editModal:{show:false, code:'', qty:'', cost:'', note:'', saving:false, name:''},  // 可投池行编辑弹窗
   }},
@@ -1059,7 +1099,7 @@ const app = createApp({
   },
   beforeUnmount(){ if(this._timer) clearInterval(this._timer); if(this._keydown) document.removeEventListener('keydown', this._keydown); },
   methods:{
-    go(v){ this.view=v; if(v==='dash')this.loadDash(); if(v==='screens'){this.loadScreens();this.loadIndustries();this.refreshCounts();this.checkWarmup();this.loadPref();} if(v==='pool'){this.loadPool(); if(this.poolTab==='recommend') this.loadRecommendations();} if(v==='pref')this.loadPref(); if(v==='settings'){this.loadSettings(); if(this.me.role==='admin'){this.loadUsers(); this.loadBackups();}} if(v==='t')this.loadT(); },
+    go(v){ this.view=v; if(v==='dash')this.loadDash(); if(v==='screens'){this.loadScreens();this.loadIndustries();this.refreshCounts();this.checkWarmup();this.loadPref();} if(v==='pool'){this.loadPool(); if(this.poolTab==='recommend') this.loadRecommendations();} if(v==='pref')this.loadPref(); if(v==='settings'){this.loadSettings(); if(this.me.role==='admin'){this.loadUsers(); this.loadBackups(); this.loadCosStatus();}} if(v==='t')this.loadT(); },
     openRulesModal(){ this.showRulesModal=true; this.loadRules(); },
     async doLogin(){ this.err=''; const r=await API('/auth/login',{method:'POST',body:JSON.stringify({username:this.login.u,password:this.login.p})}); if(r.token){ this.token=r.token; localStorage.setItem('tk',r.token); this.me=r.user; this.loadDash(); } else this.err=(r.detail||'登录失败'); },
     async doRegister(){ this.err=''; if(!this.reg.u||!this.reg.p){ this.err='请填写用户名和密码'; return; } if(this.reg.p!==this.reg.p2){ this.err='两次密码不一致'; return; } const r=await API('/auth/register',{method:'POST',body:JSON.stringify({username:this.reg.u,password:this.reg.p})}); if(r.token){ this.token=r.token; localStorage.setItem('tk',r.token); this.me=r.user; this.reg={u:'',p:'',p2:''}; this.loadDash(); } else this.err=(r.detail||'注册失败'); },
@@ -1381,6 +1421,63 @@ const app = createApp({
         URL.revokeObjectURL(a.href);
         localStorage.setItem('lastBkDl', String(Date.now()));
       }catch(e){ alert('下载失败：'+e.message); }
+    },
+    async loadCosStatus(){
+      try{
+        const r=await API('/data/cos-status');
+        if(r && typeof r.enabled!=='undefined') this.cosStatus=r;
+      }catch(e){ /* 静默：COS 状态不影响页面 */ }
+    },
+    async loadCosBackups(){
+      try{
+        const r=await API('/data/cos-backups');
+        if(r && r.ok){ this.cosBks=r.items||[]; }
+        else if(r && r.msg){ alert(r.msg); }
+      }catch(e){ /* 静默 */ }
+    },
+    async cosSync(){
+      if(this.cosBusy) return; this.cosBusy=true;
+      try{
+        const r=await API('/data/cos-sync',{method:'POST'});
+        if(r && r.ok){ alert('同步完成：新上传 '+(r.uploaded||[]).length+' 份，云端已存在 '+(r.skipped||[]).length+' 份'); this.loadCosBackups(); }
+        else{ alert('同步失败：'+((r&&r.msg)||'未知错误')); }
+      }catch(e){ alert('同步失败：'+(e.message||'网络错误')); }
+      this.cosBusy=false;
+    },
+    async downloadCosBackup(name){
+      const tk=localStorage.getItem('tk');
+      try{
+        const res=await fetch('/api/data/cos-backups/'+encodeURIComponent(name),{headers:{'Authorization':'Bearer '+tk}});
+        if(!res.ok){ alert('下载失败：HTTP '+res.status); return; }
+        const blob=await res.blob();
+        const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+        a.download=name; a.click();
+        URL.revokeObjectURL(a.href);
+        localStorage.setItem('lastBkDl', String(Date.now()));
+      }catch(e){ alert('下载失败：'+e.message); }
+    },
+    async restoreAllFromFile(e){
+      const file=e.target.files&&e.target.files[0]; if(!file) return;
+      let obj; try{ obj=JSON.parse(await file.text()); }catch(err){ alert('文件不是有效 JSON'); e.target.value=''; return; }
+      if(!confirm('⚠ 整库恢复将覆盖所有账号的当前数据（恢复前会自动备份当前状态）。确定继续？')){ e.target.value=''; return; }
+      try{
+        const r=await API('/data/import-all',{method:'POST',body:JSON.stringify(obj)});
+        if(r && r.ok){ alert(r.msg||'恢复完成'); this.loadUsers(); this.loadBackups(); }
+        else{ alert('恢复失败：'+((r&&r.msg)||'未知错误')); }
+      }catch(err){ alert('恢复失败：'+(err.message||'网络错误')); }
+      e.target.value='';
+    },
+    async restoreAllFromCloud(name){
+      if(!confirm('⚠ 将从云端备份 '+name+' 整库恢复，覆盖所有账号当前数据（恢复前会自动备份当前状态）。确定继续？')) return;
+      try{
+        const tk=localStorage.getItem('tk');
+        const res=await fetch('/api/data/cos-backups/'+encodeURIComponent(name),{headers:{'Authorization':'Bearer '+tk}});
+        if(!res.ok){ alert('下载云端备份失败：HTTP '+res.status); return; }
+        const obj=await res.json();
+        const r=await API('/data/import-all',{method:'POST',body:JSON.stringify(obj)});
+        if(r && r.ok){ alert(r.msg||'恢复完成'); this.loadUsers(); this.loadBackups(); }
+        else{ alert('恢复失败：'+((r&&r.msg)||'未知错误')); }
+      }catch(e){ alert('恢复失败：'+(e.message||'网络错误')); }
     },
     async importData(e){
       const file=e.target.files&&e.target.files[0]; if(!file) return;

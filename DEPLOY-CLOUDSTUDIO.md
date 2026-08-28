@@ -50,9 +50,50 @@ bash start-cloudstudio.sh
 ## ⚠️ 免费档限制（必读）
 - **工作空间闲置会被回收/休眠**：休眠后后端停了，别人打不开，需要你重新进工作空间跑 `bash start-cloudstudio.sh`
 - **工作空间重置会清掉 SQLite 数据**（账号、自选池、规则）：
-  - 缓解：定期在「设置 → 数据迁移 → 导出」下载备份 JSON
-  - 重置后重新 `bash start-cloudstudio.sh`，再「导入」恢复
+  - 系统已内置「自动备份」：每天 15:35 整库备份到服务器 `data/backups/`（保留 14 份），admin 在设置页可下载
+  - 推荐再加一层「**云端备份（腾讯云 COS）**」：备份文件同时传到 COS 对象存储，工作空间被重置也不丢，详见下方章节
+  - 重置后重新 `bash start-cloudstudio.sh`，admin 登录 → 设置页 →「整库恢复」即可一键还原所有账号
 - 想**稳定常驻 + 数据不丢**，建议升级到付费工作空间或改用腾讯云轻量应用服务器（`docker compose up -d`）
+
+## 云端备份（腾讯云 COS，推荐开通）
+> COS 对象存储：**10 元资源包 + 29 元/100G·年 存储包**即可（Cloud Studio 配套售卖）。备份文件存在腾讯云对象存储里，与 Cloud Studio 工作空间隔离——**环境重置也不丢**，新环境一键整库恢复。
+
+### 1. 购买
+- 在 Cloud Studio / 腾讯云控制台购买 **COS 标准存储容量包**（100G/年约 29 元，视平台活动价）
+- 同时会要求购买一个 Cloud Studio **资源包**（10 元，作为配套额度）
+
+### 2. 创建访问密钥（SecretId / SecretKey）
+- 打开 https://console.cloud.tencent.com/cam/capi （访问管理 → API 密钥管理）
+- 点「新建密钥」，生成一对 **SecretId** 和 **SecretKey**（SecretKey 只显示一次，务必复制保存）
+
+### 3. 创建存储桶（Bucket）
+- 打开 https://console.cloud.tencent.com/cos/bucket
+- 点「创建存储桶」：名称自拟（如 `milktea-backup`，系统会自动加数字后缀如 `milktea-backup-1250000000`），**地域**选离你近的（如 `ap-guangzhou` 广州），权限选「**私有读写**」
+- 创建后记下「存储桶名称」（含数字后缀）和地域
+
+### 4. 在服务器填入密钥
+Cloud Studio 终端执行：
+```bash
+cd /workspace
+cp backend/data/cos.example.json backend/data/cos.json
+nano backend/data/cos.json    # 填入上面的 secret_id / secret_key / bucket / region
+```
+> 没有 nano 可用 `vi`；或直接右键文件用 Cloud Studio 编辑器打开修改。
+> 也可用环境变量代替：`export COS_SECRET_ID=... COS_SECRET_KEY=... COS_BUCKET=... COS_REGION=...`（写入 `~/.bashrc` 或启动脚本，重启仍生效）。
+
+### 5. 重启并验证
+```bash
+bash start-cloudstudio.sh
+```
+- 重启后 admin 登录 → 设置页 →「云端备份（COS）」卡片显示「✓ 已连接：你的bucket（地域）」
+- 点「**同步到云端**」，本地备份上传后出现在云端列表
+- 之后每天 15:35 自动备份会**同时**生成到服务器本地和 COS 云端
+
+### 6. 灾难恢复（环境被重置时）
+1. 重新 `bash start-cloudstudio.sh`（会自动初始化新库 + admin/admin123）
+2. admin 登录 → 设置页 →「云端备份（COS）」卡片（需先重新配好 `cos.json`）
+3. 点「刷新云端列表」→ 选最新一份 → 点「**恢复**」→ 确认
+4. 全部账号 + 数据 + 登录密码完整还原
 
 ## 本地改完如何同步到 Cloud Studio
 - 本地改完 → `git commit` → `git push origin master`（推 Gitee）

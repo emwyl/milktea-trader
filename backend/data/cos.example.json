@@ -1,0 +1,7 @@
+{
+  "secret_id": "AKIDxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+  "secret_key": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+  "bucket": "你的存储桶名称-数字后缀，如 mybucket-1250000000",
+  "region": "存储桶所在地域，如 ap-guangzhou / ap-shanghai",
+  "prefix": "milktea/backup/"
+}
