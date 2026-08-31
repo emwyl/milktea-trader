@@ -32,7 +32,7 @@ if errorlevel 1 (
 
 echo [3/4] 启动后端服务（端口 8000）...
 echo 启动时间：%date% %time% > "%LOG%"
-start "" /min cmd /c ""%PY%" -m uvicorn app.main:app --host 127.0.0.1 --port 8000 >>"%LOG%" 2>&1"
+start "" /min cmd /c ""cd /d %ROOT%\backend && %PY% -m uvicorn app.main:app --host 127.0.0.1 --port 8000 >>%LOG% 2>&1"
 
 echo [4/4] 等待服务就绪并打开浏览器...
 set /a n=0
