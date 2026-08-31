@@ -442,12 +442,9 @@
           <!-- 筛选与批量操作工具条 -->
           <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid #e5e7eb">
             <div class="batchbar" style="margin:0">
-              <input type="checkbox" :checked="poolSelected.length===pool.length && pool.length>0" @change="selectAllPool" title="全选/取消全选" />
-              <span class="count">已选 <b>{{poolSelected.length}}</b> 只</span>
               <button @click="openAddPoolModal">新增</button>
               <button class="ghost btn-sm" :disabled="!poolSelected.length" @click="batchDeletePool" style="color:var(--danger);border-color:var(--danger)">删除</button>
               <button class="ghost btn-sm" @click="openTagManager">标签分类</button>
-              <span class="muted" v-if="poolSelected.length" style="font-size:12px">提示：active 状态会软删除（可恢复），archive+持仓 会彻底删除</span>
             </div>
             <div class="row" style="gap:8px;margin:0">
               <input v-model="poolFilter.q" placeholder="证券代码/名称" style="max-width:150px" />
