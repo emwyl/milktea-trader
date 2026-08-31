@@ -935,6 +935,17 @@
             <div class="kv"><span>量价匹配</span><b :style="t.data.section4.vp_level==='risk'?'color:var(--danger)':(t.data.section4.vp_level==='ok'?'color:var(--ok)':'')">{{t.data.section4.vp_text}}</b></div>
           </div>
 
+          <!-- 分区4b：引擎信号(运行引擎后生成) -->
+          <div class="card" v-if="ext.data">
+            <h3 style="margin-top:0">引擎信号(运行引擎后生成)</h3>
+            <div v-for="s in ext.data.signals" :key="s.id" class="advice" style="margin-bottom:8px">
+              <span class="pill" :class="s.risk_level">{{s.risk_level}}</span>
+              <b>{{s.signal_type}}</b> · {{s.reason}}
+              <div class="muted">风控提示:{{s.risk_advice}}({{s.generated_at}})</div>
+            </div>
+            <p v-if="!ext.data.signals.length" class="muted">暂无信号,去「看板总览」点"运行引擎"后这里会显示</p>
+          </div>
+
           <!-- 分区5：风控 -->
           <div class="card"><h3 style="margin-top:0">动态风险提醒<span class="dtag live">实时</span></h3>
             <div v-if="!t.data.section5.warnings.length" class="muted">暂无风险提醒</div>
@@ -1008,6 +1019,13 @@
             <div v-else class="muted">{{enh.intraday.summary}}</div>
           </div>
 
+          <!-- 分区7b2：日线走势(收盘) -->
+          <div class="card" v-if="ext.data">
+            <h3 style="margin-top:0">日线走势(收盘)</h3>
+            <canvas id="extchart" width="1040" height="240"></canvas>
+            <p class="muted" style="margin-top:6px">注:演示为日线,真实行情接入后自动更新</p>
+          </div>
+
           <!-- 分区7c：三维技术投票 + 板块强度 -->
           <div v-if="enh" class="card">
             <h3 style="margin-top:0">三维技术投票（MACD／KDJ／布林）<span class="dtag pred">参考</span></h3>
@@ -1032,48 +1050,6 @@
             <div class="row"><button class="ghost" @click="saveTConfig">保存风控备注</button><span class="muted">{{t.saveMsg}}</span></div>
           </div>
 
-          <!-- 扩展:技术指标 + 走势 + 信号(原"分析中心"内容并入) -->
-          <div class="card">
-            <div class="row" @click="showExt=!showExt" style="cursor:pointer">
-              <b>📈 扩展:技术指标 + 走势 + 信号</b>
-              <span class="muted">MACD / KDJ / 布林 / 折线图 / 引擎信号(点击展开)</span>
-              <span class="muted">{{showExt?'▴ 收起':'▾ 展开'}}</span>
-            </div>
-            <div v-if="showExt" style="margin-top:10px">
-              <div v-if="!ext.data" class="muted">加载中…</div>
-              <div v-else>
-                <div class="grid g2">
-                  <div class="card" style="margin:0">
-                    <h3 style="margin-top:0">技术指标速览</h3>
-                    <div class="kv"><span>现价</span><b>{{ext.data.snapshot.close}}</b></div>
-                    <div class="kv"><span>涨跌幅</span><b :style="ext.data.snapshot.change_pct>=0?'color:var(--up)':'color:var(--down)'">{{ext.data.snapshot.change_pct}}%</b></div>
-                    <div class="kv"><span>量比</span><b>{{ext.data.snapshot.vol_ratio}}</b></div>
-                    <div class="kv"><span>换手率</span><b>{{ext.data.snapshot.turnover}}%</b></div>
-                    <div class="kv"><span>振幅</span><b>{{ext.data.snapshot.amplitude}}%</b></div>
-                    <div class="kv"><span>MA20</span><b>{{ext.data.snapshot.ma['20']}}</b></div>
-                    <div class="kv"><span>MACD(DIF/DEA)</span><b>{{ext.data.snapshot.macd.dif}}/{{ext.data.snapshot.macd.dea}}</b></div>
-                    <div class="kv"><span>KDJ(J)</span><b>{{ext.data.snapshot.kdj.j}}</b></div>
-                    <div class="kv"><span>布林(上/下)</span><b>{{ext.data.snapshot.boll.upper}}/{{ext.data.snapshot.boll.lower}}</b></div>
-                    <div class="kv"><span>箱体支撑/压力</span><b>{{ext.data.snapshot.box.support}}/{{ext.data.snapshot.box.pressure}}</b></div>
-                  </div>
-                  <div class="card" style="margin:0">
-                    <h3 style="margin-top:0">走势(收盘)</h3>
-                    <canvas id="extchart" width="520" height="240"></canvas>
-                    <p class="muted">注:演示为日线,真实行情接入后自动更新</p>
-                  </div>
-                </div>
-                <div class="card" style="margin-top:10px">
-                  <h3 style="margin-top:0">引擎信号(运行引擎后生成)</h3>
-                  <div v-for="s in ext.data.signals" :key="s.id" class="advice" style="margin-bottom:8px">
-                    <span class="pill" :class="s.risk_level">{{s.risk_level}}</span>
-                    <b>{{s.signal_type}}</b> · {{s.reason}}
-                    <div class="muted">风控提示:{{s.risk_advice}}({{s.generated_at}})</div>
-                  </div>
-                  <p v-if="!ext.data.signals.length" class="muted">暂无信号,去「看板总览」点"运行引擎"后这里会显示</p>
-                </div>
-              </div>
-            </div>
-          </div>
         </div>
       </div>
     </main>
@@ -1127,7 +1103,7 @@ const app = createApp({
       volClass(v){ if(v===undefined||v===null)return ''; if(v>=1.5)return 'up'; return ''; }
     },
     t:{code:'',data:null,pos:{qty:'',cost:''},cfg:{custom_support:'',custom_pressure:'',risk_note:''},saveMsg:''},
-    ext:{data:null, signalKey:0}, showExt:false,  // 「个股分析」扩展区(MACD/KDJ/布林/折线图/信号)
+    ext:{data:null},  // 个股分析日线走势+引擎信号数据
     screens:[], schemeTypes:[], screenResult:[], screenSelected:[], showSchemeTypes:false, ns:{name:'',scheme:'steady'},
     // 选股模型「引导式建模」状态
     build:{scheme:'steady', name:'稳健型', risk:'低', riskJson:{max_position_pct:15,stop_loss_pct:3,max_total_pct:40},
