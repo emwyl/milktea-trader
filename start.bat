@@ -30,16 +30,16 @@ if errorlevel 1 (
   )
 )
 
-echo [3/4] 启动后端服务（端口 8000）...
+echo [3/4] 启动后端服务（端口 8003）...
 echo 启动时间：%date% %time% > "%LOG%"
-start "" /min cmd /c ""cd /d %ROOT%\backend && %PY% -m uvicorn app.main:app --host 127.0.0.1 --port 8000 >>%LOG% 2>&1"
+start "" /min cmd /c ""cd /d %ROOT%\backend && %PY% -m uvicorn app.main:app --host 127.0.0.1 --port 8003 >>%LOG% 2>&1"
 
 echo [4/4] 等待服务就绪并打开浏览器...
 set /a n=0
 :wait
 timeout /t 2 >nul
 set /a n+=1
-curl -s -m 2 http://127.0.0.1:8000/api/health >nul 2>&1
+curl -s -m 2 http://127.0.0.1:8003/api/health >nul 2>&1
 if not errorlevel 1 goto open
 if %n% geq 30 (
   echo [错误] 服务 30 秒内未就绪，详见 %LOG%
@@ -49,7 +49,7 @@ if %n% geq 30 (
 goto wait
 
 :open
-start "" http://127.0.0.1:8000
+start "" http://127.0.0.1:8003
 echo 已打开浏览器。若页面空白，请检查 %LOG% 或告诉我。
 echo （服务在后台运行，关闭窗口不会停止服务；停止请运行 stop.bat）
 pause
