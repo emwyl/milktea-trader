@@ -982,26 +982,7 @@
             <div v-else class="muted">{{enh.intraday.summary}}</div>
           </div>
 
-          <!-- 分区7c：次日短线预案 -->
-          <div v-if="enh" class="card">
-            <h3 style="margin-top:0">次日短线预案<span class="dtag pred">参考</span></h3>
-            <div class="muted" style="margin-bottom:8px">{{enh.nextday.note}}</div>
-            <table class="tiertbl">
-              <thead><tr><th>档位</th><th>策略口径</th><th>高抛价</th><th>低吸价</th><th>触发前提</th><th>失效条件（放弃做T）</th></tr></thead>
-              <tbody>
-                <tr v-for="tr in enh.nextday.tiers" :key="tr.level">
-                  <td><span class="lv" :class="tr.level">{{tr.level}}</span></td>
-                  <td>{{tr.conf_label}}</td>
-                  <td><b style="color:var(--up)">{{tr.sell}}</b></td>
-                  <td><b style="color:var(--down)">{{tr.buy}}</b></td>
-                  <td class="muted">{{tr.sell_cond}}</td>
-                  <td class="muted">{{tr.fail_cond}}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-
-          <!-- 分区7d：三维技术投票 + 板块强度 -->
+          <!-- 分区7c：三维技术投票 + 板块强度 -->
           <div v-if="enh" class="card">
             <h3 style="margin-top:0">三维技术投票（MACD／KDJ／布林）<span class="dtag pred">参考</span></h3>
             <div class="kv"><span>综合结论</span>
