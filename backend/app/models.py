@@ -92,7 +92,7 @@ class TrackedPool(Base):
     position_pct: Mapped[float | None] = mapped_column(Float, nullable=True)  # 仓位占比 %
     scheme_type: Mapped[str] = mapped_column(String(32), default="custom")
     status: Mapped[str] = mapped_column(String(16), default="active")  # active/archive
-    tag_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("pool_tags.id"), nullable=True, index=True)
+    tags: Mapped[list["PoolTag"]] = relationship("PoolTag", secondary="tracked_pool_tags", back_populates="pools")
 
 
 class PoolTag(Base):
@@ -103,6 +103,14 @@ class PoolTag(Base):
     name: Mapped[str] = mapped_column(String(64), default="")
     color: Mapped[str] = mapped_column(String(16), default="#3b82f6")  # 默认蓝色
     created_at: Mapped[str] = mapped_column(String(32), default=_now)
+    pools: Mapped[list["TrackedPool"]] = relationship("TrackedPool", secondary="tracked_pool_tags", back_populates="tags")
+
+
+class TrackedPoolTag(Base):
+    """可投池与标签的多对多关联表。"""
+    __tablename__ = "tracked_pool_tags"
+    pool_id: Mapped[int] = mapped_column(Integer, ForeignKey("tracked_pool.id"), primary_key=True)
+    tag_id: Mapped[int] = mapped_column(Integer, ForeignKey("pool_tags.id"), primary_key=True)
 
 
 class PositionRule(Base):

@@ -42,7 +42,6 @@ def run_migrations(engine):
             ("users", "last_ip", "VARCHAR(48)"),
             ("screens", "user_id", "INTEGER"),
             ("tracked_pool", "user_id", "INTEGER"),
-            ("tracked_pool", "tag_id", "INTEGER"),
             ("position_rules", "user_id", "INTEGER"),
             ("signals", "user_id", "INTEGER"),
             ("user_profile", "user_id", "INTEGER"),
@@ -116,8 +115,25 @@ def run_migrations(engine):
             """))
             conn.execute(text("CREATE INDEX ix_pool_tags_user_id ON pool_tags(user_id)"))
 
-        # 索引 tracked_pool.tag_id，便于按标签筛选
-        try:
-            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_tracked_pool_tag_id ON tracked_pool(tag_id)"))
-        except Exception:
-            pass
+        # 可投池与标签的多对多关联表
+        if not _has_table(conn, "tracked_pool_tags"):
+            conn.execute(text("""
+                CREATE TABLE tracked_pool_tags (
+                    pool_id INTEGER NOT NULL,
+                    tag_id INTEGER NOT NULL,
+                    PRIMARY KEY (pool_id, tag_id),
+                    FOREIGN KEY(pool_id) REFERENCES tracked_pool(id),
+                    FOREIGN KEY(tag_id) REFERENCES pool_tags(id)
+                )
+            """))
+            conn.execute(text("CREATE INDEX ix_tracked_pool_tags_tag_id ON tracked_pool_tags(tag_id)"))
+
+        # 旧版 tracked_pool.tag_id 单标签字段迁移到多对多关联表
+        if _has_col(conn, "tracked_pool", "tag_id") and _has_table(conn, "tracked_pool_tags"):
+            try:
+                conn.execute(text("""
+                    INSERT OR IGNORE INTO tracked_pool_tags (pool_id, tag_id)
+                    SELECT id, tag_id FROM tracked_pool WHERE tag_id IS NOT NULL
+                """))
+            except Exception:
+                pass

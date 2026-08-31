@@ -149,6 +149,11 @@
   .tracktbl tbody tr:hover td:last-child{background:#f8fafc}
   .tracktbl tbody tr.selected-row td:last-child{background:#eff6ff}
   .tracktbl .pill{padding:1px 6px;font-size:11px}
+  .tag-list{display:inline-flex;flex-wrap:wrap;gap:4px;max-width:120px}
+  .tag-chips{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0}
+  .chip{padding:6px 12px;border:1px solid #d1d5db;border-radius:16px;background:#fff;cursor:pointer;font-size:13px;color:#374151;transition:all .15s}
+  .chip:hover{border-color:#9ca3af;background:#f9fafb}
+  .chip.active{border-color:transparent;box-shadow:0 0 0 1px rgba(0,0,0,.1) inset}
   .tracktbl input[type="checkbox"]{width:16px;height:16px;cursor:pointer;margin:0;vertical-align:middle}
   .batchbar{display:flex;align-items:center;gap:10px;padding:8px 0;margin-bottom:6px;border-bottom:1px solid #f3f4f6}
   .batchbar .count{font-size:13px;color:#4b5563}
@@ -444,6 +449,7 @@
             <div class="batchbar" style="margin:0">
               <button @click="openAddPoolModal">新增</button>
               <button class="ghost btn-sm" :disabled="!poolSelected.length" @click="batchDeletePool" style="color:var(--danger);border-color:var(--danger)">删除</button>
+              <button class="ghost btn-sm" :disabled="!poolSelected.length" @click="openBatchTagModal">标签设置</button>
               <button class="ghost btn-sm" @click="openTagManager">标签分类</button>
             </div>
             <div class="row" style="gap:8px;margin:0">
@@ -481,7 +487,9 @@
           <tbody><tr v-for="p in pool" :key="p.id" :class="{'selected-row':poolSelected.includes(p.code)}">
             <td><input type="checkbox" :checked="poolSelected.includes(p.code)" @change.stop="togglePoolSelect(p.code)" /></td>
             <td>
-              <span v-if="p.tag" class="pill" :style="{background:p.tag.color,color:'#fff'}">{{p.tag.name}}</span>
+              <span v-if="p.tags && p.tags.length" class="tag-list">
+                <span v-for="t in p.tags" :key="t.id" class="pill" :style="{background:t.color,color:'#fff'}">{{t.name}}</span>
+              </span>
               <span v-else class="muted">-</span>
             </td>
             <td>
@@ -650,11 +658,11 @@
           <div class="modal-body">
             <label>持仓数量</label><input v-model="editModal.qty" type="number" step="100" placeholder="未持仓留空" />
             <label>成本价</label><input v-model="editModal.cost" type="number" step="0.001" placeholder="未记录留空" />
-            <label>标签</label>
-            <select v-model="editModal.tag_id">
-              <option value="">无标签</option>
-              <option v-for="t in poolTags" :key="t.id" :value="t.id">{{t.name}}</option>
-            </select>
+            <label>标签 <span class="muted">（可多选）</span></label>
+            <div class="tag-chips">
+              <button type="button" v-for="t in poolTags" :key="t.id" class="chip" :class="{active: (editModal.tag_ids||[]).includes(t.id)}" :style="(editModal.tag_ids||[]).includes(t.id)?{background:t.color,borderColor:t.color,color:'#fff'}:{}" @click="toggleModalTag('editModal', t.id)">{{t.name}}</button>
+              <span v-if="!poolTags.length" class="muted">暂无标签，先去「标签分类」添加</span>
+            </div>
             <label>备注</label><input v-model="editModal.note" type="text" placeholder="备注" />
           </div>
           <div class="modal-foot">
@@ -674,11 +682,11 @@
           <div class="modal-body">
             <label>股票代码/名称</label>
             <stock-search v-model="addPoolModal.code" placeholder="代码 / 名称 如 贵州茅台" :input-style="{maxWidth:'100%'}"></stock-search>
-            <label>标签</label>
-            <select v-model="addPoolModal.tag_id">
-              <option value="">无标签</option>
-              <option v-for="t in poolTags" :key="t.id" :value="t.id">{{t.name}}</option>
-            </select>
+            <label>标签 <span class="muted">（可多选）</span></label>
+            <div class="tag-chips">
+              <button type="button" v-for="t in poolTags" :key="t.id" class="chip" :class="{active: (addPoolModal.tag_ids||[]).includes(t.id)}" :style="(addPoolModal.tag_ids||[]).includes(t.id)?{background:t.color,borderColor:t.color,color:'#fff'}:{}" @click="toggleModalTag('addPoolModal', t.id)">{{t.name}}</button>
+              <span v-if="!poolTags.length" class="muted">暂无标签，先去「标签分类」添加</span>
+            </div>
             <label>备注</label><input v-model="addPoolModal.note" type="text" placeholder="备注" />
           </div>
           <div class="modal-foot">
@@ -724,6 +732,27 @@
           </div>
           <div class="modal-foot">
             <button type="button" class="ghost" @click="closeTagManager">关闭</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 可投池批量标签设置弹窗 -->
+      <div v-if="batchTagModal.show" class="modal" @click.self="closeBatchTagModal">
+        <div class="modal-box" style="max-width:520px">
+          <div class="modal-head">
+            <h3>标签设置（已选 {{poolSelected.length}} 只）</h3>
+            <button type="button" class="close-x" @click="closeBatchTagModal" aria-label="关闭">×</button>
+          </div>
+          <div class="modal-body">
+            <p class="muted" style="margin-top:0">选择标签后保存，将覆盖替换已选股票的标签。</p>
+            <div class="tag-chips">
+              <button type="button" v-for="t in poolTags" :key="t.id" class="chip" :class="{active: (batchTagModal.tag_ids||[]).includes(t.id)}" :style="(batchTagModal.tag_ids||[]).includes(t.id)?{background:t.color,borderColor:t.color,color:'#fff'}:{}" @click="toggleModalTag('batchTagModal', t.id)">{{t.name}}</button>
+              <span v-if="!poolTags.length" class="muted">暂无标签，先去「标签分类」添加</span>
+            </div>
+          </div>
+          <div class="modal-foot">
+            <button type="button" class="ghost" @click="closeBatchTagModal">取消</button>
+            <button type="button" @click="saveBatchTags" :disabled="batchTagModal.saving">{{batchTagModal.saving?'保存中…':'保存'}}</button>
           </div>
         </div>
       </div>
@@ -1123,9 +1152,10 @@ const app = createApp({
     cosStatus:{enabled:false,bucket:'',region:'',prefix:''},  // 腾讯云 COS 连接状态
     cosBks:[], cosBusy:false,  // COS 云端备份列表 / 同步按钮 loading
     editRow:{code:'',qty:'',cost:'',note:'',saving:false},  // 可投池表格「整行编辑」状态(持仓/成本/备注)
-    editModal:{show:false, code:'', qty:'', cost:'', note:'', tag_id:'', saving:false, name:''},  // 可投池行编辑弹窗
-    addPoolModal:{show:false, code:'', note:'', tag_id:'', saving:false},  // 可投池新增弹窗
+    editModal:{show:false, code:'', qty:'', cost:'', note:'', tag_ids:[], saving:false, name:''},  // 可投池行编辑弹窗
+    addPoolModal:{show:false, code:'', note:'', tag_ids:[], saving:false},  // 可投池新增弹窗
     tagModal:{show:false, id:null, name:'', color:'#3b82f6', saving:false},  // 可投池标签管理弹窗
+    batchTagModal:{show:false, tag_ids:[], saving:false},  // 可投池批量标签设置弹窗
   }},
   computed:{
     // 距上次把备份下载到本机的天数(null=从未下载过),用于备份提醒
@@ -1370,22 +1400,22 @@ const app = createApp({
       await this.loadPool();
     },
     resetPoolFilter(){ this.poolFilter={q:'',note:'',tag:''}; this.poolPage=1; this.loadPool(); },
-    openAddPoolModal(){ this.addPoolModal={show:true, code:'', note:'', tag_id:'', saving:false}; },
-    closeAddPoolModal(){ this.addPoolModal={show:false, code:'', note:'', tag_id:'', saving:false}; },
+    openAddPoolModal(){ this.addPoolModal={show:true, code:'', note:'', tag_ids:[], saving:false}; },
+    closeAddPoolModal(){ this.addPoolModal={show:false, code:'', note:'', tag_ids:[], saving:false}; },
     async doAddPool(){
       if(this.addPoolModal.saving) return;
       const code = (this.addPoolModal.code||'').trim();
       if(!code){ alert('请输入股票代码或名称'); return; }
       this.addPoolModal.saving=true;
       try{
-        await this.addPool(code, this.addPoolModal.note, this.addPoolModal.tag_id||null);
+        await this.addPool(code, this.addPoolModal.note, this.addPoolModal.tag_ids||[]);
         this.closeAddPoolModal();
       }finally{ this.addPoolModal.saving=false; }
     },
     async loadRecommendations(){ const r=await API('/pool/recommendations'); this.recommendations=r; },
     async addRecToPool(code){ await API('/pool',{method:'POST',body:JSON.stringify({code})}); this.loadPool(); this.loadRecommendations(); },
     // —— 可投池表格「持仓/成本」整行编辑(点保存才提交,避免鼠标移动即误保存) ——
-    startEdit(p){ this.editModal={show:true, code:p.code, name:p.name, qty:(p.position_qty??''), cost:(p.cost_price??''), note:(p.note??''), tag_id:(p.tag_id??''), saving:false}; },
+    startEdit(p){ this.editModal={show:true, code:p.code, name:p.name, qty:(p.position_qty??''), cost:(p.cost_price??''), note:(p.note??''), tag_ids:(p.tag_ids||[]).slice(), saving:false}; },
     async saveRow(){
       if(this.editModal.saving) return;
       this.editModal.saving=true;
@@ -1397,17 +1427,20 @@ const app = createApp({
         if(this.editModal.cost!=='') qs.push('cost_price='+encodeURIComponent(c));
         const p=this.pool.find(x=>x.code===this.editModal.code);
         if(this.editModal.note!==(p?.note??'')) qs.push('note='+encodeURIComponent(this.editModal.note));
-        // 标签：空字符串/0 视为取消标签
-        const tagId = this.editModal.tag_id ? parseInt(this.editModal.tag_id) : 0;
-        if(tagId !== (p?.tag_id || 0)) qs.push('tag_id='+encodeURIComponent(tagId||''));
+        // 标签：多个逗号分隔，空字符串表示清空
+        const newIds = (this.editModal.tag_ids||[]).map(x=>parseInt(x));
+        const oldIds = (p?.tag_ids||[]).slice().sort();
+        if(JSON.stringify(newIds.slice().sort()) !== JSON.stringify(oldIds)){
+          qs.push('tag_ids='+encodeURIComponent(newIds.join(',')));
+        }
         if(!qs.length) throw new Error('没有可保存的内容');
         await API('/pool/'+this.editModal.code+'?'+qs.join('&'), {method:'PUT'});
         if(p){
           if(this.editModal.qty!=='') p.position_qty=q;
           if(this.editModal.cost!=='') p.cost_price=c;
           p.note = this.editModal.note;
-          p.tag_id = tagId || null;
-          p.tag = this.poolTags.find(t=>t.id===(tagId||0)) || null;
+          p.tag_ids = newIds;
+          p.tags = this.poolTags.filter(t=>newIds.includes(t.id));
         }
         this.cancelEdit();
       }catch(e){
@@ -1415,7 +1448,7 @@ const app = createApp({
         this.editModal.saving=false;
       }
     },
-    cancelEdit(){ this.editModal={show:false, code:'', name:'', qty:'', cost:'', note:'', tag_id:'', saving:false}; },
+    cancelEdit(){ this.editModal={show:false, code:'', name:'', qty:'', cost:'', note:'', tag_ids:[], saving:false}; },
     formatPass(v){
       if(Array.isArray(v)) return v.length ? v.length+'项' : '-';
       if(typeof v==='number') return v;
@@ -1425,7 +1458,7 @@ const app = createApp({
       if(Array.isArray(v) && v.length) return v.join('、');
       return '';
     },
-    async addPool(rawCode, note='', tagId=null){
+    async addPool(rawCode, note='', tagIds=[]){
       if(!rawCode) return;
       let code = rawCode.trim();
       if(!/^\d{6}$/.test(code)){
@@ -1433,7 +1466,8 @@ const app = createApp({
         if(res && res.length){ code = res[0].code; }
         else { alert('未找到证券：'+rawCode); return; }
       }
-      const r = await API('/pool',{method:'POST',body:JSON.stringify({code, note, tag_id: tagId})});
+      const ids = Array.isArray(tagIds) ? tagIds.filter(x=>x).map(x=>parseInt(x)) : [];
+      const r = await API('/pool',{method:'POST',body:JSON.stringify({code, note, tag_ids: ids})});
       if(r && r.detail){ alert(r.detail); return; }
       this.poolPage=1; this.loadPool();
     },
@@ -1477,6 +1511,33 @@ const app = createApp({
       setTimeout(()=>{ this.poolMsg=''; }, 3000);
       this.poolSelected=[];
       this.loadPool();
+    },
+    openBatchTagModal(){ this.batchTagModal={show:true, tag_ids:[], saving:false}; },
+    closeBatchTagModal(){ this.batchTagModal={show:false, tag_ids:[], saving:false}; },
+    toggleModalTag(modalKey, tid){
+      const arr = this[modalKey].tag_ids || [];
+      const idx = arr.indexOf(tid);
+      if(idx>=0) arr.splice(idx,1);
+      else arr.push(tid);
+    },
+    async saveBatchTags(){
+      if(this.batchTagModal.saving) return;
+      const codes = this.poolSelected.slice();
+      if(!codes.length){ alert('请先勾选要设置标签的记录'); return; }
+      this.batchTagModal.saving=true;
+      try{
+        const ids = (this.batchTagModal.tag_ids||[]).map(x=>parseInt(x));
+        const r = await API('/pool/batch-tags',{method:'POST',body:JSON.stringify({codes, tag_ids: ids})});
+        if(r && r.ok){
+          this.poolMsg = `已为 ${r.updated} 只股票设置标签`;
+          this.closeBatchTagModal();
+          this.poolSelected=[];
+          this.loadPool();
+        } else {
+          alert('设置失败：'+(r.detail||'请重试'));
+        }
+      }catch(e){ alert('设置失败：'+(e.message||'请重试')); }
+      finally{ this.batchTagModal.saving=false; }
     },
     async restorePool(p){
       const r = await API('/pool/'+p.code+'/restore', {method:'POST'});

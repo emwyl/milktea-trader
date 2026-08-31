@@ -71,11 +71,16 @@ class PoolIn(BaseModel):
     position_qty: Optional[float] = None
     position_pct: Optional[float] = None
     scheme_type: str = "custom"
-    tag_id: Optional[int] = None  # 可选标签
+    tag_ids: list[int] = []  # 可选标签(支持多选)
 
 
 class PoolBatchDeleteIn(BaseModel):
     codes: list[str]
+
+
+class PoolBatchTagsIn(BaseModel):
+    codes: list[str]
+    tag_ids: list[int] = []
 
 
 class TagIn(BaseModel):
@@ -102,8 +107,8 @@ class PoolOut(BaseModel):
     scheme_type: str
     status: str
     added_at: str
-    tag_id: Optional[int] = None
-    tag: Optional[dict] = None  # {id,name,color}
+    tag_ids: list[int] = []
+    tags: list[dict] = []  # [{id,name,color}, ...]
 
 
 class TConfigIn(BaseModel):

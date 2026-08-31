@@ -8,8 +8,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.db import SessionLocal, get_db
 from app.deps import get_current_user
-from app.models import PoolTag, SchemeType, Stock, TrackedPool, User, UserProfile, _now
-from app.schemas import PoolBatchDeleteIn, PoolIn, PoolOut, TagIn, TagOut
+from app.models import PoolTag, SchemeType, Stock, TrackedPool, TrackedPoolTag, User, UserProfile, _now
+from app.schemas import PoolBatchDeleteIn, PoolBatchTagsIn, PoolIn, PoolOut, TagIn, TagOut
 from app.services.data_fetcher import ensure_stock_name, get_pool_track
 from app.services.preference import match_scheme
 from app.services.screener import get_screener
@@ -33,17 +33,14 @@ def _industry(code: str, db) -> str:
 
 
 def _to_out(p: TrackedPool, db) -> PoolOut:
-    tag = None
-    if p.tag_id:
-        t = db.query(PoolTag).filter(PoolTag.id == p.tag_id).first()
-        if t:
-            tag = {"id": t.id, "name": t.name, "color": t.color}
+    tags = [{"id": t.id, "name": t.name, "color": t.color} for t in p.tags]
+    tag_ids = [t.id for t in p.tags]
     return PoolOut(id=p.id, code=p.code, name=_name(p.code, db), industry=_industry(p.code, db),
                    note=p.note,
                    cost_price=p.cost_price, position_qty=p.position_qty,
                    position_pct=p.position_pct,
                    scheme_type=p.scheme_type, status=p.status, added_at=str(p.added_at),
-                   tag_id=p.tag_id, tag=tag)
+                   tag_ids=tag_ids, tags=tags)
 
 
 def _user_pool_q(db, user_id: int):
@@ -82,7 +79,7 @@ def list_pool(
     if note:
         query = query.filter(TrackedPool.note.like(f"%{note}%"))
 
-    # 标签筛选：支持单个 ID 或多个逗号分隔 ID
+    # 标签筛选：支持单个 ID 或多个逗号分隔 ID（多对多关联表）
     tag = (tag or "").strip()
     if tag:
         try:
@@ -90,7 +87,9 @@ def list_pool(
         except ValueError:
             raise HTTPException(status_code=400, detail="标签参数必须是数字 ID")
         if tag_ids:
-            query = query.filter(TrackedPool.tag_id.in_(tag_ids))
+            query = (query.join(TrackedPoolTag, TrackedPoolTag.pool_id == TrackedPool.id)
+                          .filter(TrackedPoolTag.tag_id.in_(tag_ids))
+                          .distinct())
 
     rows = query.order_by(TrackedPool.id).all()
     # 同一 code 重复时(如历史添加/移除循环),优先保留「有持仓」的那条
@@ -240,10 +239,17 @@ def add_to_pool(body: PoolIn, db: SessionLocal = Depends(get_db), user: User = D
         raise HTTPException(400, "已在可投池")
     p = TrackedPool(user_id=user.id, code=code, note=body.note, cost_price=body.cost_price,
                     position_qty=body.position_qty, position_pct=body.position_pct,
-                    scheme_type=body.scheme_type, tag_id=body.tag_id)
+                    scheme_type=body.scheme_type)
     db.add(p)
     db.commit()
     db.refresh(p)
+    # 绑定标签（多对多）
+    if body.tag_ids:
+        valid_tags = db.query(PoolTag).filter(PoolTag.user_id == user.id,
+                                               PoolTag.id.in_(body.tag_ids)).all()
+        p.tags.extend(valid_tags)
+        db.commit()
+        db.refresh(p)
     return _to_out(p, db)
 
 
@@ -292,6 +298,28 @@ def batch_remove(body: PoolBatchDeleteIn, db: SessionLocal = Depends(get_db), us
     return {"ok": True, "removed": len(removed), "hard_deleted": hard_codes}
 
 
+@router.post("/batch-tags")
+def batch_set_tags(body: PoolBatchTagsIn, db: SessionLocal = Depends(get_db), user: User = Depends(get_current_user)):
+    """批量为选中的可投池设置标签（覆盖式）。
+    tag_ids 为空数组时清空所选股票的标签。
+    """
+    codes = set(body.codes or [])
+    if not codes:
+        raise HTTPException(status_code=400, detail="请先选择股票")
+    # 只处理当前用户可见范围内的记录
+    rows = _user_pool_q(db, user.id).filter(TrackedPool.code.in_(codes)).all()
+    if not rows:
+        raise HTTPException(status_code=404, detail="未找到可设置标签的股票")
+    valid_tags = []
+    if body.tag_ids:
+        valid_tags = db.query(PoolTag).filter(PoolTag.user_id == user.id,
+                                               PoolTag.id.in_(body.tag_ids)).all()
+    for p in rows:
+        p.tags = list(valid_tags)
+    db.commit()
+    return {"ok": True, "updated": len(rows)}
+
+
 @router.post("/{code}/restore")
 def restore(code: str, db: SessionLocal = Depends(get_db), user: User = Depends(get_current_user)):
     """恢复 archive 记录回 active(可投池)。若该 code 已有 active 记录,把持仓/成本/备注合并过去,再删除 archive 重复项。"""
@@ -323,7 +351,7 @@ def restore(code: str, db: SessionLocal = Depends(get_db), user: User = Depends(
 @router.put("/{code}")
 def update_pool(code: str, note: str = "", cost_price: float | None = None,
                 position_qty: float | None = None, position_pct: float | None = None,
-                tag_id: int | None = Query(None, description="标签ID,不传或传空则取消标签"),
+                tag_ids: str = Query("", description="标签ID,多个逗号分隔,传空则清空,不传保持原标签"),
                 db: SessionLocal = Depends(get_db), user: User = Depends(get_current_user)):
     # 复用 list_pool 的可见范围(active + archive 且有持仓),避免对 archive 持仓更新时
     # 查不到而「新建一条重复记录」——那是之前造成 id=6/id=7 重复的根因。
@@ -346,9 +374,22 @@ def update_pool(code: str, note: str = "", cost_price: float | None = None,
         exists.position_qty = position_qty
     if position_pct is not None:
         exists.position_pct = position_pct
-    if tag_id is not None:
-        # 空字符串/0 都视为取消标签
-        exists.tag_id = tag_id if tag_id else None
+    if tag_ids is not None:
+        # 空字符串/0 都视为清空标签；否则按逗号解析后替换
+        raw = (tag_ids or "").strip()
+        if raw == "":
+            new_ids = []
+        else:
+            try:
+                new_ids = [int(x) for x in raw.split(",") if x.strip()]
+            except ValueError:
+                raise HTTPException(status_code=400, detail="标签参数必须是数字 ID")
+        valid_tags = db.query(PoolTag).filter(PoolTag.user_id == user.id,
+                                               PoolTag.id.in_(new_ids)).all() if new_ids else []
+        exists.tags = list(valid_tags)
+    db.commit()
+    db.refresh(exists)
+    return _to_out(exists, db)
 @router.get("/tags")
 def list_tags(db: SessionLocal = Depends(get_db), user: User = Depends(get_current_user)):
     """列出当前用户的可投池自定义标签。"""
@@ -390,11 +431,11 @@ def update_tag(tid: int, body: TagIn, db: SessionLocal = Depends(get_db), user: 
 
 @router.delete("/tags/{tid}")
 def delete_tag(tid: int, db: SessionLocal = Depends(get_db), user: User = Depends(get_current_user)):
-    """删除标签；被引用的 tracked_pool.tag_id 会被置空。"""
+    """删除标签；同时清理 tracked_pool_tags 关联记录。"""
     t = db.query(PoolTag).filter(PoolTag.id == tid, PoolTag.user_id == user.id).first()
     if not t:
         raise HTTPException(status_code=404, detail="标签不存在")
-    db.query(TrackedPool).filter(TrackedPool.user_id == user.id, TrackedPool.tag_id == tid).update({"tag_id": None}, synchronize_session=False)
+    db.query(TrackedPoolTag).filter(TrackedPoolTag.tag_id == tid).delete(synchronize_session=False)
     db.delete(t)
     db.commit()
     return {"ok": True}

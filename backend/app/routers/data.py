@@ -20,7 +20,8 @@ from app.db import SessionLocal, get_db
 from app.deps import get_current_user
 from app.models import (
     User, _now,
-    TrackedPool, UserProfile, NotifyConfig, UserSetting, PositionRule, Screen, ScreenResult,
+    TrackedPool, TrackedPoolTag, PoolTag,
+    UserProfile, NotifyConfig, UserSetting, PositionRule, Screen, ScreenResult,
 )
 from app.services import cos_backup
 
@@ -109,7 +110,15 @@ def _export_user(db, user: User) -> dict:
     data: dict = {}
     for m in _SIMPLE_TABLES:
         rows = db.query(m).filter(m.user_id == user.id).all()
-        data[m.__tablename__] = [_row_to_dict(r) for r in rows]
+        if m is TrackedPool:
+            # 多对多标签：保留标签 ID 列表，便于导入重建关联
+            data[m.__tablename__] = [{**_row_to_dict(r), "tag_ids": [t.id for t in r.tags]} for r in rows]
+        else:
+            data[m.__tablename__] = [_row_to_dict(r) for r in rows]
+
+    # 自定义标签表单独导出（整库恢复时需要先恢复标签，再做 ID 映射）
+    data["pool_tags"] = [{"id": t.id, "name": t.name, "color": t.color, "created_at": t.created_at}
+                         for t in db.query(PoolTag).filter(PoolTag.user_id == user.id).all()]
 
     # screens 及其结果需重新关联 screen_id
     screens = db.query(Screen).filter(Screen.user_id == user.id).all()
@@ -164,18 +173,44 @@ def _replace_user_data(db, user: User, data: dict) -> dict:
     if my_screen_ids:
         db.query(ScreenResult).filter(ScreenResult.screen_id.in_(my_screen_ids)).delete(synchronize_session=False)
     db.query(Screen).filter(Screen.user_id == user.id).delete(synchronize_session=False)
+    # 清空并重建 pool_tags（整库恢复时按用户隔离，单用户导入直接覆盖）
+    db.query(PoolTag).filter(PoolTag.user_id == user.id).delete(synchronize_session=False)
 
     counts: dict = {}
+
+    # 先恢复 pool_tags，建立旧 ID -> 新 ID 映射
+    tag_old_to_new: dict[int, int] = {}
+    for td in (data.get("pool_tags", []) or []):
+        if not isinstance(td, dict):
+            continue
+        t = PoolTag(user_id=user.id, name=td.get("name", ""), color=td.get("color", "#3b82f6"),
+                    created_at=td.get("created_at") or _now())
+        db.add(t)
+        db.flush()
+        old_id = td.get("id")
+        if old_id is not None:
+            tag_old_to_new[int(old_id)] = t.id
+
     for m in _SIMPLE_TABLES:
         cols = {c.name for c in m.__table__.columns}
         rows = data.get(m.__tablename__, []) or []
         for rd in rows:
             if not isinstance(rd, dict):
                 continue
+            tag_ids = rd.get("tag_ids") if m is TrackedPool else None
             rd = {k: v for k, v in dict(rd).items() if k in cols and k != "id"}
             rd["user_id"] = user.id
-            db.add(m(**rd))
+            new_row = m(**rd)
+            db.add(new_row)
+            db.flush()
+            # 重建多对多标签关联
+            if m is TrackedPool and tag_ids:
+                for old_tid in tag_ids:
+                    new_tid = tag_old_to_new.get(int(old_tid))
+                    if new_tid is not None:
+                        db.add(TrackedPoolTag(pool_id=new_row.id, tag_id=new_tid))
         counts[m.__tablename__] = len(rows)
+    counts["pool_tags"] = len(data.get("pool_tags", []) or [])
 
     # screens + results（重新关联 screen_id）
     old_to_new = {}
