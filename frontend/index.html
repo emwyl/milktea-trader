@@ -452,7 +452,7 @@
               <button class="ghost btn-sm" :disabled="!poolSelected.length" @click="openBatchTagModal">标签设置</button>
               <button class="ghost btn-sm" @click="openTagManager">标签分类</button>
             </div>
-            <div class="row" style="gap:8px;margin:0">
+            <div class="row" style="gap:8px;margin:0;flex-wrap:nowrap">
               <input v-model="poolFilter.q" placeholder="证券代码/名称" style="max-width:150px" />
               <select v-model="poolFilter.tag" style="max-width:130px">
                 <option value="">全部标签</option>
