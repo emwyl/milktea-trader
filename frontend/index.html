@@ -149,6 +149,9 @@
   .tracktbl tbody tr:hover td:last-child{background:#f8fafc}
   .tracktbl tbody tr.selected-row td:last-child{background:#eff6ff}
   .tracktbl .pill{padding:1px 6px;font-size:11px}
+  /* 账号管理表格：创建时间列加宽，避免日期+时分秒被截断 */
+  .tracktbl.admin-user-tbl th:nth-child(7),.tracktbl.admin-user-tbl td:nth-child(7){width:150px;min-width:150px;max-width:150px;left:510px}
+  .tracktbl.admin-user-tbl thead th:last-child,.tracktbl.admin-user-tbl tbody td:last-child{left:auto}
   .tag-list{display:inline-flex;flex-wrap:wrap;gap:4px;max-width:120px}
   .tag-chips{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0}
   .chip{padding:6px 12px;border:1px solid #d1d5db;border-radius:16px;background:#fff;cursor:pointer;font-size:13px;color:#374151;transition:all .15s}
@@ -785,7 +788,7 @@
         </div>
         <div class="card" v-if="me.role==='admin'" style="border-left:4px solid var(--danger)">
           <h3 style="margin-top:0">账号管理（admin）</h3>
-          <table class="tracktbl">
+          <table class="tracktbl admin-user-tbl">
             <thead><tr><th>ID</th><th>用户名</th><th>角色</th><th>游客</th><th>状态</th><th>IP地址</th><th>创建时间</th><th>操作</th></tr></thead>
             <tbody>
               <tr v-for="u in users" :key="u.id">
