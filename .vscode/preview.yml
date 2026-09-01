@@ -1,0 +1,11 @@
+# Cloud Studio 预览配置
+# 作用：打开工作空间时自动执行 run 命令启动后端，并自动识别 8003 端口、自动打开预览/生成公网链接。
+# 这样你只需「打开工作空间」即可，不用再手动开终端敲命令、也不用点端口卡片。
+autoOpen: true
+apps:
+  - port: 8003
+    run: bash start-cloudstudio.sh
+    root: ./
+    name: 奶茶交易分析
+    autoOpen: true
+    mainPort: true
