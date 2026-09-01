@@ -251,60 +251,161 @@ def position_risk_plan(position: dict, price: float, support: float, pressure: f
 # ============ 分区6：操作建议 ============
 def _advice(realtime: dict, support: float, pressure: float, vol_ratio: float,
             change_pct: float, avg_price: float, forbid_new: bool, risk_note: str,
-            position_risk: dict | None = None, has_position: bool = False) -> dict:
-    """根据全部指标联动，输出操作建议。优先级：高抛 > 低吸 > 中间震荡可做T > 观望。
-    风控约束：若 forbid_new（缩量阴跌/量比过低/特殊备注禁加仓），直接判为观望。"""
+            position_risk: dict | None = None, has_position: bool = False,
+            position: dict | None = None,
+            box_text: str = "", ma5_signal: str = "", vp_text: str = "",
+            vote: dict | None = None, sector: dict | None = None,
+            intraday_summary: str = "", ps_eval_text: str = "") -> dict:
+    """根据全部指标联动，输出结构化操作建议。
+
+    输出包含：
+    - key/title：操作主结论标识与标题
+    - summary：一句话综合结论
+    - points：按维度拆解的 1/2/3 分点说明，便于用户理解差异原因
+    - text：兼容旧版的完整文本（保留）
+
+    优先级：持仓止盈减仓 > 风控硬拦 > 高抛 > 低吸 > 中间震荡可做T > 观望。
+    """
     price = realtime["price"]
     high = realtime.get("high", price)
     low = realtime.get("low", price)
     turnover = realtime.get("turnover", 0)
-    # 日内振幅：反映当天波动空间，做T需要足够差价
     amplitude = (high - low) / price * 100 if price > 0 else 0.0
     near_up = pressure > support and price >= pressure - (pressure - support) * 0.15
     near_low = pressure > support and price <= support + (pressure - support) * 0.15
     in_middle = pressure > support and not near_up and not near_low
 
-    # —— 持仓感知：已有盈利持仓触及止盈位 → 优先建议减仓落袋 ——
-    # 做T 的本质是“不净增仓位”，止盈减仓与 forbid_new（禁开新仓）并不冲突：
-    # 当持仓已达止盈位，应优先提示减仓锁定利润，而不是鼓励继续做T加仓放大风险敞口。
-    # 因此该分支优先于 forbid_new 的风控硬拦，确保“止盈提醒”不会被一刀切的观望压住。
+    vote = vote or {"overall": "数据不足", "bull": 0, "bear": 0, "neutral": 0}
+    sector = sector or {"has": False, "text": "无板块数据"}
+
+    # ---- 先确定主结论（保持原有优先级） ----
+    main_key, main_title, main_summary, main_text = "wait", "【观望，不操作】", "", ""
+
+    # 1) 持仓感知：已有盈利持仓触及止盈位 → 优先建议减仓落袋
     if has_position and position_risk and position_risk.get("has"):
         if (position_risk.get("risk_label") == "注意止盈"
                 and price >= position_risk.get("take_profit", 0)):
-            return {"key": "reduce", "title": "【建议分批止盈/减仓】",
-                    "text": (f"持仓已达止盈位 {position_risk['take_profit']}（成本 +10% 或箱体压力位），"
-                             f"建议分批减仓锁定利润：先减一部分，剩余按移动止盈 -{_MOVE_STOP_PCT*100:.0f}% 保护；"
-                             f"日内可在压力位高抛、回踩均价低吸做T 摊薄，但不净加仓。")}
+            main_key, main_title = "reduce", "【建议分批止盈/减仓】"
+            main_summary = ("持仓已达止盈位，建议先分批减仓锁定利润；"
+                            "日内若冲高至压力位可高抛T仓，但不再净加仓。")
+            main_text = (f"持仓已达止盈位 {position_risk['take_profit']}（成本 +10% 或箱体压力位），"
+                         f"建议分批减仓锁定利润：先减一部分，剩余按移动止盈 -{_MOVE_STOP_PCT*100:.0f}% 保护；"
+                         f"日内可在压力位高抛、回踩均价低吸做T 摊薄，但不净加仓。")
 
-    # 风控硬拦：禁止开新T仓时，任何“低吸/高抛开仓”都不给，统一观望
-    if forbid_new:
-        return {"key": "wait", "title": "【观望，不操作】",
-                "text": "当前存在风险信号（缩量阴跌/量比过低/特殊风控），不开T仓，等待企稳。"}
+    # 2) 风控硬拦
+    if not main_text and forbid_new:
+        main_key, main_title = "wait", "【观望，不操作】"
+        main_summary = "当前存在风险信号，不建议开新T仓，等待企稳后再评估。"
+        main_text = "当前存在风险信号（缩量阴跌/量比过低/特殊风控），不开T仓，等待企稳。"
 
-    # 1) 等待高抛（卖出已有T仓）：抵达压力位 + 拉升缩量（上涨动能不足）
-    if near_up and change_pct > 0 and vol_ratio < 0.8:
-        return {"key": "sell", "title": "【等待高抛机会（卖出T仓）】",
-                "text": "到达压力区间，上涨无量，持有T仓可分批卖出止盈。"}
+    # 3) 等待高抛（卖出已有T仓）
+    if not main_text and near_up and change_pct > 0 and vol_ratio < 0.8:
+        main_key, main_title = "sell", "【等待高抛机会（卖出T仓）】"
+        main_summary = "价格接近箱体上沿且上涨无量，持有T仓可分批卖出止盈。"
+        main_text = "到达压力区间，上涨无量，持有T仓可分批卖出止盈。"
 
-    # 2) 等待低吸（小仓T）：回踩箱体支撑 + 量能萎缩止跌
-    if near_low and vol_ratio < 1.2 and change_pct >= -0.5:
-        return {"key": "buy", "title": "【等待低吸机会（小仓T）】",
-                "text": "到达支撑区间，等待放量站稳分时均价，极小仓位试做T，提前设置止损。"}
+    # 4) 等待低吸（小仓T）
+    if not main_text and near_low and vol_ratio < 1.2 and change_pct >= -0.5:
+        main_key, main_title = "buy", "【等待低吸机会（小仓T）】"
+        main_summary = "价格接近箱体下沿，等待放量站稳后可极小仓位试做T。"
+        main_text = "到达支撑区间，等待放量站稳分时均价，极小仓位试做T，提前设置止损。"
 
-    # 3) 箱体中间震荡可做T：不在上下沿，但日内波动适中、量能配合、无极端单边
-    #    条件：振幅 2.5%~8%、量比 0.8~2.5、换手 2%~10%、涨跌幅 -1%~3%
-    if (in_middle and 2.5 <= amplitude <= 8.0 and 0.5 <= vol_ratio <= 2.5
-            and 2.0 <= turnover <= 10.0 and -1.0 <= change_pct <= 3.0):
-        return {"key": "t", "title": "【可日内高抛低吸】",
-                "text": "箱体中间区域，日内波动适中、量能配合，可在分时均价附近小仓位做T，严格止损。"}
+    # 5) 箱体中间震荡可做T
+    if not main_text and (in_middle and 2.5 <= amplitude <= 8.0 and 0.5 <= vol_ratio <= 2.5
+                          and 2.0 <= turnover <= 10.0 and -1.0 <= change_pct <= 3.0):
+        main_key, main_title = "t", "【可日内高抛低吸】"
+        main_summary = "箱体中间区域，日内波动适中，可在分时均价附近小仓位做T。"
+        main_text = "箱体中间区域，日内波动适中、量能配合，可在分时均价附近小仓位做T，严格止损。"
 
-    # 4) 默认观望：日内弱势+缩量，无企稳信号
-    if price < avg_price and vol_ratio < 0.8:
-        return {"key": "wait", "title": "【观望，不操作】",
-                "text": "日内弱势，缩量无承接，等待企稳信号，不开T仓。"}
+    # 6) 日内弱势+缩量
+    if not main_text and price < avg_price and vol_ratio < 0.8:
+        main_key, main_title = "wait", "【观望，不操作】"
+        main_summary = "日内弱势且缩量无承接，建议等待企稳信号。"
+        main_text = "日内弱势，缩量无承接，等待企稳信号，不开T仓。"
 
-    return {"key": "wait", "title": "【观望，不操作】",
-            "text": "无明显做T点位，建议观望，等待箱体上下沿信号。"}
+    # 7) 默认观望
+    if not main_text:
+        main_key, main_title = "wait", "【观望，不操作】"
+        main_summary = "无明显做T点位，建议观望，等待箱体上下沿信号。"
+        main_text = "无明显做T点位，建议观望，等待箱体上下沿信号。"
+
+    # ---- 按维度生成分点说明，解释差异原因 ----
+    points = []
+
+    # 持仓维度
+    position = position or {"has": False}
+    if has_position and position_risk and position_risk.get("has"):
+        cost = position.get("cost_price") or 0.0
+        pnl_pct = (price - cost) / cost * 100 if cost else 0.0
+        if position_risk.get("risk_label") == "注意止盈":
+            points.append({
+                "dim": "持仓风控",
+                "text": (f"当前价 {price} 已达到止盈位 {position_risk.get('take_profit')}（成本 {cost:.2f}，"
+                         f"浮盈约 {pnl_pct:.1f}%）。盈利持仓优先落袋，分批止盈后再用移动止盈保护剩余仓位。")
+            })
+        elif position_risk.get("risk_label") in ("高风险", "警惕"):
+            points.append({
+                "dim": "持仓风控",
+                "text": (f"当前浮亏/风控状态：{position_risk.get('risk_label')}。{position_risk.get('plan', '')}"
+                         f"{position_risk.get('note', '')}")
+            })
+        else:
+            points.append({
+                "dim": "持仓风控",
+                "text": (f"持有成本 {cost:.2f}，当前价 {price}，浮盈/亏约 {pnl_pct:.1f}%。"
+                         f"止损位 {position_risk.get('stop_loss')}，止盈位 {position_risk.get('take_profit')}，双线跟踪。")
+            })
+    else:
+        points.append({"dim": "持仓风控", "text": "未填写持仓成本/股数，操作建议仅基于盘面指标，不含个人盈亏约束。"})
+
+    # 箱体维度
+    points.append({
+        "dim": "箱体位置",
+        "text": box_text or (f"箱体上沿 {pressure} / 下沿 {support}，当前价 {price}，"
+                             f"{'靠近上沿' if near_up else ('靠近下沿' if near_low else '位于中间')}。")
+    })
+
+    # 量能维度
+    points.append({
+        "dim": "量能信号",
+        "text": (f"量比 {vol_ratio:.2f}（{'成交清淡' if vol_ratio < 1 else '正常/放量'}），"
+                 f"换手率 {turnover:.2f}%（{'流动性合适，适合做T' if 3 <= turnover <= 10 else '流动性偏弱/偏高'}）。"
+                 f"当前量能不支持追涨，更适合高抛或观望。")
+    })
+
+    # 短线维度
+    points.append({
+        "dim": "短线信号",
+        "text": f"{ma5_signal}；{vp_text}。短期趋势{'偏强' if '偏强' in ma5_signal else ('偏弱' if '偏弱' in ma5_signal else '震荡')}，但尚未形成明确单边信号。"
+    })
+
+    # 分时维度
+    if intraday_summary:
+        points.append({"dim": "分时走势", "text": intraday_summary})
+
+    # 抛压/承接评估
+    if ps_eval_text:
+        points.append({"dim": "抛压/承接", "text": ps_eval_text})
+
+    # 技术投票维度
+    points.append({
+        "dim": "技术投票",
+        "text": (f"MACD/KDJ/布林综合结论：{vote.get('overall', '数据不足')}"
+                 f"（看多 {vote.get('bull', 0)} / 看空 {vote.get('bear', 0)} / 中性 {vote.get('neutral', 0)}）。"
+                 f"日线趋势{'向好' if vote.get('overall') == '偏多' else ('向淡' if vote.get('overall') == '偏空' else '不明')}，但需服从短期止盈/风控纪律。")
+    })
+
+    # 板块维度
+    if sector.get("has"):
+        points.append({"dim": "板块强度", "text": sector.get("text", "")})
+
+    return {
+        "key": main_key,
+        "title": main_title,
+        "summary": main_summary,
+        "text": main_text,
+        "points": points,
+    }
 
 
 # ============ 做T增强：置信空间 / 分时 / 次日 / 三维投票 / 板块 ============
@@ -599,12 +700,6 @@ def analyze_t(code: str, db) -> dict:
     # —— 分区1：状态标签 ——
     intraday_strong = rt["price"] > rt["avg_price"]  # 现价>分时均价=偏强
 
-    # —— 分区6：建议 ——
-    advice = _advice(rt, custom_support if custom_support else support,
-                     custom_pressure if custom_pressure else pressure,
-                     rt["vol_ratio"], rt["change_pct"], rt["avg_price"], forbid, risk_note,
-                     position_risk=position_risk, has_position=position["has"])
-
     # —— 分区7：做T增强（P0/P1/P2 置信空间 + 分时解读 + 次日预案 + 三维投票 + 板块强度）——
     eff_support = custom_support if custom_support else support
     eff_pressure = custom_pressure if custom_pressure else pressure
@@ -627,6 +722,23 @@ def analyze_t(code: str, db) -> dict:
         vote = {"votes": [], "bull": 0, "bear": 0, "neutral": 0,
                 "overall": "数据不足", "strength": 0}
     sector = _sector_strength(industry)
+
+    # —— 分区6：建议 ——
+    # 把分区2/3/4/7 的关键文本传入，让建议能按维度拆解说明差异原因
+    advice = _advice(
+        rt,
+        custom_support if custom_support else support,
+        custom_pressure if custom_pressure else pressure,
+        rt["vol_ratio"], rt["change_pct"], rt["avg_price"], forbid, risk_note,
+        position_risk=position_risk, has_position=position["has"], position=position,
+        box_text=box_text,
+        ma5_signal=_ma5_signal(rt["price"], ma5),
+        vp_text=vp["text"],
+        vote=vote,
+        sector=sector,
+        intraday_summary=intraday.get("summary", ""),
+        ps_eval_text=ps_eval.get("text", ""),
+    )
     enhance = {
         "atr": atr,
         "atr_pct": round(atr / rt["price"] * 100, 2) if rt["price"] else 0.0,

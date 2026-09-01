@@ -965,11 +965,6 @@
             </div>
           </div>
 
-          <!-- 分区6：参考 -->
-          <div class="card" style="border-left:4px solid var(--tea)"><h3 style="margin-top:0">操作参考<span class="dtag pred">参考</span></h3>
-            <div class="advice" style="font-size:15px"><b>{{t.data.section6.title}}</b><br>{{t.data.section6.text}}</div>
-          </div>
-
           <!-- 分区7a：盘间三档置信空间（P0/P1/P2） -->
           <div v-if="enh" class="card" style="border-left:4px solid #6d28d9">
             <h3 style="margin-top:0">盘间三档置信空间 · 高抛/低吸参考价<span class="dtag pred">参考</span>
@@ -1041,6 +1036,25 @@
             <div class="kv" style="margin-top:4px">
               <span style="flex:0 0 auto">板块强度<span class="dtag pred">参考</span></span>
               <b style="max-width:72%;text-align:right;font-weight:500">{{enh.sector.text}}</b>
+            </div>
+          </div>
+
+          <!-- 分区6：操作参考 / 综合结论（基于全部指标统一输出，放在最底部） -->
+          <div class="card" style="border-left:4px solid var(--tea); background:linear-gradient(180deg,#f8fafc,#fff)">
+            <h3 style="margin-top:0">操作参考<span class="dtag pred">综合结论</span></h3>
+            <div class="advice" style="font-size:15px; background:#fff; border:1px solid #dbeafe;">
+              <b style="font-size:16px">{{t.data.section6.title}}</b>
+              <p style="margin:8px 0 0 0; line-height:1.6">{{t.data.section6.summary}}</p>
+            </div>
+            <div style="margin-top:12px">
+              <div style="font-weight:600; margin-bottom:8px; color:#374151">各维度判断依据：</div>
+              <div v-for="(p, idx) in (t.data.section6.points || [])" :key="idx" style="display:flex; gap:10px; margin-bottom:8px; align-items:flex-start; line-height:1.55">
+                <span style="flex:0 0 auto; min-width:26px; height:26px; display:flex; align-items:center; justify-content:center; background:#e0f2fe; color:#0369a1; border-radius:50%; font-size:13px; font-weight:700">{{idx+1}}</span>
+                <div>
+                  <b style="color:#1d4ed8">{{p.dim}}：</b>
+                  <span style="color:#374151">{{p.text}}</span>
+                </div>
+              </div>
             </div>
           </div>
 
