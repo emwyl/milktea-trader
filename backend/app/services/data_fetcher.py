@@ -796,9 +796,10 @@ def _calc_pass_scores(code: str, out: dict, quotes: list[Quote], spot: dict | No
     last_q = quotes[-1]
     volumes = [q.volume for q in quotes if q.volume]
     amounts = [q.amount for q in quotes if q.amount]
-    # 若日线无成交额(如腾讯 kline 老缓存),用 成交量*收盘价 估算,保证日均成交额可显示
+    # 若日线无成交额(如腾讯 kline 不含成交额),用 成交量*收盘价*100 估算。
+    # 腾讯/东财日线成交量单位是「手」(1手=100股),因此必须乘100才能到「股×元=元」。
     if not amounts or sum(amounts) == 0:
-        amounts = [q.volume * q.close for q in quotes if q.volume and q.close]
+        amounts = [q.volume * q.close * 100 for q in quotes if q.volume and q.close]
     highs = [q.high for q in quotes if q.high]
     lows = [q.low for q in quotes if q.low]
     price = out.get("price") or closes[-1]
