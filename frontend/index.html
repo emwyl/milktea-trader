@@ -993,32 +993,37 @@
             </div>
           </div>
 
-          <!-- 分区7b：分时走势解读 + Canvas 分时图 -->
-          <div v-if="enh" class="card">
-            <h3 style="margin-top:0">分时走势解读<span class="dtag live">实时</span></h3>
-            <div v-if="enh.intraday.ok">
-              <div class="row" style="margin-bottom:8px">
-                <span class="tag" v-for="tg in enh.intraday.tags" :key="tg">{{tg}}</span>
-              </div>
-              <canvas id="intrachart" width="1040" height="240"></canvas>
-              <div class="row muted" style="margin-top:6px">
-                <span style="color:#2563eb;font-weight:600">━ 价格</span>
-                <span style="color:#d97706;font-weight:600">━ 均价(VWAP)</span>
-                <span>运行均价 {{enh.intraday.avg_price}}</span>
-                <span>偏离均价 {{enh.intraday.deviation}}%</span>
-                <span>均价斜率 {{enh.intraday.vwap_slope}}%</span>
-                <span>采样 {{enh.intraday.prices.length}} 分钟</span>
-              </div>
-              <div class="advice" style="margin-top:8px">{{enh.intraday.summary}}</div>
-            </div>
-            <div v-else class="muted">{{enh.intraday.summary}}</div>
-          </div>
+          <!-- 分区7b：走势分析（分时 + 日线 合并为一个卡片） -->
+          <div v-if="enh || ext.data" class="card">
+            <h3 style="margin-top:0">走势分析<span class="dtag live">实时</span></h3>
 
-          <!-- 分区7b2：日线走势(收盘) -->
-          <div class="card" v-if="ext.data">
-            <h3 style="margin-top:0">日线走势(收盘)</h3>
-            <canvas id="extchart" width="1040" height="240"></canvas>
-            <p class="muted" style="margin-top:6px">注:演示为日线,真实行情接入后自动更新</p>
+            <!-- 上：分时走势 -->
+            <div v-if="enh">
+              <h4 style="margin:0 0 6px;font-size:14px;color:#374151">分时走势（今日）</h4>
+              <div v-if="enh.intraday.ok">
+                <div class="row" style="margin-bottom:8px">
+                  <span class="tag" v-for="tg in enh.intraday.tags" :key="tg">{{tg}}</span>
+                </div>
+                <canvas id="intrachart" width="1040" height="240"></canvas>
+                <div class="row muted" style="margin-top:6px">
+                  <span style="color:#2563eb;font-weight:600">━ 价格</span>
+                  <span style="color:#d97706;font-weight:600">━ 均价(VWAP)</span>
+                  <span>运行均价 {{enh.intraday.avg_price}}</span>
+                  <span>偏离均价 {{enh.intraday.deviation}}%</span>
+                  <span>均价斜率 {{enh.intraday.vwap_slope}}%</span>
+                  <span>采样 {{enh.intraday.prices.length}} 分钟</span>
+                </div>
+                <div class="advice" style="margin-top:8px">{{enh.intraday.summary}}</div>
+              </div>
+              <div v-else class="muted">{{enh.intraday.summary}}</div>
+            </div>
+
+            <!-- 下：日线走势 -->
+            <div v-if="ext.data" style="margin-top:14px;border-top:1px dashed #e5e7eb;padding-top:12px">
+              <h4 style="margin:0 0 6px;font-size:14px;color:#374151">日线走势（近 60 日收盘）</h4>
+              <canvas id="extchart" width="1040" height="240"></canvas>
+              <p class="muted" style="margin-top:6px">注:演示为日线,真实行情接入后自动更新</p>
+            </div>
           </div>
 
           <!-- 分区7c：三维技术投票 + 板块强度 -->
