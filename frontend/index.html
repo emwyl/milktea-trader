@@ -582,7 +582,7 @@
                     'reduce': p.track.operation_advice.key==='sell',
                     'danger': p.track.operation_advice.key==='wait'
                   }"
-                  style="cursor:pointer;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
+                  style="cursor:pointer"
                   @click.stop="openAdviceModal(p)"
                   :title="p.track.operation_advice.summary">
                   {{p.track.operation_advice.title}}
