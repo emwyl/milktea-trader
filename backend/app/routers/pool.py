@@ -4,12 +4,16 @@ import datetime as dt
 import json
 import re as _re
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from fastapi import APIRouter, Depends, HTTPException, Query
+import io
+
+import pandas as pd
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi.responses import StreamingResponse
 
 from app.db import SessionLocal, get_db
 from app.deps import get_current_user
 from app.models import PoolTag, SchemeType, Stock, TrackedPool, TrackedPoolTag, User, UserProfile, _now
-from app.schemas import PoolBatchDeleteIn, PoolBatchTagsIn, PoolIn, PoolOut, TagIn, TagOut
+from app.schemas import PoolBatchDeleteIn, PoolBatchTagsIn, PoolImportIn, PoolIn, PoolOut, TagIn, TagOut
 from app.services.data_fetcher import ensure_stock_name, get_pool_track
 from app.services.preference import match_scheme
 from app.services.screener import get_screener
@@ -318,6 +322,94 @@ def batch_set_tags(body: PoolBatchTagsIn, db: SessionLocal = Depends(get_db), us
         p.tags = list(valid_tags)
     db.commit()
     return {"ok": True, "updated": len(rows)}
+
+
+@router.get("/export")
+def export_pool(db: SessionLocal = Depends(get_db), user: User = Depends(get_current_user)):
+    """导出当前用户可投池(active)为 Excel，字段：证券代码、证券名称。"""
+    rows = _user_pool_q(db, user.id).filter(TrackedPool.status == "active").order_by(TrackedPool.id).all()
+    seen = set()
+    data = []
+    for p in rows:
+        if p.code in seen:
+            continue
+        seen.add(p.code)
+        data.append({"证券代码": p.code, "证券名称": _name(p.code, db) or ""})
+    df = pd.DataFrame(data)
+    buf = io.BytesIO()
+    df.to_excel(buf, index=False, engine="openpyxl")
+    buf.seek(0)
+    filename = f"可投池_{dt.datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
+@router.post("/import")
+def import_pool(
+    file: UploadFile = File(...),
+    db: SessionLocal = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """从 Excel/CSV 导入证券代码或名称到可投池。
+    支持列名包含「代码/code」或「名称/name」；校验证券信息，已在池的跳过。
+    返回 {added:[], skipped:[], failed:[]}。
+    """
+    filename = (file.filename or "").lower()
+    try:
+        if filename.endswith(".csv"):
+            df = pd.read_csv(file.file, dtype=str)
+        else:
+            df = pd.read_excel(file.file, dtype=str)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"文件解析失败：{e}")
+
+    if df.empty:
+        raise HTTPException(status_code=400, detail="文件为空或没有数据")
+
+    # 智能匹配列
+    code_col = name_col = None
+    for c in df.columns:
+        cs = str(c).strip()
+        if "代码" in cs or cs.lower() == "code":
+            code_col = c
+        if "名称" in cs or cs.lower() == "name":
+            name_col = c
+    if code_col is None and name_col is None:
+        raise HTTPException(status_code=400, detail="未找到证券代码/名称列，请确保表头包含「代码」或「名称」")
+
+    added, skipped, failed = [], [], []
+    for _, row in df.iterrows():
+        raw = ""
+        if code_col is not None:
+            raw = str(row.get(code_col, "") or "").strip()
+        if not raw and name_col is not None:
+            raw = str(row.get(name_col, "") or "").strip()
+        if not raw:
+            continue
+        try:
+            code = _resolve_stock_code(raw, db)
+        except HTTPException as e:
+            failed.append({"input": raw, "reason": e.detail})
+            continue
+        name = _name(code, db) or ""
+        # 已 active 在池则跳过
+        exists = db.query(TrackedPool).filter(
+            TrackedPool.user_id == user.id,
+            TrackedPool.code == code,
+            TrackedPool.status == "active",
+        ).first()
+        if exists:
+            skipped.append({"code": code, "name": name})
+            continue
+        p = TrackedPool(user_id=user.id, code=code, scheme_type="custom")
+        db.add(p)
+        added.append({"code": code, "name": name})
+    db.commit()
+    return {"ok": True, "added": added, "skipped": skipped, "failed": failed,
+            "msg": f"成功添加 {len(added)} 只，跳过 {len(skipped)} 只，失败 {len(failed)} 只"}
 
 
 @router.post("/{code}/restore")

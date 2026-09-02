@@ -452,6 +452,9 @@
             <div class="batchbar" style="margin:0">
               <button @click="openAddPoolModal">新增</button>
               <button class="ghost" :disabled="!poolSelected.length" @click="batchDeletePool" style="color:var(--danger);border-color:var(--danger)">删除</button>
+              <button class="ghost" @click="exportPool">导出Excel</button>
+              <button class="ghost" @click="triggerImportPool">导入Excel</button>
+              <input type="file" ref="poolImportFile" style="display:none" accept=".xlsx,.xls,.csv" @change="onImportPoolFile" />
               <button class="ghost" :disabled="!poolSelected.length" @click="openBatchTagModal">打标签</button>
               <button class="ghost" @click="openTagManager">标签配置</button>
             </div>
@@ -1538,6 +1541,48 @@ const app = createApp({
     closeDeleteConfirm(){ this.deleteConfirmModal={show:false, codes:[], detail:'', saving:false}; },
     openBatchTagModal(){ this.batchTagModal={show:true, tag_ids:[], saving:false}; },
     closeBatchTagModal(){ this.batchTagModal={show:false, tag_ids:[], saving:false}; },
+    exportPool(){
+      // 导出当前可投池 Excel（证券代码、证券名称）
+      const token = localStorage.getItem('tk') || '';
+      const url = '/api/pool/export';
+      fetch(url, {headers: token ? {Authorization: `Bearer ${token}`} : {}})
+        .then(r => { if(!r.ok) throw new Error('导出失败'); return r.blob(); })
+        .then(blob => {
+          const a = document.createElement('a');
+          a.href = URL.createObjectURL(blob);
+          a.download = `可投池_${new Date().toISOString().slice(0,10).replace(/-/g,'')}.xlsx`;
+          document.body.appendChild(a);
+          a.click();
+          setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+        })
+        .catch(e => { alert(e.message || '导出失败'); });
+    },
+    triggerImportPool(){ this.$refs.poolImportFile && this.$refs.poolImportFile.click(); },
+    async onImportPoolFile(e){
+      const file = e.target.files[0];
+      if(!file) return;
+      const form = new FormData();
+      form.append('file', file);
+      try{
+        const token = localStorage.getItem('tk') || '';
+        const resp = await fetch('/api/pool/import', {
+          method:'POST',
+          body:form,
+          headers: token ? {Authorization: `Bearer ${token}`} : {}
+        });
+        const r = await resp.json();
+        if(resp.ok && r && r.ok){
+          this.poolMsg = r.msg || `成功添加 ${(r.added||[]).length} 只`;
+          this.loadPool();
+        } else {
+          this.poolMsg = r.detail || '导入失败';
+        }
+      }catch(err){
+        this.poolMsg = err.message || '导入失败';
+      }
+      setTimeout(()=>{ this.poolMsg=''; }, 4000);
+      e.target.value = '';
+    },
     toggleModalTag(modalKey, tid){
       const arr = this[modalKey].tag_ids || [];
       const idx = arr.indexOf(tid);

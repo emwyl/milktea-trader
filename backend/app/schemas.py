@@ -83,6 +83,15 @@ class PoolBatchTagsIn(BaseModel):
     tag_ids: list[int] = []
 
 
+class PoolImportItem(BaseModel):
+    code: Optional[str] = None
+    name: Optional[str] = None
+
+
+class PoolImportIn(BaseModel):
+    items: list[PoolImportItem] = []
+
+
 class TagIn(BaseModel):
     name: str
     color: str = "#3b82f6"

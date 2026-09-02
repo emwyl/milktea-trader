@@ -2,6 +2,7 @@ fastapi
 uvicorn
 sqlalchemy
 pandas
+openpyxl
 numpy
 httpx
 apscheduler
