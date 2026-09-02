@@ -10,6 +10,7 @@ from __future__ import annotations
 import datetime as dt
 import hashlib
 import random
+import time
 
 import httpx
 
@@ -25,11 +26,14 @@ _TIMEOUT = 8.0
 _DEFAULT_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
 
 
-def _http_get(url: str, headers: dict | None = None, retries: int = 1) -> str | None:
+def _http_get(url: str, headers: dict | None = None, retries: int = 2) -> str | None:
     """通用 GET，返回文本；失败返回 None。
     默认带浏览器 User-Agent，避免被公开源拒绝/断开连接；
     每次新建 httpx.Client，避免连接池复用导致的偶发断连；
-    对 RemoteProtocolError / ConnectError 等可重试一次。"""
+    对状态码非 200 / 连接或协议异常（含 RemoteProtocolError / ConnectError）
+    均重试（默认 2 次），并重试前做阶梯退避，避免对免费源瞬间打爆；
+    全部失败时返回 None（保留最后一次错误便于排查），不会抛异常。
+    """
     h = {"User-Agent": _DEFAULT_UA}
     if headers:
         h.update(headers)
@@ -38,15 +42,14 @@ def _http_get(url: str, headers: dict | None = None, retries: int = 1) -> str | 
         try:
             with httpx.Client(headers=h, timeout=_TIMEOUT, follow_redirects=True) as client:
                 r = client.get(url)
-                if r.status_code != 200:
-                    return None
-                return r.text
+                if r.status_code == 200 and r.text:
+                    return r.text
+                last_err = f"HTTP {r.status_code}"
         except Exception as e:
-            last_err = e
-            # 服务器断连或连接类错误时重试一次
-            if attempt < retries:
-                continue
-            return None
+            last_err = f"{type(e).__name__}: {e}"
+        # 重试前短暂退避（0.3s / 0.6s ...），降低免费源瞬时抖动导致的失败
+        if attempt < retries:
+            time.sleep(0.3 * (attempt + 1))
     return None
 
 
@@ -538,59 +541,70 @@ def _fetch_intraday_cached(code: str, ndays: int = 2) -> tuple | None:
     return res
 
 
+def _fetch_tencent_minute_date(code: str, date_str: str) -> list | None:
+    """腾讯指定日期的分时(分钟)数据。返回 [(hm_int, cum_amount), ...] 或 None。
+
+    接口: web.ifzq.gtimg.cn/appstock/app/minute/query?code={mkt}{code}&date={date_str}
+    环境说明: 当前部署环境无法访问东财 push2his(整站被掐断), 腾讯该接口稳定可用,
+    故 T-1 同期数据改走腾讯。每行格式 "HHMM price vol(手) cum_amount(元)"。
+    """
+    mkt = _market_of(code)
+    url = f"https://web.ifzq.gtimg.cn/appstock/app/minute/query?code={mkt}{code}&date={date_str}"
+    txt = _http_get(url, headers={"Referer": "https://gu.qq.com/"})
+    if not txt:
+        return None
+    try:
+        import json
+        node = json.loads(txt)["data"][f"{mkt}{code}"]["data"]["data"]
+        out = []
+        for line in node:
+            parts = line.split()
+            if len(parts) >= 4:
+                try:
+                    hm = int(parts[0])
+                    cum = _as_float(parts[3])  # 累计成交额(元)
+                except ValueError:
+                    continue
+                out.append((hm, cum))
+        return out if out else None
+    except Exception:
+        return None
+
+
 def _yesterday_amount_at_time(code: str) -> float | None:
-    """取昨日同时点的累计成交额（元）。
-    使用东财 2 日分时数据，按当前交易时间找昨日最接近的分钟累计额；
+    """取前一交易日「同样 30 分钟整数点」的累计成交额（元）。
+
+    口径（按产品要求）：
+    - 目标时点 = 当前时间往前取整到 30 分钟，例如 13:12→13:00、13:31→13:30。
+    - 取「前一交易日」该时点附近的累计成交额（腾讯分时最后一列=累计成交额）。
+    - 「前一交易日」自动回退：从昨天起向前尝试，跳过周末；若某天无数据(长假)继续往前。
+    - 若目标时点恰逢午休空档（如 13:00 无数据），取时间上最接近的分时点（如 13:01）。
+
+    数据源：腾讯 web.ifzq.gtimg.cn（东财 push2his 在当前部署环境不可达）。
     失败时返回 None，前端显示为 '-'。
     """
     now = dt.datetime.now()
-    res = _fetch_intraday_cached(code, ndays=2)
-    if not res:
-        return None
-    _, _, _, times, amounts = res
-    if not times or not amounts:
-        return None
+    cur_min = now.hour * 60 + now.minute
+    target_min = (cur_min // 30) * 30  # 往前取整到 30 分钟整数点
 
-    # 定位最近交易日
-    yesterday = now - dt.timedelta(days=1)
-    for _ in range(7):
-        if yesterday.weekday() < 5:
-            break
-        yesterday -= dt.timedelta(days=1)
-    # 东财 times 格式为 "YYYY-MM-DD HH:MM" 或 "HHMM"，统一用日期前缀匹配
-    yesterday_str = yesterday.strftime("%Y-%m-%d")
-    yesterday_compact = yesterday.strftime("%Y%m%d")
-
-    full_date = len(times[0]) >= 10 and times[0].startswith("20")
-    if full_date:
-        yest_pairs = [(t, amounts[i]) for i, t in enumerate(times)
-                      if t.startswith(yesterday_str) or t.startswith(yesterday_compact)]
-    else:
-        half = len(times) // 2
-        yest_pairs = list(zip(times[:half], amounts[:half]))
-
-    if not yest_pairs:
-        return None
-
-    current_hm = int(now.strftime("%H%M"))
-    best_idx = -1
-    best_hm = -1
-    for i, (t, _) in enumerate(yest_pairs):
-        # 支持 "YYYY-MM-DD HH:MM" 与 "HHMM" 两种时间格式
-        if full_date and " " in t:
-            time_part = t.split(" ", 1)[1].replace(":", "")
-        else:
-            time_part = t[-4:] if len(t) >= 4 else t
-        try:
-            hm = int(time_part)
-        except ValueError:
+    # 从昨天起向前找最近一个有分时数据的交易日
+    for offset in range(1, 12):
+        d = now - dt.timedelta(days=offset)
+        if d.weekday() >= 5:  # 跳过周六/日
             continue
-        if hm <= current_hm and hm > best_hm:
-            best_hm = hm
-            best_idx = i
-    if best_idx < 0:
-        return None
-    return yest_pairs[best_idx][1]
+        pairs = _fetch_tencent_minute_date(code, d.strftime("%Y-%m-%d"))
+        if not pairs:
+            continue
+        best = None
+        best_diff = None
+        for hm, cum in pairs:
+            point_min = (hm // 100) * 60 + (hm % 100)
+            diff = abs(point_min - target_min)
+            if best_diff is None or diff < best_diff:
+                best_diff = diff
+                best = cum
+        return best
+    return None
 
 
 def _fetch_intraday(code: str):
