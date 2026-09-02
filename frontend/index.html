@@ -18,6 +18,8 @@
   header{display:flex;align-items:center;gap:12px;padding:12px 16px;background:linear-gradient(90deg,var(--tea),var(--tea-d));color:#fff}
   header h1{font-size:20px;margin:0}
   header .sub{font-size:12px;opacity:.85}
+  header .auto-refresh-btn{display:inline-flex;align-items:center;gap:4px}
+  header .auto-refresh-btn.active{background:#fff;color:var(--tea-d);font-weight:700;box-shadow:0 0 0 2px rgba(255,255,255,.55)}
   nav{display:flex;gap:6px;padding:8px 16px;background:#fff;border-bottom:1px solid var(--line);flex-wrap:wrap}
   nav a{padding:6px 12px;border-radius:8px;cursor:pointer;font-size:14px;color:var(--ink);text-decoration:none}
   nav a.active{background:var(--tea);color:#fff}
@@ -254,7 +256,10 @@
     <header>
       <h1>🧋 加油赚奶茶钱</h1>
       <span class="sub">个人学习用 · 先控风险再谈收益</span>
-      <span class="sub" style="margin-left:auto">你好，{{me.username}} <span v-if="me.role==='admin'" class="pill">admin</span><span v-if="me.is_guest" class="pill">游客</span></span>
+      <button class="ghost auto-refresh-btn" :class="{active:autoRefresh}" @click="toggleAutoRefresh" :title="autoRefresh?'自动刷新开启中，每5秒更新当前页面数据':'点击开启每5秒自动刷新'" style="margin-left:auto">
+        {{autoRefresh?'⏸':'▶'}} 自动 5s
+      </button>
+      <span class="sub">你好，{{me.username}} <span v-if="me.role==='admin'" class="pill">admin</span><span v-if="me.is_guest" class="pill">游客</span></span>
       <button class="ghost" @click="logout">退出</button>
     </header>
     <nav>
@@ -1271,6 +1276,8 @@ const app = createApp({
     deleteConfirmModal:{show:false, codes:[], detail:'', saving:false},  // 可投池批量删除确认弹窗
     columnSettingModal:{show:false, tableKey:'', title:'', columns:[]},  // 通用自定义列设置弹窗
     columnSettings: JSON.parse(localStorage.getItem('columnSettings')||'{}'),  // 各表格列显隐/冻结/顺序持久化
+    autoRefresh: localStorage.getItem('autoRefresh')===null ? true : localStorage.getItem('autoRefresh')==='true',  // 全局自动刷新开关（默认开启，记忆上次选择）
+    autoRefreshTimer:null,  // 全局自动刷新定时器
   }},
   computed:{
     // 批量录入框实时解析出的 6 位代码（去重）
@@ -1339,13 +1346,13 @@ const app = createApp({
     },
   },
   mounted(){ if(this.token){ this.loadMe(); this.loadDash(); }
-    // 个股分析页：每 60 秒定时刷新实时数据（仅在该页且已加载时）
-    this._timer = setInterval(()=>{ if(this.view==='t' && this.t.code && this.t.data) this.loadT(true); }, 60000);
+    // 全局自动刷新：默认开启，每 5 秒根据当前页面刷新对应数据
+    if(this.autoRefresh) this.startAutoRefresh();
     // ESC 关闭弹窗
     this._keydown = (e)=>{ if(e.key==='Escape'){ this.showRulesModal=false; } };
     document.addEventListener('keydown', this._keydown);
   },
-  beforeUnmount(){ if(this._timer) clearInterval(this._timer); if(this._keydown) document.removeEventListener('keydown', this._keydown); },
+  beforeUnmount(){ this.stopAutoRefresh(); if(this._keydown) document.removeEventListener('keydown', this._keydown); },
   methods:{
     // ===== 表格自定义列 =====
     getDefaultColumns(key){
@@ -1464,6 +1471,41 @@ const app = createApp({
     },
 
     go(v){ this.view=v; if(v==='dash')this.loadDash(); if(v==='screens'){this.loadScreens();this.loadIndustries();this.refreshCounts();this.checkWarmup();this.loadPref();} if(v==='pool'){this.loadPool(); this.loadPoolTags(); if(this.poolTab==='recommend') this.loadRecommendations();} if(v==='pref')this.loadPref(); if(v==='settings'){this.loadSettings(); if(this.me.role==='admin'){this.loadUsers(); this.loadBackups(); this.loadCosStatus();}} if(v==='t')this.loadT(); },
+
+    // ===== 全局自动刷新 =====
+    toggleAutoRefresh(){
+      this.autoRefresh = !this.autoRefresh;
+      localStorage.setItem('autoRefresh', this.autoRefresh ? 'true' : 'false');
+      if(this.autoRefresh) this.startAutoRefresh();
+      else this.stopAutoRefresh();
+    },
+    startAutoRefresh(){
+      this.stopAutoRefresh();
+      // 立即刷新一次当前页面，随后每 5 秒刷新
+      this.refreshCurrentView();
+      this.autoRefreshTimer = setInterval(()=> this.refreshCurrentView(), 5000);
+    },
+    stopAutoRefresh(){ if(this.autoRefreshTimer){ clearInterval(this.autoRefreshTimer); this.autoRefreshTimer=null; } },
+    refreshCurrentView(){
+      if(!this.token) return;
+      // 有弹窗打开时跳过本次刷新，避免干扰用户当前操作
+      if(this.showRulesModal || this.addPoolModal.show || this.tagModal.show || this.batchTagModal.show || this.deleteConfirmModal.show || this.editModal.show || this.columnSettingModal.show) return;
+      const v = this.view;
+      if(v==='dash') this.loadDash();
+      else if(v==='pool'){
+        this.loadPool();
+        this.loadPoolTags();
+        if(this.poolTab==='recommend') this.loadRecommendations();
+      }
+      else if(v==='t' && this.t.code) this.loadT(true);
+      else if(v==='screens'){ this.loadScreens(); this.loadIndustries(); this.refreshCounts(); this.loadPref(); }
+      else if(v==='pref') this.loadPref();
+      else if(v==='settings'){
+        this.loadSettings();
+        if(this.me.role==='admin'){ this.loadUsers(); this.loadBackups(); this.loadCosStatus(); }
+      }
+    },
+
     openRulesModal(){ this.showRulesModal=true; this.loadRules(); },
     async doLogin(){ this.err=''; const r=await API('/auth/login',{method:'POST',body:JSON.stringify({username:this.login.u,password:this.login.p})}); if(r.token){ this.token=r.token; localStorage.setItem('tk',r.token); this.me=r.user; this.loadDash(); } else this.err=(r.detail||'登录失败'); },
     async doRegister(){ this.err=''; if(!this.reg.u||!this.reg.p){ this.err='请填写用户名和密码'; return; } if(this.reg.p!==this.reg.p2){ this.err='两次密码不一致'; return; } const r=await API('/auth/register',{method:'POST',body:JSON.stringify({username:this.reg.u,password:this.reg.p})}); if(r.token){ this.token=r.token; localStorage.setItem('tk',r.token); this.me=r.user; this.reg={u:'',p:'',p2:''}; this.loadDash(); } else this.err=(r.detail||'注册失败'); },
@@ -1630,7 +1672,10 @@ const app = createApp({
       params.append('page', this.poolPage || 1);
       params.append('page_size', this.poolPageSize || 15);
       const r=await API('/pool?' + params.toString());
-      this.pool=r.items || []; this.poolTotal=r.total || 0; this.poolCodes=this.pool.map(p=>p.code); this.poolSelected=[];
+      const prevSelected = new Set(this.poolSelected);
+      this.pool=r.items || []; this.poolTotal=r.total || 0; this.poolCodes=this.pool.map(p=>p.code);
+      // 自动刷新时保留用户已勾选的记录（仅去掉已不在当前页的）
+      this.poolSelected = this.pool.filter(p=>prevSelected.has(p.code)).map(p=>p.code);
       const totalPages = Math.ceil(this.poolTotal/this.poolPageSize)||1;
       if(this.poolPage>totalPages && this.poolTotal){ this.poolPage=totalPages; return this.loadPool(); }
     },
