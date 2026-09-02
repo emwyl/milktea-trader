@@ -502,13 +502,13 @@
           </div>
           <div class="tracktbl-wrap">
           <table class="tracktbl pool-tbl"><thead><tr>
-            <th v-for="col in activePoolColumns" :key="col.key" v-if="col.visible" :class="{frozen: col.frozen}" :style="thStyle(poolColMetrics, col)">
+            <th v-for="col in visiblePoolColumns" :key="col.key" :class="{frozen: col.frozen}" :style="thStyle(poolColMetrics, col)">
               <template v-if="col.key==='select'"><input v-if="pool.length" type="checkbox" :checked="poolSelected.length===pool.length && pool.length>0" @change="selectAllPool" title="全选/取消全选" /></template>
               <template v-else>{{col.label}}<i v-if="col.help" class="info" :title="col.help">?</i></template>
             </th>
           </tr></thead>
           <tbody><tr v-for="p in pool" :key="p.id" :class="{'selected-row':poolSelected.includes(p.code)}">
-            <td v-for="col in activePoolColumns" :key="col.key" v-if="col.visible" :class="{frozen: col.frozen}" :style="tdStyle(poolColMetrics, col)">
+            <td v-for="col in visiblePoolColumns" :key="col.key" :class="{frozen: col.frozen}" :style="tdStyle(poolColMetrics, col)">
               <template v-if="col.key==='select'"><input type="checkbox" :checked="poolSelected.includes(p.code)" @change.stop="togglePoolSelect(p.code)" /></template>
               <template v-else-if="col.key==='tags'">
                 <span v-if="p.tags && p.tags.length" class="tag-list">
@@ -899,11 +899,11 @@
           </div>
           <table class="tracktbl admin-user-tbl">
             <thead><tr>
-              <th v-for="col in activeAdminColumns" :key="col.key" v-if="col.visible" :style="thStyle(adminColMetrics, col)">{{col.label}}</th>
+              <th v-for="col in visibleAdminColumns" :key="col.key" :style="thStyle(adminColMetrics, col)">{{col.label}}</th>
             </tr></thead>
             <tbody>
               <tr v-for="u in users" :key="u.id">
-                <td v-for="col in activeAdminColumns" :key="col.key" v-if="col.visible" :style="tdStyle(adminColMetrics, col)">
+                <td v-for="col in visibleAdminColumns" :key="col.key" :style="tdStyle(adminColMetrics, col)">
                   <template v-if="col.key==='id'">{{u.id}}</template>
                   <template v-else-if="col.key==='username'">{{u.username}}</template>
                   <template v-else-if="col.key==='role'">{{u.role}}</template>
@@ -1318,9 +1318,11 @@ const app = createApp({
 
     // 可投池当前生效的列配置（已按 order 排序）
     activePoolColumns(){ return this.getColumns('pool'); },
+    // 可投池实际可见列（避免 v-for 与 v-if 同元素导致 Vue3 渲染异常）
+    visiblePoolColumns(){ return (this.activePoolColumns||[]).filter(c=>c.visible); },
     // 可投池可见列的冻结 left 与宽度汇总
     poolColMetrics(){
-      const cols = (this.activePoolColumns||[]).filter(c=>c.visible);
+      const cols = this.visiblePoolColumns;
       let left = 0;
       const metrics = {};
       const frozen = [];
@@ -1334,8 +1336,10 @@ const app = createApp({
 
     // 账号管理当前生效的列配置
     activeAdminColumns(){ return this.getColumns('adminUsers'); },
+    // 账号管理实际可见列
+    visibleAdminColumns(){ return (this.activeAdminColumns||[]).filter(c=>c.visible); },
     adminColMetrics(){
-      const cols = (this.activeAdminColumns||[]).filter(c=>c.visible);
+      const cols = this.visibleAdminColumns;
       let left = 0;
       const metrics = {};
       const frozen = [];
