@@ -399,7 +399,7 @@
     <header>
       <h1>🧋 加油赚奶茶钱</h1>
       <span class="sub">个人学习用 · 先控风险再谈收益</span>
-      <span class="version" id="appVersion">v20260902078</span>
+      <span class="version" id="appVersion">v20260902079</span>
       <button class="ghost auto-refresh-btn" :class="{active:autoRefresh}" @click="toggleAutoRefresh" :title="autoRefresh?'自动刷新开启中，每5秒更新当前页面数据':'点击开启每5秒自动刷新'">
         {{autoRefresh?'⏸':'▶'}} 自动 5s
       </button>
@@ -2114,8 +2114,8 @@ const app = createApp({
       });
     },
     resetPoolFilter(){ this.poolFilter={q:'',tag:''}; this.poolPage=1; this.loadPool(); },
-    openAddPoolModal(){ this.addPoolModal={show:true, code:'', note:'', tag_ids:[], saving:false}; },
-    closeAddPoolModal(){ this.addPoolModal={show:false, code:'', note:'', tag_ids:[], saving:false}; },
+    openAddPoolModal(){ this.addPoolModal={show:true, mode:'single', code:'', note:'', tag_ids:[], batchText:'', saving:false}; },
+    closeAddPoolModal(){ this.addPoolModal={show:false, mode:'single', code:'', note:'', tag_ids:[], batchText:'', saving:false}; },
     async doAddPool(){
       if(this.addPoolModal.saving) return;
       const code = (this.addPoolModal.code||'').trim();
