@@ -956,6 +956,57 @@
         </div>
       </div>
 
+      <!-- 通用消息弹窗（替代原生 alert） -->
+      <div v-if="alertModal.show" class="modal" @click.self="closeAlert">
+        <div class="modal-box" style="max-width:420px">
+          <div class="modal-head">
+            <h3>{{alertModal.title}}</h3>
+            <button type="button" class="close-x" @click="closeAlert" aria-label="关闭">×</button>
+          </div>
+          <div class="modal-body">
+            <div style="white-space:pre-wrap;line-height:1.7">{{alertModal.message}}</div>
+          </div>
+          <div class="modal-foot">
+            <button type="button" @click="closeAlert">确定</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 通用确认弹窗（替代原生 confirm） -->
+      <div v-if="confirmModal.show" class="modal" @click.self="confirmModal.onCancel">
+        <div class="modal-box" style="max-width:460px">
+          <div class="modal-head">
+            <h3>{{confirmModal.title}}</h3>
+            <button type="button" class="close-x" @click="confirmModal.onCancel" aria-label="关闭">×</button>
+          </div>
+          <div class="modal-body">
+            <div style="white-space:pre-wrap;line-height:1.7">{{confirmModal.message}}</div>
+          </div>
+          <div class="modal-foot">
+            <button type="button" class="ghost" @click="confirmModal.onCancel">取消</button>
+            <button type="button" @click="confirmModal.onConfirm">确定</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 通用输入弹窗（替代原生 prompt） -->
+      <div v-if="promptModal.show" class="modal" @click.self="promptModal.show=false">
+        <div class="modal-box" style="max-width:460px">
+          <div class="modal-head">
+            <h3>{{promptModal.title}}</h3>
+            <button type="button" class="close-x" @click="promptModal.show=false" aria-label="关闭">×</button>
+          </div>
+          <div class="modal-body">
+            <div style="white-space:pre-wrap;line-height:1.7">{{promptModal.message}}</div>
+            <input v-model="promptModal.value" type="text" placeholder="请输入..." style="width:100%;margin-top:14px;padding:10px 12px;border:1px solid var(--line);border-radius:8px;box-sizing:border-box" />
+          </div>
+          <div class="modal-foot">
+            <button type="button" class="ghost" @click="promptModal.show=false">取消</button>
+            <button type="button" @click="promptModal.onConfirm(promptModal.value)">确定</button>
+          </div>
+        </div>
+      </div>
+
       <!-- 设置 -->
       <div v-if="view==='settings'">
         <div class="card"><h3 style="margin-top:0">AI（DeepSeek，本地加密）</h3>
@@ -1372,6 +1423,9 @@ const app = createApp({
     autoRefresh: localStorage.getItem('autoRefresh')===null ? true : localStorage.getItem('autoRefresh')==='true',  // 全局自动刷新开关（默认开启，记忆上次选择）
     autoRefreshTimer:null,  // 全局自动刷新定时器
     toast:{show:false, message:'', timer:null},  // 全局轻量 Toast
+    alertModal:{show:false, title:'提示', message:''},  // 通用消息弹窗（替代原生 alert）
+    confirmModal:{show:false, title:'请确认', message:'', onConfirm:null, onCancel:null},  // 通用确认弹窗（替代原生 confirm）
+    promptModal:{show:false, title:'请输入', message:'', value:'', onConfirm:null},  // 通用输入弹窗（替代原生 prompt）
   }},
   computed:{
     // 批量录入框实时解析出的 6 位代码（去重）
@@ -1452,6 +1506,24 @@ const app = createApp({
   },
   beforeUnmount(){ this.stopAutoRefresh(); if(this._keydown) document.removeEventListener('keydown', this._keydown); },
   methods:{
+    // ===== 通用弹窗（替代原生 alert/confirm/prompt，确保显示在页面中部） =====
+    showAlert(message, title='提示'){
+      this.alertModal = {show:true, title, message};
+    },
+    closeAlert(){ this.alertModal.show=false; },
+    showConfirm(message, onConfirm, title='请确认'){
+      this.confirmModal = {
+        show:true, title, message,
+        onConfirm:()=>{ this.confirmModal.show=false; if(typeof onConfirm==='function') onConfirm(); },
+        onCancel:()=>{ this.confirmModal.show=false; }
+      };
+    },
+    showPrompt(message, value='', onConfirm, title='请输入'){
+      this.promptModal = {
+        show:true, title, message, value,
+        onConfirm:(v)=>{ this.promptModal.show=false; if(typeof onConfirm==='function') onConfirm(v); }
+      };
+    },
     // ===== 表格自定义列 =====
     getDefaultColumns(key){
       if(key==='pool'){
@@ -1639,16 +1711,17 @@ const app = createApp({
     async loadMe(){ const r=await API('/auth/me'); this.me=r; },
     async loadUsers(){ const r=await API('/auth/users'); if(Array.isArray(r)) this.users=r; },
     async toggleUser(id){ const r=await API('/auth/users/'+id+'/toggle',{method:'PUT'}); if(r.ok) this.loadUsers(); },
-    async deleteUser(id){ if(!confirm('确定删除该账号？其个人数据将一并清理且不可恢复。')) return; const r=await API('/auth/users/'+id,{method:'DELETE'}); if(r.ok) this.loadUsers(); },
-    async changeUserPw(id){
-      const np=prompt('为账号 ID='+id+' 设置新密码（至少4位）：');
-      if(!np) return;
-      if(np.length<4){ alert('新密码至少4位'); return; }
-      const np2=prompt('请再次输入新密码确认：');
-      if(np!==np2){ alert('两次输入的密码不一致'); return; }
-      const r=await API('/auth/users/'+id+'/reset-password',{method:'PUT',body:JSON.stringify({new_password:np})});
-      if(r&&r.ok) alert('密码已修改');
-      else alert((r&&r.detail)||'修改失败');
+    async deleteUser(id){ this.showConfirm('确定删除该账号？其个人数据将一并清理且不可恢复。', async ()=>{ const r=await API('/auth/users/'+id,{method:'DELETE'}); if(r.ok) this.loadUsers(); }); },
+    changeUserPw(id){
+      this.showPrompt('为账号 ID='+id+' 设置新密码（至少4位）：', '', (np)=>{
+        if(!np) return;
+        if(np.length<4){ this.showAlert('新密码至少4位'); return; }
+        this.showPrompt('请再次输入新密码确认：', '', async (np2)=>{
+          if(np!==np2){ this.showAlert('两次输入的密码不一致'); return; }
+          const r=await API('/auth/users/'+id+'/reset-password',{method:'PUT',body:JSON.stringify({new_password:np})});
+          this.showAlert((r&&r.ok)?'密码已修改':((r&&r.detail)||'修改失败'));
+        });
+      });
     },
     async loadDash(){ const r=await API('/engine/dashboard'); this.dash=r; },
     async runEngine(){ const r=await API('/engine/run',{method:'POST'}); this.dashMsg=r.msg||('已生成 '+r.count+' 条信号'); this.loadDash(); },
@@ -1691,20 +1764,21 @@ const app = createApp({
         this.industries=r.industries||[];
       }catch(e){}
     },
-    async seedIndustries(){
-      if(!confirm('将从 akshare 拉取申万一级行业数据并补全 5500+ 只股票的 industry 字段,1-2 分钟,失败可重试。\n继续?')) return;
+    seedIndustries(){
+      this.showConfirm('将从 akshare 拉取申万一级行业数据并补全 5500+ 只股票的 industry 字段,1-2 分钟,失败可重试。\n继续?', async ()=>{
       this.seedingInd=true;
       try{
         const r=await API('/stocks/seed-industries',{method:'POST'});
         if(r && r.error){
-          alert('补全失败: '+r.error+'\n\n可能原因:网络不通 / akshare 源被拒。稍后重试。');
+          this.showAlert('补全失败: '+r.error+'\n\n可能原因:网络不通 / akshare 源被拒。稍后重试。');
         } else if(r){
           this.poolMsg=`行业补全完成: 新增 ${r.added||0} / 更新 ${r.updated||0} / 总计 ${r.total||0} 有行业`;
           setTimeout(()=>{this.poolMsg='';},4000);
           await this.loadIndustries();  // 刷新列表
         }
-      }catch(e){ alert('补全失败: '+(e.message||'网络错误')); }
+      }catch(e){ this.showAlert('补全失败: '+(e.message||'网络错误')); }
       finally{ this.seedingInd=false; }
+      });  // showConfirm callback end
     },
     async runBuild(){ // 微调参数后直接跑,不落库
       this.building=true; this.screenResult=null; this.screenSelected=[];
@@ -1713,11 +1787,11 @@ const app = createApp({
         // 兼容:可能返数组(老)或 {items,meta}(新)
         if(Array.isArray(r)) this.screenResult=r;
         else { this.screenResult=r.items||[]; this.cachedCount=r.meta?.evaluated||0; this.stocksCount=r.meta?.total_stocks||this.stocksCount; }
-      }catch(e){ alert('运行失败: '+(e.message||'参数可能有误')); }
+      }catch(e){ this.showAlert('运行失败: '+(e.message||'参数可能有误')); }
       finally{ this.building=false; }
     },
-    async seedAllAStocks(){ // 一键导入全 A 股(akshare 拉 5500+ 代码+名称,upsert 入库)
-      if(!confirm('将从 akshare 拉取全 A 股代码+名称(约 5500 条)写入数据库,首次 10-30 秒,重复执行安全。\n注意:这只会写入代码列表,日线缓存仍需预热才能筛出有效结果。\n继续?')) return;
+    seedAllAStocks(){ // 一键导入全 A 股(akshare 拉 5500+ 代码+名称,upsert 入库)
+      this.showConfirm('将从 akshare 拉取全 A 股代码+名称(约 5500 条)写入数据库,首次 10-30 秒,重复执行安全。\n注意:这只会写入代码列表,日线缓存仍需预热才能筛出有效结果。\n继续?', async ()=>{
       this.seeding=true;
       try{
         const r=await API('/stocks/seed-all', {method:'POST'});
@@ -1725,11 +1799,12 @@ const app = createApp({
           this.stocksCount = r.total;
           this.poolMsg = `已导入全 A 股:新增 ${r.added} 条 / 更新 ${r.updated} 条 / 总计 ${r.total} 条`;
         } else {
-          alert('导入失败: '+(r.msg||'未知错误'));
+          this.showAlert('导入失败: '+(r.msg||'未知错误'));
         }
         setTimeout(()=>{ this.poolMsg=''; }, 3000);
-      }catch(e){ alert('导入失败: '+(e.message||'网络错误')); }
+      }catch(e){ this.showAlert('导入失败: '+(e.message||'网络错误')); }
       finally{ this.seeding=false; }
+      });  // showConfirm callback end
     },
     async refreshCounts(){ // 刷新"已导入"数
       try{
@@ -1743,8 +1818,8 @@ const app = createApp({
         if(s && s.running){ this.warmup=s; this.pollWarmup(); }
       }catch(e){}
     },
-    async startWarmup(){ // 启动后台预热(50 worker 并发拉全 A 日线,立即返回)
-      if(!confirm('将后台并发拉取全 A 股(约 5500 只)的日线数据,需要 1-2 小时,可切去其他页面继续用。\n已缓存过的会自动跳过(增量)。\n继续?')) return;
+    startWarmup(){ // 启动后台预热(50 worker 并发拉全 A 日线,立即返回)
+      this.showConfirm('将后台并发拉取全 A 股(约 5500 只)的日线数据,需要 1-2 小时,可切去其他页面继续用。\n已缓存过的会自动跳过(增量)。\n继续?', async ()=>{
       try{
         const r=await API('/stocks/warmup',{method:'POST'});
         this.warmup = Object.assign({running:true,done:0,total:r.total||0,errors:0,msg:r.msg||'预热中…'}, r);
@@ -1752,8 +1827,9 @@ const app = createApp({
         else if(r.msg && String(r.msg).includes('进行中')){     // 已在跑 → 恢复轮询
           const s=await API('/stocks/warmup/status');
           this.warmup=s; this.pollWarmup();
-        } else alert(r.msg||'无可预热');
-      }catch(e){ alert('启动失败: '+(e.message||'')); }
+        } else this.showAlert(r.msg||'无可预热');
+      }catch(e){ this.showAlert('启动失败: '+(e.message||'')); }
+      });  // showConfirm callback end
     },
     async pollWarmup(){ // 每 2s 轮询预热进度
       if(this.warmupTimer) clearInterval(this.warmupTimer);
@@ -1785,7 +1861,7 @@ const app = createApp({
     },
     async addSelectedToPool(){
       const codes=this.screenSelected.slice();
-      if(!codes.length){ alert('请先勾选要加入的标的'); return; }
+      if(!codes.length){ this.showAlert('请先勾选要加入的标的'); return; }
       for(const code of codes){ await API('/pool',{method:'POST',body:JSON.stringify({code})}); }
       this.screenSelected=[]; this.loadPool();
     },
@@ -1812,7 +1888,7 @@ const app = createApp({
     async saveTag(){
       if(this.tagModal.saving) return;
       const name = (this.tagModal.name||'').trim();
-      if(!name){ alert('请输入标签名称'); return; }
+      if(!name){ this.showAlert('请输入标签名称'); return; }
       const body = {name, color: this.tagModal.color || '#3b82f6'};
       this.tagModal.saving=true;
       try{
@@ -1823,14 +1899,15 @@ const app = createApp({
         }
         await this.loadPoolTags();
         this.tagModal={show:true, id:null, name:'', color:'#3b82f6', saving:false};
-      }catch(e){ alert('保存失败：'+(e.message||'请重试')); }
+      }catch(e){ this.showAlert('保存失败：'+(e.message||'请重试')); }
       finally{ this.tagModal.saving=false; }
     },
-    async deleteTag(t){
-      if(!confirm(`确定要删除标签「${t.name}」吗？已打该标签的股票将变为无标签。`)) return;
-      await API('/pool/tags/'+t.id,{method:'DELETE'});
-      await this.loadPoolTags();
-      await this.loadPool();
+    deleteTag(t){
+      this.showConfirm(`确定要删除标签「${t.name}」吗？已打该标签的股票将变为无标签。`, async ()=>{
+        await API('/pool/tags/'+t.id,{method:'DELETE'});
+        await this.loadPoolTags();
+        await this.loadPool();
+      });
     },
     resetPoolFilter(){ this.poolFilter={q:'',note:'',tag:''}; this.poolPage=1; this.loadPool(); },
     openAddPoolModal(){ this.addPoolModal={show:true, code:'', note:'', tag_ids:[], saving:false}; },
@@ -1838,7 +1915,7 @@ const app = createApp({
     async doAddPool(){
       if(this.addPoolModal.saving) return;
       const code = (this.addPoolModal.code||'').trim();
-      if(!code){ alert('请输入股票代码或名称'); return; }
+      if(!code){ this.showAlert('请输入股票代码或名称'); return; }
       this.addPoolModal.saving=true;
       try{
         await this.addPool(code, this.addPoolModal.note, this.addPoolModal.tag_ids||[]);
@@ -1848,7 +1925,7 @@ const app = createApp({
     async doAddPoolBatch(){
       if(this.addPoolModal.saving) return;
       const codes = this.batchCodeList;
-      if(!codes.length){ alert('未识别到 6 位证券代码，请检查录入内容'); return; }
+      if(!codes.length){ this.showAlert('未识别到 6 位证券代码，请检查录入内容'); return; }
       this.addPoolModal.saving=true;
       let ok=0, skip=0, fail=0;
       const tagIds = this.addPoolModal.tag_ids||[];
@@ -1898,7 +1975,7 @@ const app = createApp({
         }
         this.cancelEdit();
       }catch(e){
-        alert('保存失败: '+(e.message||'请检查数值'));
+        this.showAlert('保存失败: '+(e.message||'请检查数值'));
         this.editModal.saving=false;
       }
     },
@@ -1918,26 +1995,27 @@ const app = createApp({
       if(!/^\d{6}$/.test(code)){
         const res = await API('/stocks/search?q='+encodeURIComponent(code)+'&limit=1');
         if(res && res.length){ code = res[0].code; }
-        else { alert('未找到证券：'+rawCode); return; }
+        else { this.showAlert('未找到证券：'+rawCode); return; }
       }
       const ids = Array.isArray(tagIds) ? tagIds.filter(x=>x).map(x=>parseInt(x)) : [];
       const r = await API('/pool',{method:'POST',body:JSON.stringify({code, note, tag_ids: ids})});
-      if(r && r.detail){ alert(r.detail); return; }
+      if(r && r.detail){ this.showAlert(r.detail); return; }
       this.poolPage=1; this.loadPool();
     },
-    async removePool(code, name){
+    removePool(code, name){
       // 二次确认防误点(尤其 archive+持仓的会真删,不可恢复)
       const p = this.pool.find(x => x.code === code);
       const isArchive = p && p.status === 'archive';
       const msg = isArchive
         ? `确定要彻底删除「${name||code}」吗？持仓/成本数据将一并清空,无法恢复。`
         : `确定要把「${name||code}」从可投池移除吗?（持仓数据保留,只暂停跟踪）`;
-      if(!confirm(msg)) return;
+      this.showConfirm(msg, async ()=>{
       const r = await API('/pool/'+code, {method:'DELETE'});
       if(r && r.hard_deleted) this.poolMsg = `已彻底删除「${name||code}」`;
       else this.poolMsg = `已移除「${name||code}」`;
       setTimeout(()=>{ this.poolMsg=''; }, 2500);
       this.loadPool();
+      });  // showConfirm callback end
     },
     togglePoolSelect(code){
       const idx = this.poolSelected.indexOf(code);
@@ -1949,7 +2027,7 @@ const app = createApp({
     },
     batchDeletePool(){
       const codes = this.poolSelected.slice();
-      if(!codes.length){ alert('请先勾选要删除的记录'); return; }
+      if(!codes.length){ this.showAlert('请先勾选要删除的记录'); return; }
       const archiveCodes = codes.filter(c=>{ const p=this.pool.find(x=>x.code===c); return p && p.status==='archive'; });
       const detail = archiveCodes.length
         ? `其中 ${archiveCodes.length} 只已归档且有持仓，将彻底删除且无法恢复。`
@@ -2000,7 +2078,7 @@ const app = createApp({
           a.click();
           setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
         })
-        .catch(e => { alert(e.message || '导出失败'); });
+        .catch(e => { this.showAlert(e.message || '导出失败'); });
     },
     openImportGuide(){ this.importGuideModal={show:true}; },
     closeImportGuide(){ this.importGuideModal={show:false}; },
@@ -2050,7 +2128,7 @@ const app = createApp({
     async saveBatchTags(){
       if(this.batchTagModal.saving) return;
       const codes = this.poolSelected.slice();
-      if(!codes.length){ alert('请先勾选要设置标签的记录'); return; }
+      if(!codes.length){ this.showAlert('请先勾选要设置标签的记录'); return; }
       this.batchTagModal.saving=true;
       try{
         const ids = (this.batchTagModal.tag_ids||[]).map(x=>parseInt(x));
@@ -2064,9 +2142,9 @@ const app = createApp({
           this.poolSelected=[];
           this.loadPool();
         } else {
-          alert('设置失败：'+(r.detail||'请重试'));
+          this.showAlert('设置失败：'+(r.detail||'请重试'));
         }
-      }catch(e){ alert('设置失败：'+(e.message||'请重试')); }
+      }catch(e){ this.showAlert('设置失败：'+(e.message||'请重试')); }
       finally{ this.batchTagModal.saving=false; }
     },
     async restorePool(p){
@@ -2083,37 +2161,37 @@ const app = createApp({
     async loadPref(){ const r=await API('/preference/questionnaire'); this.questionnaire=r.questions; this.indicators=r.indicators; const me=await API('/preference/me'); if(!me.empty){ this.prefDone=true; this.pref=me; } },
     async submitPref(){ const r=await API('/preference',{method:'POST',body:JSON.stringify({answers:this.answers,focus_indicators:this.focus})}); this.pref=r; this.prefDone=true; },
     async loadSettings(){ const ai=await API('/settings/ai'); this.ai.configured=ai.configured; this.ai.base=ai.base_url||''; this.ai.model=ai.model||''; const nt=await API('/notify/config'); this.nt={channel:nt.channel,config:JSON.stringify(nt.config),cron:nt.daily_review_cron}; },
-    async saveAi(){ await API('/settings/ai',{method:'POST',body:JSON.stringify({base_url:this.ai.base,model:this.ai.model,api_key:this.ai.key})}); alert('已保存'); this.loadSettings(); },
-    async saveNt(){ await API('/notify/config',{method:'POST',body:JSON.stringify({channel:this.nt.channel,config:JSON.parse(this.nt.config||'{}'),daily_review_cron:this.nt.cron,enabled:true})}); alert('已保存'); },
-    async testNt(){ const r=await API('/notify/test',{method:'POST'}); alert(JSON.stringify(r)); },
+    async saveAi(){ await API('/settings/ai',{method:'POST',body:JSON.stringify({base_url:this.ai.base,model:this.ai.model,api_key:this.ai.key})}); this.showAlert('已保存'); this.loadSettings(); },
+    async saveNt(){ await API('/notify/config',{method:'POST',body:JSON.stringify({channel:this.nt.channel,config:JSON.parse(this.nt.config||'{}'),daily_review_cron:this.nt.cron,enabled:true})}); this.showAlert('已保存'); },
+    async testNt(){ const r=await API('/notify/test',{method:'POST'}); this.showAlert(JSON.stringify(r)); },
     async exportData(){
       const tk=localStorage.getItem('tk');
       try{
         const res=await fetch('/api/data/export',{headers:{'Authorization':'Bearer '+tk}});
-        if(!res.ok){ alert('导出失败：HTTP '+res.status); return; }
+        if(!res.ok){ this.showAlert('导出失败：HTTP '+res.status); return; }
         const obj=await res.json();
         const blob=new Blob([JSON.stringify(obj,null,2)],{type:'application/json'});
         const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
         const d=new Date().toISOString().slice(0,10);
         a.download=`milktea-data-${obj.username||'user'}-${d}.json`; a.click();
         URL.revokeObjectURL(a.href);
-        alert('已导出当前账号的全部个人数据（'+Object.keys(obj.data||{}).length+' 类）');
-      }catch(e){ alert('导出失败：'+e.message); }
+        this.showAlert('已导出当前账号的全部个人数据（'+Object.keys(obj.data||{}).length+' 类）');
+      }catch(e){ this.showAlert('导出失败：'+e.message); }
     },
     async exportAll(){
       const tk=localStorage.getItem('tk');
       try{
         const res=await fetch('/api/data/export-all',{headers:{'Authorization':'Bearer '+tk}});
-        if(res.status===403){ alert('需要管理员权限'); return; }
-        if(!res.ok){ alert('导出失败：HTTP '+res.status); return; }
+        if(res.status===403){ this.showAlert('需要管理员权限'); return; }
+        if(!res.ok){ this.showAlert('导出失败：HTTP '+res.status); return; }
         const obj=await res.json();
         const blob=new Blob([JSON.stringify(obj,null,2)],{type:'application/json'});
         const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
         const d=new Date().toISOString().slice(0,10);
         a.download=`milktea-data-all-users-${d}.json`; a.click();
         URL.revokeObjectURL(a.href);
-        alert('已导出 '+obj.count+' 个账号的全部个人数据');
-      }catch(e){ alert('导出失败：'+e.message); }
+        this.showAlert('已导出 '+obj.count+' 个账号的全部个人数据');
+      }catch(e){ this.showAlert('导出失败：'+e.message); }
     },
     async loadBackups(){
       try{
@@ -2125,22 +2203,22 @@ const app = createApp({
       if(this.backing) return; this.backing=true;
       try{
         const r=await API('/data/backup-now',{method:'POST'});
-        if(r&&r.ok){ alert('备份完成：'+r.file+'（含 '+r.count+' 个账号）'); this.loadBackups(); }
-        else{ alert('备份失败：'+((r&&r.msg)||'未知错误')); }
-      }catch(e){ alert('备份失败：'+(e.message||'网络错误')); }
+        if(r&&r.ok){ this.showAlert('备份完成：'+r.file+'（含 '+r.count+' 个账号）'); this.loadBackups(); }
+        else{ this.showAlert('备份失败：'+((r&&r.msg)||'未知错误')); }
+      }catch(e){ this.showAlert('备份失败：'+(e.message||'网络错误')); }
       this.backing=false;
     },
     async downloadBackup(name){
       const tk=localStorage.getItem('tk');
       try{
         const res=await fetch('/api/data/backups/'+encodeURIComponent(name),{headers:{'Authorization':'Bearer '+tk}});
-        if(!res.ok){ alert('下载失败：HTTP '+res.status); return; }
+        if(!res.ok){ this.showAlert('下载失败：HTTP '+res.status); return; }
         const blob=await res.blob();
         const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
         a.download=name; a.click();
         URL.revokeObjectURL(a.href);
         localStorage.setItem('lastBkDl', String(Date.now()));
-      }catch(e){ alert('下载失败：'+e.message); }
+      }catch(e){ this.showAlert('下载失败：'+e.message); }
     },
     async loadCosStatus(){
       try{
@@ -2152,61 +2230,68 @@ const app = createApp({
       try{
         const r=await API('/data/cos-backups');
         if(r && r.ok){ this.cosBks=r.items||[]; }
-        else if(r && r.msg){ alert(r.msg); }
+        else if(r && r.msg){ this.showAlert(r.msg); }
       }catch(e){ /* 静默 */ }
     },
     async cosSync(){
       if(this.cosBusy) return; this.cosBusy=true;
       try{
         const r=await API('/data/cos-sync',{method:'POST'});
-        if(r && r.ok){ alert('同步完成：新上传 '+(r.uploaded||[]).length+' 份，云端已存在 '+(r.skipped||[]).length+' 份'); this.loadCosBackups(); }
-        else{ alert('同步失败：'+((r&&r.msg)||'未知错误')); }
-      }catch(e){ alert('同步失败：'+(e.message||'网络错误')); }
+        if(r && r.ok){ this.showAlert('同步完成：新上传 '+(r.uploaded||[]).length+' 份，云端已存在 '+(r.skipped||[]).length+' 份'); this.loadCosBackups(); }
+        else{ this.showAlert('同步失败：'+((r&&r.msg)||'未知错误')); }
+      }catch(e){ this.showAlert('同步失败：'+(e.message||'网络错误')); }
       this.cosBusy=false;
     },
     async downloadCosBackup(name){
       const tk=localStorage.getItem('tk');
       try{
         const res=await fetch('/api/data/cos-backups/'+encodeURIComponent(name),{headers:{'Authorization':'Bearer '+tk}});
-        if(!res.ok){ alert('下载失败：HTTP '+res.status); return; }
+        if(!res.ok){ this.showAlert('下载失败：HTTP '+res.status); return; }
         const blob=await res.blob();
         const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
         a.download=name; a.click();
         URL.revokeObjectURL(a.href);
         localStorage.setItem('lastBkDl', String(Date.now()));
-      }catch(e){ alert('下载失败：'+e.message); }
+      }catch(e){ this.showAlert('下载失败：'+e.message); }
     },
-    async restoreAllFromFile(e){
+    restoreAllFromFile(e){
       const file=e.target.files&&e.target.files[0]; if(!file) return;
-      let obj; try{ obj=JSON.parse(await file.text()); }catch(err){ alert('文件不是有效 JSON'); e.target.value=''; return; }
-      if(!confirm('⚠ 整库恢复将覆盖所有账号的当前数据（恢复前会自动备份当前状态）。确定继续？')){ e.target.value=''; return; }
-      try{
-        const r=await API('/data/import-all',{method:'POST',body:JSON.stringify(obj)});
-        if(r && r.ok){ alert(r.msg||'恢复完成'); this.loadUsers(); this.loadBackups(); }
-        else{ alert('恢复失败：'+((r&&r.msg)||'未知错误')); }
-      }catch(err){ alert('恢复失败：'+(err.message||'网络错误')); }
-      e.target.value='';
+      (async()=>{
+        let obj; try{ obj=JSON.parse(await file.text()); }catch(err){ this.showAlert('文件不是有效 JSON'); e.target.value=''; return; }
+        this.showConfirm('⚠ 整库恢复将覆盖所有账号的当前数据（恢复前会自动备份当前状态）。确定继续？', async ()=>{
+          try{
+            const r=await API('/data/import-all',{method:'POST',body:JSON.stringify(obj)});
+            if(r && r.ok){ this.showAlert(r.msg||'恢复完成'); this.loadUsers(); this.loadBackups(); }
+            else{ this.showAlert('恢复失败：'+((r&&r.msg)||'未知错误')); }
+          }catch(err){ this.showAlert('恢复失败：'+(err.message||'网络错误')); }
+          e.target.value='';
+        }, '请确认');
+      })();
     },
-    async restoreAllFromCloud(name){
-      if(!confirm('⚠ 将从云端备份 '+name+' 整库恢复，覆盖所有账号当前数据（恢复前会自动备份当前状态）。确定继续？')) return;
-      try{
-        const tk=localStorage.getItem('tk');
-        const res=await fetch('/api/data/cos-backups/'+encodeURIComponent(name),{headers:{'Authorization':'Bearer '+tk}});
-        if(!res.ok){ alert('下载云端备份失败：HTTP '+res.status); return; }
-        const obj=await res.json();
-        const r=await API('/data/import-all',{method:'POST',body:JSON.stringify(obj)});
-        if(r && r.ok){ alert(r.msg||'恢复完成'); this.loadUsers(); this.loadBackups(); }
-        else{ alert('恢复失败：'+((r&&r.msg)||'未知错误')); }
-      }catch(e){ alert('恢复失败：'+(e.message||'网络错误')); }
+    restoreAllFromCloud(name){
+      this.showConfirm('⚠ 将从云端备份 '+name+' 整库恢复，覆盖所有账号当前数据（恢复前会自动备份当前状态）。确定继续？', async ()=>{
+        try{
+          const tk=localStorage.getItem('tk');
+          const res=await fetch('/api/data/cos-backups/'+encodeURIComponent(name),{headers:{'Authorization':'Bearer '+tk}});
+          if(!res.ok){ this.showAlert('下载云端备份失败：HTTP '+res.status); return; }
+          const obj=await res.json();
+          const r=await API('/data/import-all',{method:'POST',body:JSON.stringify(obj)});
+          if(r && r.ok){ this.showAlert(r.msg||'恢复完成'); this.loadUsers(); this.loadBackups(); }
+          else{ this.showAlert('恢复失败：'+((r&&r.msg)||'未知错误')); }
+        }catch(e){ this.showAlert('恢复失败：'+(e.message||'网络错误')); }
+      }, '请确认');
     },
-    async importData(e){
+    importData(e){
       const file=e.target.files&&e.target.files[0]; if(!file) return;
-      let obj; try{ obj=JSON.parse(await file.text()); }catch(err){ alert('文件不是有效 JSON'); e.target.value=''; return; }
-      if(obj.app && obj.app!=='milktea-trader'){ alert('文件来源不匹配，已拒绝导入'); e.target.value=''; return; }
-      if(!confirm('导入将覆盖你当前账号的选股模型/规则/自选池/偏好/通知等数据，确定继续？')){ e.target.value=''; return; }
-      const r=await API('/data/import',{method:'POST',body:JSON.stringify(obj)});
-      if(r&&r.ok){ alert('导入成功：'+JSON.stringify(r.counts)); } else { alert('导入失败：'+((r&&r.msg)||'未知错误')); }
-      e.target.value='';
+      (async()=>{
+        let obj; try{ obj=JSON.parse(await file.text()); }catch(err){ this.showAlert('文件不是有效 JSON'); e.target.value=''; return; }
+        if(obj.app && obj.app!=='milktea-trader'){ this.showAlert('文件来源不匹配，已拒绝导入'); e.target.value=''; return; }
+        this.showConfirm('导入将覆盖你当前账号的选股模型/规则/自选池/偏好/通知等数据，确定继续？', async ()=>{
+          const r=await API('/data/import',{method:'POST',body:JSON.stringify(obj)});
+          if(r&&r.ok){ this.showAlert('导入成功：'+JSON.stringify(r.counts)); } else { this.showAlert('导入失败：'+((r&&r.msg)||'未知错误')); }
+          e.target.value='';
+        }, '请确认');
+      })();
     },
     async loadT(silent){
       if(!this.t.code) return;

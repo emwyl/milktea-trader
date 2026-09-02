@@ -5,6 +5,7 @@ import json
 import re as _re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import io
+from urllib.parse import quote
 
 import pandas as pd
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
@@ -342,10 +343,12 @@ def export_pool(db: SessionLocal = Depends(get_db), user: User = Depends(get_cur
     df.to_excel(buf, index=False, engine="openpyxl")
     buf.seek(0)
     filename = f"可投池_{dt.datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    # RFC 5987 / RFC 6266：中文文件名必须编码，否则 Starlette header 用 latin-1 会 500
+    encoded = quote(filename, safe="")
     return StreamingResponse(
         buf,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f"attachment; filename={filename}"},
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{encoded}"},
     )
 
 
