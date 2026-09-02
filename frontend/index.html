@@ -330,6 +330,16 @@
   .modal-body{padding:16px 18px;overflow:auto;min-height:0}
   .modal-foot{padding:12px 18px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;position:relative;z-index:1;background:#fff;border-radius:0 0 14px 14px}
   .close-x{background:transparent;color:#6b7280;border:0;font-size:22px;line-height:1;padding:8px;cursor:pointer;min-width:36px;min-height:36px;display:flex;align-items:center;justify-content:center;border-radius:6px;transition:background .15s}
+  /* 弹窗内表单：label 与控件垂直堆叠，避免窄屏挤压成两行 */
+  .modal-body > label{display:block;margin:12px 0 6px;font-size:13px;color:var(--ink);font-weight:500}
+  .modal-body > label:first-child{margin-top:0}
+  .modal-body > input[type="text"],
+  .modal-body > input:not([type]),
+  .modal-body > textarea{display:block;width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:14px;margin:0}
+  .modal-body stock-search{display:block;width:100%}
+  .modal-body stock-search .stock-search-wrap{display:block;width:100%}
+  .modal-body stock-search input{width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:14px;background:#fff;margin:0}
+  /* 弹窗内同一行双控件（如标签名 + 颜色）：不影响，全局 inline style 已固定布局 */
   /* 轻量 Toast：操作成功后顶部居中提示，自动消失 */
   .toast{position:fixed;top:16px;left:50%;transform:translateX(-50%) translateY(-8px);z-index:200;background:#1f2937;color:#fff;padding:10px 20px;border-radius:10px;font-size:14px;box-shadow:0 10px 30px rgba(0,0,0,.22);opacity:0;transition:opacity .2s,transform .2s;pointer-events:none;max-width:min(90vw,520px);text-align:center;line-height:1.5}
   .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
@@ -386,7 +396,7 @@
     <header>
       <h1>🧋 加油赚奶茶钱</h1>
       <span class="sub">个人学习用 · 先控风险再谈收益</span>
-      <span class="version" id="appVersion">v20260902074</span>
+      <span class="version" id="appVersion">v20260902075</span>
       <button class="ghost auto-refresh-btn" :class="{active:autoRefresh}" @click="toggleAutoRefresh" :title="autoRefresh?'自动刷新开启中，每5秒更新当前页面数据':'点击开启每5秒自动刷新'">
         {{autoRefresh?'⏸':'▶'}} 自动 5s
       </button>
