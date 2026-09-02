@@ -203,6 +203,9 @@
   .modal-body{padding:16px 18px;overflow:auto;min-height:0}
   .modal-foot{padding:12px 18px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;position:relative;z-index:1;background:#fff;border-radius:0 0 14px 14px}
   .close-x{background:transparent;color:#6b7280;border:0;font-size:22px;line-height:1;padding:8px;cursor:pointer;min-width:36px;min-height:36px;display:flex;align-items:center;justify-content:center;border-radius:6px;transition:background .15s}
+  /* 轻量 Toast：操作成功后顶部居中提示，自动消失 */
+  .toast{position:fixed;top:16px;left:50%;transform:translateX(-50%) translateY(-8px);z-index:200;background:#1f2937;color:#fff;padding:10px 20px;border-radius:10px;font-size:14px;box-shadow:0 10px 30px rgba(0,0,0,.22);opacity:0;transition:opacity .2s,transform .2s;pointer-events:none;max-width:min(90vw,520px);text-align:center;line-height:1.5}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
   .close-x:hover{background:#f3f4f6;color:var(--ink)}
 </style>
 </head>
@@ -262,6 +265,8 @@
       <span class="sub">你好，{{me.username}} <span v-if="me.role==='admin'" class="pill">admin</span><span v-if="me.is_guest" class="pill">游客</span></span>
       <button class="ghost" @click="logout">退出</button>
     </header>
+    <!-- 全局轻量 Toast -->
+    <div v-if="toast.show" class="toast show">{{toast.message}}</div>
     <nav>
       <a :class="{active:topMenu==='dash'}" @click="go('dash')">看板总览</a>
       <a :class="{active:topMenu==='smart'}" @click="go('pref')">智能选股</a>
@@ -1278,6 +1283,7 @@ const app = createApp({
     columnSettings: JSON.parse(localStorage.getItem('columnSettings')||'{}'),  // 各表格列显隐/冻结/顺序持久化
     autoRefresh: localStorage.getItem('autoRefresh')===null ? true : localStorage.getItem('autoRefresh')==='true',  // 全局自动刷新开关（默认开启，记忆上次选择）
     autoRefreshTimer:null,  // 全局自动刷新定时器
+    toast:{show:false, message:'', timer:null},  // 全局轻量 Toast
   }},
   computed:{
     // 批量录入框实时解析出的 6 位代码（去重）
@@ -1504,6 +1510,16 @@ const app = createApp({
         this.loadSettings();
         if(this.me.role==='admin'){ this.loadUsers(); this.loadBackups(); this.loadCosStatus(); }
       }
+    },
+
+    // ===== 全局轻量 Toast =====
+    showToast(message, duration=2500){
+      if(this.toast.timer){ clearTimeout(this.toast.timer); this.toast.timer=null; }
+      this.toast.show=false;
+      this.$nextTick(()=>{
+        this.toast.message=message; this.toast.show=true;
+        this.toast.timer = setTimeout(()=>{ this.toast.show=false; this.toast.timer=null; }, duration);
+      });
     },
 
     openRulesModal(){ this.showRulesModal=true; this.loadRules(); },
@@ -1907,7 +1923,10 @@ const app = createApp({
         const ids = (this.batchTagModal.tag_ids||[]).map(x=>parseInt(x));
         const r = await API('/pool/batch-tags',{method:'POST',body:JSON.stringify({codes, tag_ids: ids})});
         if(r && r.ok){
-          this.poolMsg = `已为 ${r.updated} 只股票设置标签`;
+          const names = (this.batchTagModal.tag_ids||[]).map(id=> this.poolTags.find(t=>t.id===id)?.name ).filter(Boolean);
+          const n = codes.length;
+          const msg = names.length ? `已设置 ${n} 个证券为「${names.join('、')}」标签` : `已清空 ${n} 个证券的标签`;
+          this.showToast(msg);
           this.closeBatchTagModal();
           this.poolSelected=[];
           this.loadPool();
