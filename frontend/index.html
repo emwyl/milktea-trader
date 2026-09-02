@@ -103,7 +103,6 @@
   .boxbar small.up{color:var(--danger);font-weight:600}
   .boxbar i.up{background:var(--danger)}
   .info{display:inline-block;width:15px;height:15px;line-height:15px;border-radius:50%;background:var(--tea);color:#fff;font-size:11px;text-align:center;cursor:help;margin-left:2px;font-style:normal;flex-shrink:0}
-  .tracktbl thead th .info{position:absolute;top:2px;right:2px;margin:0;z-index:1}
   /* 数据时效标识：【实时】盘口直读 / 【参考】模型推算 —— 全系统统一 */
   .dtag{display:inline-block;font-size:10px;line-height:1.6;padding:0 5px;border-radius:4px;margin-left:5px;font-weight:600;vertical-align:middle;white-space:nowrap}
   .dtag.live{background:#dcfce7;color:#047857;border:1px solid #6ee7b7}
@@ -127,6 +126,9 @@
   .tracktbl-wrap{overflow-x:auto;margin:0 -12px;padding:0 12px 10px}
   .tracktbl{width:max-content;min-width:100%;border-collapse:separate;border-spacing:0;font-size:12px}
   .tracktbl thead th{background:#f9fafb;color:#374151;font-weight:600;padding:8px 3px 6px;border-bottom:1px solid #e5e7eb;text-align:left;font-size:12px;line-height:1.25;vertical-align:bottom;white-space:pre-line;word-break:keep-all;min-height:36px;position:relative}
+  /* 表头文字最多2行，超出截断；鼠标悬停靠 title 显示完整 */
+  .tracktbl thead th .th-label{display:inline-block;max-height:30px;overflow:hidden;vertical-align:middle;white-space:pre-line;line-height:1.25}
+  .tracktbl thead th .info{position:static;display:inline-block;vertical-align:middle;margin-left:2px}
   .tracktbl tbody td{padding:6px 3px;border-bottom:1px solid #f3f4f6;vertical-align:middle;white-space:nowrap}
   .tracktbl tbody tr:hover{background:#f8fafc}
   .tracktbl tbody tr.editing-row{background:#eff6ff}
@@ -510,7 +512,7 @@
             <th v-for="col in visiblePoolColumns" :key="col.key" :class="{frozen: col.frozen}" :style="thStyle(poolColMetrics, col)">
               <template v-if="col.key==='select'"><input v-if="pool.length" type="checkbox" :checked="poolSelected.length===pool.length && pool.length>0" @change="selectAllPool" title="全选/取消全选" /></template>
               <template v-else>
-                <span :style="col.help?'padding-right:16px;display:block':''">{{col.label}}</span>
+                <span class="th-label" :title="col.label">{{col.label}}</span>
                 <i v-if="col.help" class="info" :title="col.help">?</i>
               </template>
             </th>
