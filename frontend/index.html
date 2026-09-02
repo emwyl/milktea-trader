@@ -512,8 +512,12 @@
             <th v-for="col in visiblePoolColumns" :key="col.key" :class="{frozen: col.frozen}" :style="thStyle(poolColMetrics, col)">
               <template v-if="col.key==='select'"><input v-if="pool.length" type="checkbox" :checked="poolSelected.length===pool.length && pool.length>0" @change="selectAllPool" title="全选/取消全选" /></template>
               <template v-else>
-                <span class="th-label" :title="col.label">{{col.label}}</span>
-                <i v-if="col.help" class="info" :title="col.help">?</i>
+                <span class="th-label" :title="col.label">
+                  <template v-for="(ln, i) in col.label.split('\n')" :key="i">
+                    <template v-if="i > 0"><br></template>{{ ln }}
+                  </template>
+                  <i v-if="col.help" class="info" :title="col.help">?</i>
+                </span>
               </template>
             </th>
           </tr></thead>
