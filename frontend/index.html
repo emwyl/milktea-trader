@@ -399,7 +399,7 @@
     <header>
       <h1>🧋 加油赚奶茶钱</h1>
       <span class="sub">个人学习用 · 先控风险再谈收益</span>
-      <span class="version" id="appVersion">v20260902076</span>
+      <span class="version" id="appVersion">v20260902077</span>
       <button class="ghost auto-refresh-btn" :class="{active:autoRefresh}" @click="toggleAutoRefresh" :title="autoRefresh?'自动刷新开启中，每5秒更新当前页面数据':'点击开启每5秒自动刷新'">
         {{autoRefresh?'⏸':'▶'}} 自动 5s
       </button>
@@ -636,15 +636,14 @@
           <!-- 筛选与批量操作工具条 -->
           <!-- 工具栏：筛选 + 批量操作（窄屏专列、横滑 + 网格） -->
           <div :class="['filter-toolbar', 'pool-toolbar']" style="display:flex;align-items:flex-start;gap:10px;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid #e5e7eb">
-            <div class="row" style="gap:8px;margin:0;flex-wrap:nowrap">
-              <input v-model="poolFilter.q" placeholder="代码/名称" style="max-width:150px" />
-              <select v-model="poolFilter.tag" style="max-width:130px">
+            <div class="row" style="gap:8px;margin:0;flex-wrap:wrap;align-items:center">
+              <input v-model="poolFilter.q" placeholder="代码/名称" style="max-width:150px;flex:1 1 140px" />
+              <select v-model="poolFilter.tag" style="max-width:130px;flex:1 1 130px">
                 <option value="">全部标签</option>
                 <option v-for="t in poolTags" :key="t.id" :value="t.id">{{t.name}}</option>
               </select>
-              <input v-model="poolFilter.note" placeholder="备注" style="max-width:130px" />
-              <button @click="searchPool">查询</button>
-              <button class="ghost" @click="resetPoolFilter">重置</button>
+              <button @click="searchPool" style="flex:0 0 auto">查询</button>
+              <button class="ghost" @click="resetPoolFilter" style="flex:0 0 auto">重置</button>
             </div>
             <div class="batchbar" style="margin:0;padding-bottom:0;border-bottom:0;display:flex;gap:6px;flex-wrap:wrap">
               <button @click="openAddPoolModal">新增</button>
@@ -1596,7 +1595,7 @@ const app = createApp({
     building:false, seeding:false, stocksCount:0, cachedCount:0, warmup:{running:false,done:0,total:0,errors:0,msg:''}, warmupTimer:null,
     industries:[],  // 申万一级行业列表(后端返回,前端 chip 多选)
     seedingInd:false,  // 行业补全按钮 loading
-    pool:[], poolFilter:{q:'',note:'',tag:''}, poolPage:1, poolPageSize:15, poolTotal:0, rules:[], nr:{name:'',scope:'all',action:'reduce',conditions:'{"logic":"AND","conditions":[{"type":"below_ma","ma":20,"days":3}]}'},
+    pool:[], poolFilter:{q:'',tag:''}, poolPage:1, poolPageSize:15, poolTotal:0, rules:[], nr:{name:'',scope:'all',action:'reduce',conditions:'{"logic":"AND","conditions":[{"type":"below_ma","ma":20,"days":3}]}'},
     poolTab:'manual',  // 可投池页 tab: manual|recommend
     poolSelected:[],  // 可投池表格当前勾选中的 code
     poolTags:[],  // 当前用户的可投池自定义标签列表
@@ -2074,7 +2073,6 @@ const app = createApp({
     async loadPool(){
       const params = new URLSearchParams();
       if(this.poolFilter.q) params.append('q', this.poolFilter.q.trim());
-      if(this.poolFilter.note) params.append('note', this.poolFilter.note.trim());
       if(this.poolFilter.tag) params.append('tag', this.poolFilter.tag);
       params.append('page', this.poolPage || 1);
       params.append('page_size', this.poolPageSize || 15);
@@ -2115,7 +2113,7 @@ const app = createApp({
         await this.loadPool();
       });
     },
-    resetPoolFilter(){ this.poolFilter={q:'',note:'',tag:''}; this.poolPage=1; this.loadPool(); },
+    resetPoolFilter(){ this.poolFilter={q:'',tag:''}; this.poolPage=1; this.loadPool(); },
     openAddPoolModal(){ this.addPoolModal={show:true, code:'', note:'', tag_ids:[], saving:false}; },
     closeAddPoolModal(){ this.addPoolModal={show:false, code:'', note:'', tag_ids:[], saving:false}; },
     async doAddPool(){
