@@ -15,7 +15,7 @@
   }
   *{box-sizing:border-box}
   body{margin:0;font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--milk);color:var(--ink)}
-  header{display:flex;align-items:center;gap:12px;padding:12px 16px;background:linear-gradient(90deg,var(--tea),var(--tea-d));color:#fff}
+  header{display:flex;align-items:center;gap:12px;padding:calc(12px + env(safe-area-inset-top,0px)) 16px 12px;background:linear-gradient(90deg,var(--tea),var(--tea-d));color:#fff}
   header h1{font-size:20px;margin:0}
   header .sub{font-size:12px;opacity:.85}
   header .auto-refresh-btn{display:inline-flex;align-items:center;gap:4px}
@@ -39,7 +39,7 @@
   @media(max-width:768px){
     body{font-size:14px;-webkit-text-size-adjust:100%}
     /* header 紧凑：标题一行/右侧退出两段 */
-    header{flex-wrap:wrap;padding:10px 12px;gap:8px}
+    header{flex-wrap:wrap;padding:calc(10px + env(safe-area-inset-top,0px)) 12px 10px;gap:8px}
     header h1{font-size:17px}
     header .sub{font-size:11px;width:100%;order:99;margin-top:2px;opacity:.8}
     header .version{font-size:10px;padding:1px 6px}
@@ -319,6 +319,42 @@
   .tracktbl.admin-user-tbl thead th:last-child{z-index:5;background:#f9fafb}
   .tracktbl.admin-user-tbl tbody td:last-child{background:#fff}
   .tag-list{display:inline-flex;flex-wrap:wrap;gap:4px;max-width:120px}
+  /* ===== 设置页：账号管理 + 备份卡片（窄屏专用，宽屏隐藏） ===== */
+  .admin-user-cards,.backup-cards,.cosback-cards{display:none;margin-top:10px}
+  .user-card{background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px 12px 10px;margin-bottom:10px;position:relative}
+  .user-card-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:8px;padding-bottom:8px;border-bottom:1px dashed var(--line)}
+  .user-card-name{display:flex;align-items:center;gap:6px;font-size:14px;font-weight:700;flex-wrap:wrap}
+  .user-card-name .pill{font-size:10px;padding:1px 6px}
+  .user-card-id{font-size:11px;color:#6b7280;margin-top:2px}
+  .user-card-grids,.backup-card-grids,.cosback-card-grids{display:flex;flex-direction:column;gap:0;border:1px solid var(--line);border-radius:8px;overflow:hidden;margin:6px 0}
+  .user-card-grids > div,.backup-card-grids > div,.cosback-card-grids > div{display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:8px 10px;border-bottom:1px dashed var(--line);font-size:13px}
+  .user-card-grids > div:last-child,.backup-card-grids > div:last-child,.cosback-card-grids > div:last-child{border-bottom:0}
+  .user-card-grids > div:nth-child(even),.backup-card-grids > div:nth-child(even),.cosback-card-grids > div:nth-child(even){background:#f9fafb}
+  .user-card-grids .k,.backup-card-grids .k,.cosback-card-grids .k{color:var(--ink);font-weight:600;flex-shrink:0}
+  .user-card-grids .v,.backup-card-grids .v,.cosback-card-grids .v{font-weight:600;text-align:right;margin-left:auto;max-width:62%;overflow-wrap:break-word}
+  .user-card-actions,.backup-card-actions,.cosback-card-actions{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap}
+  .user-card-actions button,.backup-card-actions button,.cosback-card-actions button{padding:6px 10px;font-size:12px;flex:1;min-width:0}
+  /* 窄屏：隐藏原表格，显示卡片 */
+  @media(max-width:768px){
+    .tracktbl.admin-user-tbl{display:none}
+    .admin-user-cards{display:block}
+  }
+  /* 备份表窄屏卡片化（窄屏隐藏原表格，显示卡片） */
+  @media(max-width:768px){
+    .backup-tbl-wrap{display:none}
+    .backup-cards{display:block}
+  }
+  @media(max-width:768px){
+    .cosback-tbl-wrap{display:none}
+    .cosback-cards{display:block}
+  }
+  /* 桌面端强制隐藏卡片 */
+  @media(min-width:769px){
+    .admin-user-cards,.backup-cards,.cosback-cards{display:none !important}
+    .tracktbl.admin-user-tbl{display:table !important}
+    .backup-tbl-wrap,.cosback-tbl-wrap{display:block !important}
+  }
+
   .tag-chips{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0}
   .chip{padding:6px 12px;border:1px solid #d1d5db;border-radius:16px;background:#fff;cursor:pointer;font-size:13px;color:#374151;transition:all .15s}
   .chip:hover{border-color:#9ca3af;background:#f9fafb}
@@ -410,7 +446,7 @@
     <header>
       <h1>🧋 加油赚奶茶钱</h1>
       <span class="sub">个人学习用 · 先控风险再谈收益</span>
-      <span class="version" id="appVersion">v20260902080</span>
+      <span class="version" id="appVersion">v20260902081</span>
       <button class="ghost auto-refresh-btn" :class="{active:autoRefresh}" @click="toggleAutoRefresh" :title="autoRefresh?'自动刷新开启中，每5秒更新当前页面数据':'点击开启每5秒自动刷新'">
         {{autoRefresh?'⏸':'▶'}} 自动 5s
       </button>
@@ -1280,6 +1316,32 @@
               </tr>
             </tbody>
           </table>
+          <!-- 窄屏专用：账号管理卡片列表（桌面端 CSS 强制隐藏） -->
+          <div class="admin-user-cards">
+            <div v-for="u in users" :key="'ucard-'+u.id" class="user-card">
+              <div class="user-card-head">
+                <div>
+                  <div class="user-card-name">
+                    <b>{{u.username}}</b>
+                    <span class="pill" :style="u.role==='admin'?{background:'#f3e8ff',color:'#7c3aed'}:{background:'#f3f4f6',color:'#374151'}">{{u.role}}</span>
+                    <span class="pill" :style="u.is_active?{background:'#dcfce7',color:'#15803d'}:{background:'#fee2e2',color:'#b91c1c'}">{{u.is_active?'正常':'已禁用'}}</span>
+                  </div>
+                  <div class="user-card-id">#{{u.id}}</div>
+                </div>
+              </div>
+              <div class="user-card-grids">
+                <div><div class="k">游客账号</div><div class="v">{{u.is_guest?'是':'否'}}</div></div>
+                <div><div class="k">最后登录IP</div><div class="v">{{u.last_ip||'-'}}</div></div>
+                <div><div class="k">创建时间</div><div class="v">{{u.created_at}}</div></div>
+              </div>
+              <div class="user-card-actions">
+                <button class="ghost" @click="toggleUser(u.id)">{{u.is_active?'禁用':'启用'}}</button>
+                <button class="ghost" @click="changeUserPw(u.id)">修改密码</button>
+                <button class="ghost" style="color:var(--danger)" @click="deleteUser(u.id)">删除</button>
+              </div>
+            </div>
+            <p v-if="!users.length" class="muted" style="text-align:center;padding:20px 0">暂无账号</p>
+          </div>
           <p class="muted">删除账号会同步删除该账号的短线可投池、规则、信号、偏好等个人数据，且不可恢复。</p>
         </div>
         <div class="card" v-if="me.role==='admin'" style="border-left:4px solid var(--tea)">
@@ -1296,17 +1358,36 @@
             <button class="ghost" @click="loadBackups">刷新列表</button>
             <button class="ghost" @click="exportAll">导出全部用户数据(直接下载)</button>
           </div>
-          <table class="tracktbl" v-if="backups.length" style="margin-top:10px">
-            <thead><tr><th>备份文件</th><th>大小</th><th>时间</th><th>操作</th></tr></thead>
-            <tbody>
-              <tr v-for="b in backups" :key="b.name">
-                <td>{{b.name}}</td>
-                <td>{{(b.size/1024).toFixed(1)}} KB</td>
-                <td>{{b.mtime}}</td>
-                <td><button class="ghost" @click="downloadBackup(b.name)">下载</button></td>
-              </tr>
-            </tbody>
-          </table>
+          <div class="backup-tbl-wrap" v-if="backups.length">
+            <table class="tracktbl" style="margin-top:10px">
+              <thead><tr><th>备份文件</th><th>大小</th><th>时间</th><th>操作</th></tr></thead>
+              <tbody>
+                <tr v-for="b in backups" :key="b.name">
+                  <td>{{b.name}}</td>
+                  <td>{{(b.size/1024).toFixed(1)}} KB</td>
+                  <td>{{b.mtime}}</td>
+                  <td><button class="ghost" @click="downloadBackup(b.name)">下载</button></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <!-- 窄屏专用：备份卡片 -->
+          <div class="backup-cards" v-if="backups.length">
+            <div v-for="b in backups" :key="'bk-'+b.name" class="user-card">
+              <div class="user-card-head">
+                <div style="overflow:hidden">
+                  <div class="user-card-name" style="font-size:13px;word-break:break-all">{{b.name}}</div>
+                  <div class="user-card-id">{{(b.size/1024).toFixed(1)}} KB</div>
+                </div>
+              </div>
+              <div class="backup-card-grids">
+                <div><div class="k">备份时间</div><div class="v">{{b.mtime}}</div></div>
+              </div>
+              <div class="backup-card-actions">
+                <button class="ghost" @click="downloadBackup(b.name)">下载</button>
+              </div>
+            </div>
+          </div>
           <p class="muted" v-else>暂无自动备份文件，可点「立即备份」生成第一份。</p>
         </div>
         <div class="card" v-if="me.role==='admin'" style="border-left:4px solid #06b6d4">
@@ -1320,20 +1401,40 @@
             <button @click="cosSync" :disabled="cosBusy">{{cosBusy?'同步中…':'同步到云端'}}</button>
             <button class="ghost" @click="loadCosBackups">刷新云端列表</button>
           </div>
-          <table class="tracktbl" v-if="cosBks.length" style="margin-top:10px">
-            <thead><tr><th>云端备份文件</th><th>大小</th><th>时间(UTC)</th><th>操作</th></tr></thead>
-            <tbody>
-              <tr v-for="b in cosBks" :key="b.name">
-                <td>{{b.name}}</td>
-                <td>{{(b.size/1024).toFixed(1)}} KB</td>
-                <td>{{(b.last_modified||'').slice(0,19).replace('T',' ')}}</td>
-                <td>
-                  <button class="ghost" @click="downloadCosBackup(b.name)">下载</button>
-                  <button class="ghost" @click="restoreAllFromCloud(b.name)" style="color:var(--danger)">恢复</button>
-                </td>
-              </tr>
-            </tbody>
-          </table>
+          <div class="cosback-tbl-wrap" v-if="cosBks.length">
+            <table class="tracktbl" style="margin-top:10px">
+              <thead><tr><th>云端备份文件</th><th>大小</th><th>时间(UTC)</th><th>操作</th></tr></thead>
+              <tbody>
+                <tr v-for="b in cosBks" :key="b.name">
+                  <td>{{b.name}}</td>
+                  <td>{{(b.size/1024).toFixed(1)}} KB</td>
+                  <td>{{(b.last_modified||'').slice(0,19).replace('T',' ')}}</td>
+                  <td>
+                    <button class="ghost" @click="downloadCosBackup(b.name)">下载</button>
+                    <button class="ghost" @click="restoreAllFromCloud(b.name)" style="color:var(--danger)">恢复</button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <!-- 窄屏专用：云端备份卡片 -->
+          <div class="cosback-cards" v-if="cosBks.length">
+            <div v-for="b in cosBks" :key="'cb-'+b.name" class="user-card">
+              <div class="user-card-head">
+                <div style="overflow:hidden">
+                  <div class="user-card-name" style="font-size:13px;word-break:break-all">{{b.name}}</div>
+                  <div class="user-card-id">{{(b.size/1024).toFixed(1)}} KB</div>
+                </div>
+              </div>
+              <div class="cosback-card-grids">
+                <div><div class="k">时间 (UTC)</div><div class="v">{{(b.last_modified||'').slice(0,19).replace('T',' ')}}</div></div>
+              </div>
+              <div class="cosback-card-actions">
+                <button class="ghost" @click="downloadCosBackup(b.name)">下载</button>
+                <button class="ghost" @click="restoreAllFromCloud(b.name)" style="color:var(--danger)">恢复</button>
+              </div>
+            </div>
+          </div>
           <p class="muted" v-else-if="cosStatus.enabled">云端暂无备份文件，可点「同步到云端」把本地备份传上去。</p>
         </div>
         <div class="card" v-if="me.role==='admin'" style="border-left:4px solid var(--danger)">
