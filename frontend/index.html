@@ -680,14 +680,28 @@
 
       <!-- 可投池新增弹窗 -->
       <div v-if="addPoolModal.show" class="modal" @click.self="closeAddPoolModal">
-        <div class="modal-box" style="max-width:420px">
+        <div class="modal-box" style="max-width:560px">
           <div class="modal-head">
             <h3>新增到观测池</h3>
             <button type="button" class="close-x" @click="closeAddPoolModal" aria-label="关闭">×</button>
           </div>
           <div class="modal-body">
-            <label>股票代码/名称</label>
-            <stock-search v-model="addPoolModal.code" placeholder="代码 / 名称 如 贵州茅台" :input-style="{maxWidth:'100%'}"></stock-search>
+            <div style="display:flex;gap:8px;margin-bottom:14px">
+              <button type="button" class="ghost" :style="addPoolModal.mode==='single' ? {background:'var(--tea)',color:'#fff',borderColor:'var(--tea)'} : {}" @click="addPoolModal.mode='single'" style="flex:1">单个添加</button>
+              <button type="button" class="ghost" :style="addPoolModal.mode==='batch' ? {background:'var(--tea)',color:'#fff',borderColor:'var(--tea)'} : {}" @click="addPoolModal.mode='batch'" style="flex:1">批量添加</button>
+            </div>
+
+            <template v-if="addPoolModal.mode==='single'">
+              <label>股票代码/名称</label>
+              <stock-search v-model="addPoolModal.code" placeholder="代码 / 名称 如 贵州茅台" :input-style="{maxWidth:'100%'}"></stock-search>
+            </template>
+
+            <template v-else>
+              <label>批量录入（支持逗号 / 空格 / 换行分隔，自动识别 6 位代码）</label>
+              <textarea v-model="addPoolModal.batchText" rows="6" placeholder="例如：&#10;300377,300366&#10;600519 000001" style="width:100%;padding:8px;border:1px solid var(--tea);border-radius:8px;font-size:14px;resize:vertical;font-family:monospace;box-sizing:border-box"></textarea>
+              <p class="muted" style="margin:8px 0 0" v-if="batchCodeList.length">已识别 {{batchCodeList.length}} 个代码：{{batchCodeList.join('、')}}</p>
+            </template>
+
             <label>标签 <span class="muted">（可多选）</span></label>
             <div class="tag-chips">
               <button type="button" v-for="t in poolTags" :key="t.id" class="chip" :class="{active: (addPoolModal.tag_ids||[]).includes(t.id)}" :style="(addPoolModal.tag_ids||[]).includes(t.id)?{background:t.color,borderColor:t.color,color:'#fff'}:{}" @click="toggleModalTag('addPoolModal', t.id)">{{t.name}}</button>
@@ -697,7 +711,8 @@
           </div>
           <div class="modal-foot">
             <button type="button" class="ghost" @click="closeAddPoolModal">取消</button>
-            <button type="button" @click="doAddPool" :disabled="addPoolModal.saving">{{addPoolModal.saving?'保存中…':'确认加入'}}</button>
+            <button type="button" v-if="addPoolModal.mode==='single'" @click="doAddPool" :disabled="addPoolModal.saving">{{addPoolModal.saving?'保存中…':'确认加入'}}</button>
+            <button type="button" v-else @click="doAddPoolBatch" :disabled="addPoolModal.saving">{{addPoolModal.saving?'添加中…':'批量加入'}}</button>
           </div>
         </div>
       </div>
@@ -1172,18 +1187,19 @@ const app = createApp({
     cosBks:[], cosBusy:false,  // COS 云端备份列表 / 同步按钮 loading
     editRow:{code:'',qty:'',cost:'',note:'',saving:false},  // 可投池表格「整行编辑」状态(持仓/成本/备注)
     editModal:{show:false, code:'', qty:'', cost:'', note:'', tag_ids:[], saving:false, name:''},  // 可投池行编辑弹窗
-    addPoolModal:{show:false, code:'', note:'', tag_ids:[], saving:false},  // 可投池新增弹窗
+    addPoolModal:{show:false, mode:'single', code:'', note:'', tag_ids:[], batchText:'', saving:false},  // 可投池新增弹窗
     tagModal:{show:false, id:null, name:'', color:'#3b82f6', saving:false},  // 可投池标签配置弹窗
     batchTagModal:{show:false, tag_ids:[], saving:false},  // 可投池批量打标签弹窗
     deleteConfirmModal:{show:false, codes:[], detail:'', saving:false},  // 可投池批量删除确认弹窗
   }},
   computed:{
-    // 距上次把备份下载到本机的天数(null=从未下载过),用于备份提醒
-    bkDaysSince(){
-      const t=+localStorage.getItem('lastBkDl');
-      if(!t) return null;
-      return Math.floor((Date.now()-t)/86400000);
+    // 批量录入框实时解析出的 6 位代码（去重）
+    batchCodeList(){
+      const txt = (this.addPoolModal && this.addPoolModal.batchText) || '';
+      const codes = (txt.match(/\d{6}/g) || []).map(c=>c.trim());
+      return [...new Set(codes)];
     },
+
     // 选股模型运行结果中,尚未加入可投池的 code(用于"一键全部加入"按钮)
     pendingCodes(){ return (this.screenResult||[]).filter(c=>!this.poolCodes.includes(c.code)).map(c=>c.code); },
     // 投资偏好画像与当前选股风格是否一致
@@ -1431,6 +1447,27 @@ const app = createApp({
         await this.addPool(code, this.addPoolModal.note, this.addPoolModal.tag_ids||[]);
         this.closeAddPoolModal();
       }finally{ this.addPoolModal.saving=false; }
+    },
+    async doAddPoolBatch(){
+      if(this.addPoolModal.saving) return;
+      const codes = this.batchCodeList;
+      if(!codes.length){ alert('未识别到 6 位证券代码，请检查录入内容'); return; }
+      this.addPoolModal.saving=true;
+      let ok=0, skip=0, fail=0;
+      const tagIds = this.addPoolModal.tag_ids||[];
+      for(const c of codes){
+        try{
+          const r = await API('/pool',{method:'POST',body:JSON.stringify({code:c, note:this.addPoolModal.note, tag_ids:tagIds})});
+          if(r && (r.id || r.code)) ok++;
+          else if(r && r.detail && r.detail.includes('已在')) skip++;
+          else skip++;
+        }catch(e){ fail++; }
+      }
+      this.poolMsg = `批量添加完成：成功 ${ok} 只，跳过/已存在 ${skip} 只，失败 ${fail} 只`;
+      setTimeout(()=>{ this.poolMsg=''; }, 4000);
+      this.loadPool();
+      this.closeAddPoolModal();
+      this.addPoolModal.saving=false;
     },
     async loadRecommendations(){ const r=await API('/pool/recommendations'); this.recommendations=r; },
     async addRecToPool(code){ await API('/pool',{method:'POST',body:JSON.stringify({code})}); this.loadPool(); this.loadRecommendations(); },
