@@ -452,8 +452,8 @@
             <div class="batchbar" style="margin:0">
               <button @click="openAddPoolModal">新增</button>
               <button class="ghost btn-sm" :disabled="!poolSelected.length" @click="batchDeletePool" style="color:var(--danger);border-color:var(--danger)">删除</button>
-              <button class="ghost btn-sm" :disabled="!poolSelected.length" @click="openBatchTagModal">标签设置</button>
-              <button class="ghost btn-sm" @click="openTagManager">标签分类</button>
+              <button class="ghost btn-sm" :disabled="!poolSelected.length" @click="openBatchTagModal">打标签</button>
+              <button class="ghost btn-sm" @click="openTagManager">标签配置</button>
             </div>
             <div class="row" style="gap:8px;margin:0;flex-wrap:nowrap">
               <input v-model="poolFilter.q" placeholder="证券代码/名称" style="max-width:150px" />
@@ -664,7 +664,7 @@
             <label>标签 <span class="muted">（可多选）</span></label>
             <div class="tag-chips">
               <button type="button" v-for="t in poolTags" :key="t.id" class="chip" :class="{active: (editModal.tag_ids||[]).includes(t.id)}" :style="(editModal.tag_ids||[]).includes(t.id)?{background:t.color,borderColor:t.color,color:'#fff'}:{}" @click="toggleModalTag('editModal', t.id)">{{t.name}}</button>
-              <span v-if="!poolTags.length" class="muted">暂无标签，先去「标签分类」添加</span>
+              <span v-if="!poolTags.length" class="muted">暂无标签，先去「标签配置」添加</span>
             </div>
             <label>备注</label><input v-model="editModal.note" type="text" placeholder="备注" />
           </div>
@@ -688,7 +688,7 @@
             <label>标签 <span class="muted">（可多选）</span></label>
             <div class="tag-chips">
               <button type="button" v-for="t in poolTags" :key="t.id" class="chip" :class="{active: (addPoolModal.tag_ids||[]).includes(t.id)}" :style="(addPoolModal.tag_ids||[]).includes(t.id)?{background:t.color,borderColor:t.color,color:'#fff'}:{}" @click="toggleModalTag('addPoolModal', t.id)">{{t.name}}</button>
-              <span v-if="!poolTags.length" class="muted">暂无标签，先去「标签分类」添加</span>
+              <span v-if="!poolTags.length" class="muted">暂无标签，先去「标签配置」添加</span>
             </div>
             <label>备注</label><input v-model="addPoolModal.note" type="text" placeholder="备注" />
           </div>
@@ -703,7 +703,7 @@
       <div v-if="tagModal.show" class="modal" @click.self="closeTagManager">
         <div class="modal-box" style="max-width:520px">
           <div class="modal-head">
-            <h3>标签分类</h3>
+            <h3>标签配置</h3>
             <button type="button" class="close-x" @click="closeTagManager" aria-label="关闭">×</button>
           </div>
           <div class="modal-body">
@@ -739,18 +739,18 @@
         </div>
       </div>
 
-      <!-- 可投池批量标签设置弹窗 -->
+      <!-- 可投池批量打标签弹窗 -->
       <div v-if="batchTagModal.show" class="modal" @click.self="closeBatchTagModal">
         <div class="modal-box" style="max-width:520px">
           <div class="modal-head">
-            <h3>标签设置（已选 {{poolSelected.length}} 只）</h3>
+            <h3>打标签（已选 {{poolSelected.length}} 只）</h3>
             <button type="button" class="close-x" @click="closeBatchTagModal" aria-label="关闭">×</button>
           </div>
           <div class="modal-body">
             <p class="muted" style="margin-top:0">选择标签后保存，将覆盖替换已选股票的标签。</p>
             <div class="tag-chips">
               <button type="button" v-for="t in poolTags" :key="t.id" class="chip" :class="{active: (batchTagModal.tag_ids||[]).includes(t.id)}" :style="(batchTagModal.tag_ids||[]).includes(t.id)?{background:t.color,borderColor:t.color,color:'#fff'}:{}" @click="toggleModalTag('batchTagModal', t.id)">{{t.name}}</button>
-              <span v-if="!poolTags.length" class="muted">暂无标签，先去「标签分类」添加</span>
+              <span v-if="!poolTags.length" class="muted">暂无标签，先去「标签配置」添加</span>
             </div>
           </div>
           <div class="modal-foot">
@@ -1152,8 +1152,8 @@ const app = createApp({
     editRow:{code:'',qty:'',cost:'',note:'',saving:false},  // 可投池表格「整行编辑」状态(持仓/成本/备注)
     editModal:{show:false, code:'', qty:'', cost:'', note:'', tag_ids:[], saving:false, name:''},  // 可投池行编辑弹窗
     addPoolModal:{show:false, code:'', note:'', tag_ids:[], saving:false},  // 可投池新增弹窗
-    tagModal:{show:false, id:null, name:'', color:'#3b82f6', saving:false},  // 可投池标签管理弹窗
-    batchTagModal:{show:false, tag_ids:[], saving:false},  // 可投池批量标签设置弹窗
+    tagModal:{show:false, id:null, name:'', color:'#3b82f6', saving:false},  // 可投池标签配置弹窗
+    batchTagModal:{show:false, tag_ids:[], saving:false},  // 可投池批量打标签弹窗
   }},
   computed:{
     // 距上次把备份下载到本机的天数(null=从未下载过),用于备份提醒
