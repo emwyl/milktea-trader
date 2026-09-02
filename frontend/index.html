@@ -20,6 +20,7 @@
   header .sub{font-size:12px;opacity:.85}
   header .auto-refresh-btn{display:inline-flex;align-items:center;gap:4px}
   header .auto-refresh-btn.active{background:#fff;color:var(--tea-d);font-weight:700;box-shadow:0 0 0 2px rgba(255,255,255,.55)}
+  header .version{margin-left:auto;font-size:12px;opacity:.95;background:rgba(255,255,255,.18);padding:2px 8px;border-radius:6px;white-space:nowrap}
   nav{display:flex;gap:6px;padding:8px 16px;background:#fff;border-bottom:1px solid var(--line);flex-wrap:wrap}
   nav a{padding:6px 12px;border-radius:8px;cursor:pointer;font-size:14px;color:var(--ink);text-decoration:none}
   nav a.active{background:var(--tea);color:#fff}
@@ -259,7 +260,8 @@
     <header>
       <h1>🧋 加油赚奶茶钱</h1>
       <span class="sub">个人学习用 · 先控风险再谈收益</span>
-      <button class="ghost auto-refresh-btn" :class="{active:autoRefresh}" @click="toggleAutoRefresh" :title="autoRefresh?'自动刷新开启中，每5秒更新当前页面数据':'点击开启每5秒自动刷新'" style="margin-left:auto">
+      <span class="version" id="appVersion">v20260902050</span>
+      <button class="ghost auto-refresh-btn" :class="{active:autoRefresh}" @click="toggleAutoRefresh" :title="autoRefresh?'自动刷新开启中，每5秒更新当前页面数据':'点击开启每5秒自动刷新'">
         {{autoRefresh?'⏸':'▶'}} 自动 5s
       </button>
       <span class="sub">你好，{{me.username}} <span v-if="me.role==='admin'" class="pill">admin</span><span v-if="me.is_guest" class="pill">游客</span></span>
