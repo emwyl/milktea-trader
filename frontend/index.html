@@ -451,9 +451,9 @@
           <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid #e5e7eb">
             <div class="batchbar" style="margin:0">
               <button @click="openAddPoolModal">新增</button>
-              <button class="ghost btn-sm" :disabled="!poolSelected.length" @click="batchDeletePool" style="color:var(--danger);border-color:var(--danger)">删除</button>
-              <button class="ghost btn-sm" :disabled="!poolSelected.length" @click="openBatchTagModal">打标签</button>
-              <button class="ghost btn-sm" @click="openTagManager">标签配置</button>
+              <button class="ghost" :disabled="!poolSelected.length" @click="batchDeletePool" style="color:var(--danger);border-color:var(--danger)">删除</button>
+              <button class="ghost" :disabled="!poolSelected.length" @click="openBatchTagModal">打标签</button>
+              <button class="ghost" @click="openTagManager">标签配置</button>
             </div>
             <div class="row" style="gap:8px;margin:0;flex-wrap:nowrap">
               <input v-model="poolFilter.q" placeholder="证券代码/名称" style="max-width:150px" />
@@ -756,6 +756,24 @@
           <div class="modal-foot">
             <button type="button" class="ghost" @click="closeBatchTagModal">取消</button>
             <button type="button" @click="saveBatchTags" :disabled="batchTagModal.saving">{{batchTagModal.saving?'保存中…':'保存'}}</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 可投池批量删除确认弹窗 -->
+      <div v-if="deleteConfirmModal.show" class="modal" @click.self="closeDeleteConfirm">
+        <div class="modal-box" style="max-width:420px">
+          <div class="modal-head">
+            <h3>确认删除</h3>
+            <button type="button" class="close-x" @click="closeDeleteConfirm" aria-label="关闭">×</button>
+          </div>
+          <div class="modal-body">
+            <p>确定要删除选中的 <strong>{{deleteConfirmModal.codes.length}}</strong> 只股票吗？</p>
+            <p class="muted" style="margin-bottom:0">{{deleteConfirmModal.detail}}</p>
+          </div>
+          <div class="modal-foot">
+            <button type="button" class="ghost" @click="closeDeleteConfirm">取消</button>
+            <button type="button" @click="doConfirmDelete" :disabled="deleteConfirmModal.saving" style="background:var(--danger);border-color:var(--danger)">{{deleteConfirmModal.saving?'删除中…':'确认删除'}}</button>
           </div>
         </div>
       </div>
@@ -1154,6 +1172,7 @@ const app = createApp({
     addPoolModal:{show:false, code:'', note:'', tag_ids:[], saving:false},  // 可投池新增弹窗
     tagModal:{show:false, id:null, name:'', color:'#3b82f6', saving:false},  // 可投池标签配置弹窗
     batchTagModal:{show:false, tag_ids:[], saving:false},  // 可投池批量打标签弹窗
+    deleteConfirmModal:{show:false, codes:[], detail:'', saving:false},  // 可投池批量删除确认弹窗
   }},
   computed:{
     // 距上次把备份下载到本机的天数(null=从未下载过),用于备份提醒
@@ -1491,14 +1510,18 @@ const app = createApp({
     selectAllPool(e){
       this.poolSelected = e.target.checked ? this.pool.map(p=>p.code) : [];
     },
-    async batchDeletePool(){
+    batchDeletePool(){
       const codes = this.poolSelected.slice();
       if(!codes.length){ alert('请先勾选要删除的记录'); return; }
       const archiveCodes = codes.filter(c=>{ const p=this.pool.find(x=>x.code===c); return p && p.status==='archive'; });
       const detail = archiveCodes.length
         ? `其中 ${archiveCodes.length} 只已归档且有持仓，将彻底删除且无法恢复。`
         : '选中记录将软删除（可恢复），持仓数据保留。';
-      if(!confirm(`确定要删除选中的 ${codes.length} 只股票吗？${detail}`)) return;
+      this.deleteConfirmModal = {show:true, codes, detail, saving:false};
+    },
+    async doConfirmDelete(){
+      const codes = this.deleteConfirmModal.codes;
+      this.deleteConfirmModal.saving = true;
       const r = await API('/pool/batch-delete',{method:'POST',body:JSON.stringify({codes})});
       if(r && r.ok){
         const hard = (r.hard_deleted||[]).length;
@@ -1506,10 +1529,13 @@ const app = createApp({
       } else {
         this.poolMsg = '删除失败';
       }
+      this.deleteConfirmModal.show = false;
+      this.deleteConfirmModal.saving = false;
       setTimeout(()=>{ this.poolMsg=''; }, 3000);
       this.poolSelected=[];
       this.loadPool();
     },
+    closeDeleteConfirm(){ this.deleteConfirmModal={show:false, codes:[], detail:'', saving:false}; },
     openBatchTagModal(){ this.batchTagModal={show:true, tag_ids:[], saving:false}; },
     closeBatchTagModal(){ this.batchTagModal={show:false, tag_ids:[], saving:false}; },
     toggleModalTag(modalKey, tid){
