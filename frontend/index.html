@@ -260,7 +260,7 @@
     <header>
       <h1>🧋 加油赚奶茶钱</h1>
       <span class="sub">个人学习用 · 先控风险再谈收益</span>
-      <span class="version" id="appVersion">v20260902069</span>
+      <span class="version" id="appVersion">v20260902070</span>
       <button class="ghost auto-refresh-btn" :class="{active:autoRefresh}" @click="toggleAutoRefresh" :title="autoRefresh?'自动刷新开启中，每5秒更新当前页面数据':'点击开启每5秒自动刷新'">
         {{autoRefresh?'⏸':'▶'}} 自动 5s
       </button>
@@ -547,7 +547,7 @@
                 </div>
               </template>
               <template v-else-if="col.key==='realtime_amount'">
-                <span :class="{'up':p.track.yesterday_amount_at_time && p.track.realtime_amount > p.track.yesterday_amount_at_time}">{{p.track.realtime_amount!=null ? Math.round(p.track.realtime_amount/1e4) : '-'}}</span>
+                <span :class="{'up':p.track.realtime_amount != null && p.track.realtime_amount > (p.track.yesterday_amount_at_time || 0) && p.track.realtime_amount > (p.track.avg_amount_20 || 0)}">{{p.track.realtime_amount!=null ? Math.round(p.track.realtime_amount/1e4) : '-'}}</span>
               </template>
               <template v-else-if="col.key==='yesterday_amount'">
                 <span class="muted">{{p.track.yesterday_amount_at_time!=null ? Math.round(p.track.yesterday_amount_at_time/1e4) : '-'}}</span>
@@ -1533,7 +1533,7 @@ const app = createApp({
           {key:'select', label:'', width:60, visible:true, frozen:false, sortable:false, hideable:false},
           {key:'code_name', label:'代码/名称', width:144, visible:true, frozen:true},
           {key:'price_change', label:'现价/涨跌幅', width:123, visible:true, frozen:true},
-          {key:'realtime_amount', label:'当天实时\n成交额（万）', width:117, visible:true, frozen:false, help:'当天截至当前时点的累计成交额，单位：万元。数值大于 T-1 日同期时标红'},
+          {key:'realtime_amount', label:'当天实时\n成交额（万）', width:117, visible:true, frozen:false, help:'当天截至当前时点的累计成交额，单位：万元。同时大于 T-1 日同期 与 20日平均成交额 时标红'},
           {key:'yesterday_amount', label:'T-1日同期\n成交额（万）', width:117, visible:true, frozen:false, help:'前一个交易日同时点的累计成交额，单位：万元'},
           {key:'avg_amount_20', label:'20日平均\n成交额（万）', width:117, visible:true, frozen:false, help:'近20个交易日收盘后日均成交额，单位：万元'},
           {key:'vol_ratio', label:'量比', width:81, visible:true, frozen:false, help:'当前成交量/近5日均量。1.5-3温和放量，可观测买入；3-5明显放量；>5警惕利好兑现；<0.8缩量观望'},
