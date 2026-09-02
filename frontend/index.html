@@ -92,9 +92,13 @@
     .pool-card-price{text-align:right;line-height:1.2}
     .pool-card-price .p{font-size:18px;font-weight:700}
     .pool-card-price .c{font-size:12px;margin-top:2px}
-    .pool-card-grids{display:grid;grid-template-columns:1fr 1fr;gap:6px 10px;font-size:12px;margin:8px 0}
-    .pool-card-grids .k{color:#6b7280;font-size:11px}
-    .pool-card-grids .v{font-weight:600;color:var(--ink);text-align:right}
+    /* 卡片字段列表：单列（一指标一行），标签加粗 + 横线切割 + 斑马纹 */
+    .pool-card-grids{display:flex;flex-direction:column;gap:0;margin:8px 0;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+    .pool-card-grids > div{display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:9px 12px;border-bottom:1px dashed var(--line)}
+    .pool-card-grids > div:last-child{border-bottom:0}
+    .pool-card-grids > div:nth-child(even){background:#f9fafb}
+    .pool-card-grids .k{color:var(--ink);font-size:13px;font-weight:600;letter-spacing:0.2px;flex-shrink:0}
+    .pool-card-grids .v{font-weight:600;color:var(--ink);font-size:13px;text-align:right;margin-left:auto;max-width:65%;overflow-wrap:break-word}
     .pool-card-tags{display:flex;gap:4px;flex-wrap:wrap;margin:6px 0}
     .pool-card-tags:empty{display:none}
     .pool-card-note{font-size:11px;color:#6b7280;background:#f9fafb;padding:4px 6px;border-radius:6px;margin-top:6px;line-height:1.5}
@@ -149,7 +153,6 @@
     header h1{font-size:16px}
     header .sub{display:none}
     .grid.g4{grid-template-columns:1fr}
-    .pool-card-grids{grid-template-columns:1fr}
   }
   /* 平板及以上保持原样 */
   @media(min-width:769px){
@@ -396,7 +399,7 @@
     <header>
       <h1>🧋 加油赚奶茶钱</h1>
       <span class="sub">个人学习用 · 先控风险再谈收益</span>
-      <span class="version" id="appVersion">v20260902075</span>
+      <span class="version" id="appVersion">v20260902076</span>
       <button class="ghost auto-refresh-btn" :class="{active:autoRefresh}" @click="toggleAutoRefresh" :title="autoRefresh?'自动刷新开启中，每5秒更新当前页面数据':'点击开启每5秒自动刷新'">
         {{autoRefresh?'⏸':'▶'}} 自动 5s
       </button>
