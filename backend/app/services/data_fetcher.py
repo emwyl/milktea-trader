@@ -22,17 +22,32 @@ from app.services.interfaces import Quote
 
 # ============ HTTP 请求基础 ============
 _TIMEOUT = 8.0
+_DEFAULT_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
 
 
-def _http_get(url: str, headers: dict | None = None) -> str | None:
-    """通用 GET，返回文本；失败返回 None。"""
-    try:
-        r = httpx.get(url, headers=headers or {}, timeout=_TIMEOUT, follow_redirects=True)
-        if r.status_code != 200:
+def _http_get(url: str, headers: dict | None = None, retries: int = 1) -> str | None:
+    """通用 GET，返回文本；失败返回 None。
+    默认带浏览器 User-Agent，避免被公开源拒绝/断开连接；
+    每次新建 httpx.Client，避免连接池复用导致的偶发断连；
+    对 RemoteProtocolError / ConnectError 等可重试一次。"""
+    h = {"User-Agent": _DEFAULT_UA}
+    if headers:
+        h.update(headers)
+    last_err = None
+    for attempt in range(retries + 1):
+        try:
+            with httpx.Client(headers=h, timeout=_TIMEOUT, follow_redirects=True) as client:
+                r = client.get(url)
+                if r.status_code != 200:
+                    return None
+                return r.text
+        except Exception as e:
+            last_err = e
+            # 服务器断连或连接类错误时重试一次
+            if attempt < retries:
+                continue
             return None
-        return r.text
-    except Exception:
-        return None
+    return None
 
 
 def _market_of(code: str) -> str:
@@ -505,13 +520,31 @@ def _fetch_intraday_eastmoney(code: str, ndays: int = 1):
         return None
 
 
+# 分时数据短缓存：避免可投池批量刷新时对同一标的重复请求东财
+_INTRADAY_CACHE: dict[str, tuple[float, tuple]] = {}
+_INTRADAY_CACHE_TTL = 30  # 秒
+
+
+def _fetch_intraday_cached(code: str, ndays: int = 2) -> tuple | None:
+    """带短缓存的东财分时获取，减少批量调用时的请求频率。"""
+    key = f"{code}:{ndays}"
+    now = dt.datetime.now().timestamp()
+    cached = _INTRADAY_CACHE.get(key)
+    if cached and (now - cached[0]) < _INTRADAY_CACHE_TTL:
+        return cached[1]
+    res = _fetch_intraday_eastmoney(code, ndays=ndays)
+    if res:
+        _INTRADAY_CACHE[key] = (now, res)
+    return res
+
+
 def _yesterday_amount_at_time(code: str) -> float | None:
     """取昨日同时点的累计成交额（元）。
     使用东财 2 日分时数据，按当前交易时间找昨日最接近的分钟累计额；
     失败时返回 None，前端显示为 '-'。
     """
     now = dt.datetime.now()
-    res = _fetch_intraday_eastmoney(code, ndays=2)
+    res = _fetch_intraday_cached(code, ndays=2)
     if not res:
         return None
     _, _, _, times, amounts = res
@@ -524,12 +557,14 @@ def _yesterday_amount_at_time(code: str) -> float | None:
         if yesterday.weekday() < 5:
             break
         yesterday -= dt.timedelta(days=1)
-    yesterday_str = yesterday.strftime("%Y%m%d")
+    # 东财 times 格式为 "YYYY-MM-DD HH:MM" 或 "HHMM"，统一用日期前缀匹配
+    yesterday_str = yesterday.strftime("%Y-%m-%d")
+    yesterday_compact = yesterday.strftime("%Y%m%d")
 
-    # times 可能是 "YYYYMMDDHHMM" 或 "HHMM"
     full_date = len(times[0]) >= 10 and times[0].startswith("20")
     if full_date:
-        yest_pairs = [(t, amounts[i]) for i, t in enumerate(times) if t.startswith(yesterday_str)]
+        yest_pairs = [(t, amounts[i]) for i, t in enumerate(times)
+                      if t.startswith(yesterday_str) or t.startswith(yesterday_compact)]
     else:
         half = len(times) // 2
         yest_pairs = list(zip(times[:half], amounts[:half]))
@@ -541,7 +576,15 @@ def _yesterday_amount_at_time(code: str) -> float | None:
     best_idx = -1
     best_hm = -1
     for i, (t, _) in enumerate(yest_pairs):
-        hm = int(t[-4:]) if len(t) >= 4 else int(t)
+        # 支持 "YYYY-MM-DD HH:MM" 与 "HHMM" 两种时间格式
+        if full_date and " " in t:
+            time_part = t.split(" ", 1)[1].replace(":", "")
+        else:
+            time_part = t[-4:] if len(t) >= 4 else t
+        try:
+            hm = int(time_part)
+        except ValueError:
+            continue
         if hm <= current_hm and hm > best_hm:
             best_hm = hm
             best_idx = i
