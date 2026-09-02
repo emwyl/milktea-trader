@@ -125,6 +125,24 @@
     .detail-tabs{overflow-x:auto;flex-wrap:nowrap !important}
     .detail-tabs::-webkit-scrollbar{display:none}
     .detail-tabs a{flex-shrink:0}
+    /* ===== 说明带(hintbar)折叠：窄屏默认收起为小按钮，点击才展开 ===== */
+    .hintbar-toggle{
+      display:inline-flex;align-items:center;gap:4px;
+      font-size:12px;color:var(--tea-d);
+      padding:5px 10px;
+      border:1px solid var(--line);
+      border-radius:8px;
+      background:#eff6ff;
+      cursor:pointer;user-select:none;
+      margin-bottom:6px;font-weight:500;
+    }
+    .hintbar-toggle::before{content:"ⓘ"}
+    .hintbar-cell.is-open > .hintbar-toggle::before{content:"✕"}
+    .hintbar-cell:not(.is-open) > .hintbar{display:none}
+    .hintbar-cell.is-open > .hintbar{
+      display:block;margin-top:6px;font-size:11px;line-height:1.5;
+      box-shadow:0 6px 20px rgba(30,64,175,.12);
+    }
   }
   /* 480px 以下：进一步压缩 */
   @media(max-width:480px){
@@ -137,6 +155,9 @@
   @media(min-width:769px){
     .pool-card-list{display:none !important}
     .scroll-hint{display:none}
+    /* 桌面端：说明带一直显示,折叠按钮隐藏 */
+    .hintbar-toggle{display:none}
+    .hintbar-cell:not(.is-open) > .hintbar{display:block}
   }
   .stat{border-radius:12px;padding:14px;color:#fff;text-align:center}
   .stat.risk{background:var(--danger)} .stat.add{background:var(--ok)} .stat.reduce{background:var(--warn)} .stat.pool{background:var(--tea-d)}
@@ -365,7 +386,7 @@
     <header>
       <h1>🧋 加油赚奶茶钱</h1>
       <span class="sub">个人学习用 · 先控风险再谈收益</span>
-      <span class="version" id="appVersion">v20260902073</span>
+      <span class="version" id="appVersion">v20260902074</span>
       <button class="ghost auto-refresh-btn" :class="{active:autoRefresh}" @click="toggleAutoRefresh" :title="autoRefresh?'自动刷新开启中，每5秒更新当前页面数据':'点击开启每5秒自动刷新'">
         {{autoRefresh?'⏸':'▶'}} 自动 5s
       </button>
@@ -426,7 +447,10 @@
 
       <!-- 选股模型（第二类：引导式参数配置，建立选择股票的模型） -->
       <div v-if="view==='screens'">
-        <div class="hintbar">选股模型 = 系统给你<b>专业指标参数</b>,你按自己的投资风格偏好调整,建立<b>「什么样的股票值得关注」</b>的标准。运行后结果可一键加入<b>短线可投池</b>做每日跟踪。</div>
+        <div :class="['hintbar-cell', hintOpen==='screens'?'is-open':'']" style="margin-bottom:10px">
+          <button class="hintbar-toggle" @click.stop="hintOpen = (hintOpen==='screens'?'':'screens')">{{hintOpen==='screens'?'收起说明':'提示说明'}}</button>
+          <div class="hintbar">选股模型 = 系统给你<b>专业指标参数</b>,你按自己的投资风格偏好调整,建立<b>「什么样的股票值得关注」</b>的标准。运行后结果可一键加入<b>短线可投池</b>做每日跟踪。</div>
+        </div>
 
         <!-- 投资偏好画像一致性校验：避免用户自认为稳健但画像显示激进等偏差 -->
         <div class="card" v-if="prefDone" style="border-left:4px solid var(--tea)">
@@ -590,7 +614,10 @@
 
         <!-- 手工筛选 -->
         <div v-if="poolTab==='manual'">
-        <div class="hintbar">短线可投池 = <b>你自己积攒的股票池</b>(手工输入代码加入)。系统每日跟踪 <b>箱体上下沿 / MA5·MA20 / 量比 / 换手 / 涨跌幅</b>,辅助你判断趋势与决策。</div>
+        <div :class="['hintbar-cell', hintOpen==='pool'?'is-open':'']" style="margin-bottom:10px">
+          <button class="hintbar-toggle" @click.stop="hintOpen = (hintOpen==='pool'?'':'pool')">{{hintOpen==='pool'?'收起说明':'提示说明'}}</button>
+          <div class="hintbar">短线可投池 = <b>你自己积攒的股票池</b>(手工输入代码加入)。系统每日跟踪 <b>箱体上下沿 / MA5·MA20 / 量比 / 换手 / 涨跌幅</b>,辅助你判断趋势与决策。</div>
+        </div>
         <div v-if="poolMsg" class="hintbar" style="background:#e8f4ed;border-left-color:var(--ok);color:var(--ok)">{{poolMsg}}</div>
         <div class="card">
           <!-- 筛选与批量操作工具条 -->
@@ -806,7 +833,10 @@
 
         <!-- 智能筛选 -->
         <div v-if="poolTab==='recommend'">
-          <div class="hintbar">基于你的「偏好分析」结果，系统自动匹配方案并筛选全市场标的。已有持仓/已加入可投池的会自动过滤。</div>
+          <div :class="['hintbar-cell', hintOpen==='recommend'?'is-open':'']" style="margin-bottom:10px">
+            <button class="hintbar-toggle" @click.stop="hintOpen = (hintOpen==='recommend'?'':'recommend')">{{hintOpen==='recommend'?'收起说明':'提示说明'}}</button>
+            <div class="hintbar">基于你的「偏好分析」结果，系统自动匹配方案并筛选全市场标的。已有持仓/已加入可投池的会自动过滤。</div>
+          </div>
           <div class="card"><div class="row"><b>智能筛选</b>
             <button @click="loadRecommendations">刷新筛选</button>
             <span v-if="recommendations" class="muted">{{recommendations.msg}}</span>
@@ -1563,6 +1593,7 @@ const app = createApp({
     ai:{key:'',base:'',model:''}, nt:{channel:'console',config:'',cron:'30 15 * * 1-5'},
     poolCodes:[],  // 当前可投池中的 code 集合(每次 loadPool 后更新),用于选股结果页判「已在池」
     poolMsg:'',  // 短线可投池页面顶部轻量提示(如「已彻底删除」),2.5s 自动消失
+    hintOpen:'',  // 移动端说明折叠:空串=全收起；非空=当前展开的 hintbar key(pool|screens|recommend)
     backups:[], backing:false,  // admin 自动备份列表 / 备份按钮 loading
     cosStatus:{enabled:false,bucket:'',region:'',prefix:''},  // 腾讯云 COS 连接状态
     cosBks:[], cosBusy:false,  // COS 云端备份列表 / 同步按钮 loading
