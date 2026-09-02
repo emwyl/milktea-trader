@@ -133,22 +133,13 @@
   /* 可投池单元格：保留微小左右内边距，避免数字贴边显得凌乱 */
   .tracktbl.pool-tbl thead th,
   .tracktbl.pool-tbl tbody td{padding:6px 2px}
-  /* 冻结列：左侧 复选框~换手%（第1-9列）固定，右侧 操作列 固定 */
-  .tracktbl.pool-tbl thead th:nth-child(-n+9),
-  .tracktbl.pool-tbl tbody td:nth-child(-n+9){position:sticky;z-index:3}
-  .tracktbl.pool-tbl thead th:nth-child(-n+9){z-index:5;background:#f9fafb}
-  .tracktbl.pool-tbl tbody td:nth-child(-n+9){background:#fff}
-  .tracktbl.pool-tbl tbody tr:hover td:nth-child(-n+9){background:#f8fafc}
-  .tracktbl.pool-tbl tbody tr.selected-row td:nth-child(-n+9){background:#eff6ff}
-  .tracktbl.pool-tbl th:nth-child(1),.tracktbl.pool-tbl td:nth-child(1){left:0;width:34px;min-width:34px;max-width:34px}
-  .tracktbl.pool-tbl th:nth-child(2),.tracktbl.pool-tbl td:nth-child(2){left:34px;width:112px;min-width:112px;max-width:112px;white-space:normal;word-break:break-all}
-  .tracktbl.pool-tbl th:nth-child(3),.tracktbl.pool-tbl td:nth-child(3){left:146px;width:92px;min-width:92px;max-width:92px}
-  .tracktbl.pool-tbl th:nth-child(4),.tracktbl.pool-tbl td:nth-child(4){left:238px;width:140px;min-width:140px;max-width:140px}
-  .tracktbl.pool-tbl th:nth-child(5),.tracktbl.pool-tbl td:nth-child(5){left:378px;width:100px;min-width:100px;max-width:100px}
-  .tracktbl.pool-tbl th:nth-child(6),.tracktbl.pool-tbl td:nth-child(6){left:478px;width:100px;min-width:100px;max-width:100px}
-  .tracktbl.pool-tbl th:nth-child(7),.tracktbl.pool-tbl td:nth-child(7){left:578px;width:100px;min-width:100px;max-width:100px}
-  .tracktbl.pool-tbl th:nth-child(8),.tracktbl.pool-tbl td:nth-child(8){left:678px;width:56px;min-width:56px;max-width:56px}
-  .tracktbl.pool-tbl th:nth-child(9),.tracktbl.pool-tbl td:nth-child(9){left:734px;width:68px;min-width:68px;max-width:68px;border-right:2px solid #d1d5db}
+  /* 冻结列：左侧仅冻结 code/名称、现价/涨跌幅，右侧操作列固定 */
+  .tracktbl.pool-tbl thead th.frozen,
+  .tracktbl.pool-tbl tbody td.frozen{position:sticky;z-index:3}
+  .tracktbl.pool-tbl thead th.frozen{z-index:5;background:#f9fafb}
+  .tracktbl.pool-tbl tbody td.frozen{background:#fff}
+  .tracktbl.pool-tbl tbody tr:hover td.frozen{background:#f8fafc}
+  .tracktbl.pool-tbl tbody tr.selected-row td.frozen{background:#eff6ff}
   .tracktbl thead th:last-child,
   .tracktbl tbody td:last-child{position:sticky;right:0;z-index:3;border-left:2px solid #d1d5db}
   .tracktbl thead th:last-child{z-index:5;background:#f9fafb}
@@ -511,13 +502,13 @@
           </div>
           <div class="tracktbl-wrap">
           <table class="tracktbl pool-tbl"><thead><tr>
-            <th v-for="col in activePoolColumns" :key="col.key" v-if="col.visible" :style="thStyle(poolColMetrics, col)">
+            <th v-for="col in activePoolColumns" :key="col.key" v-if="col.visible" :class="{frozen: col.frozen}" :style="thStyle(poolColMetrics, col)">
               <template v-if="col.key==='select'"><input v-if="pool.length" type="checkbox" :checked="poolSelected.length===pool.length && pool.length>0" @change="selectAllPool" title="全选/取消全选" /></template>
               <template v-else>{{col.label}}<i v-if="col.help" class="info" :title="col.help">?</i></template>
             </th>
           </tr></thead>
           <tbody><tr v-for="p in pool" :key="p.id" :class="{'selected-row':poolSelected.includes(p.code)}">
-            <td v-for="col in activePoolColumns" :key="col.key" v-if="col.visible" :style="tdStyle(poolColMetrics, col)">
+            <td v-for="col in activePoolColumns" :key="col.key" v-if="col.visible" :class="{frozen: col.frozen}" :style="tdStyle(poolColMetrics, col)">
               <template v-if="col.key==='select'"><input type="checkbox" :checked="poolSelected.includes(p.code)" @change.stop="togglePoolSelect(p.code)" /></template>
               <template v-else-if="col.key==='tags'">
                 <span v-if="p.tags && p.tags.length" class="tag-list">
@@ -1280,7 +1271,12 @@ const app = createApp({
     batchTagModal:{show:false, tag_ids:[], saving:false},  // 可投池批量打标签弹窗
     deleteConfirmModal:{show:false, codes:[], detail:'', saving:false},  // 可投池批量删除确认弹窗
     columnSettingModal:{show:false, tableKey:'', title:'', columns:[]},  // 通用自定义列设置弹窗
-    columnSettings: JSON.parse(localStorage.getItem('columnSettings')||'{}'),  // 各表格列显隐/冻结/顺序持久化
+    columnSettings: (()=>{
+      const currentVer = '20260902-01';
+      const savedVer = localStorage.getItem('columnSettingsVersion');
+      if(savedVer !== currentVer){ localStorage.removeItem('columnSettings'); localStorage.setItem('columnSettingsVersion', currentVer); return {}; }
+      return JSON.parse(localStorage.getItem('columnSettings')||'{}');
+    })(),  // 各表格列显隐/冻结/顺序持久化（布局升级后自动重置）
     autoRefresh: localStorage.getItem('autoRefresh')===null ? true : localStorage.getItem('autoRefresh')==='true',  // 全局自动刷新开关（默认开启，记忆上次选择）
     autoRefreshTimer:null,  // 全局自动刷新定时器
     toast:{show:false, message:'', timer:null},  // 全局轻量 Toast
@@ -1364,15 +1360,14 @@ const app = createApp({
     getDefaultColumns(key){
       if(key==='pool'){
         return [
-          {key:'select', label:'', width:34, visible:true, frozen:true, sortable:false, hideable:false},
-          {key:'tags', label:'标签', width:112, visible:true, frozen:true},
+          {key:'select', label:'', width:34, visible:true, frozen:false, sortable:false, hideable:false},
           {key:'code_name', label:'代码/名称', width:92, visible:true, frozen:true},
           {key:'price_change', label:'现价/涨跌幅', width:140, visible:true, frozen:true},
-          {key:'realtime_amount', label:'当天实时成交量（万）', width:100, visible:true, frozen:true, help:'当天截至当前时点的累计成交额，单位：万元。数值大于 T-1 日同期时标红'},
-          {key:'yesterday_amount', label:'T-1日同期成交量（万）', width:100, visible:true, frozen:true, help:'前一个交易日同时点的累计成交额，单位：万元'},
-          {key:'avg_amount_20', label:'20日平均成交量（万）', width:100, visible:true, frozen:true, help:'近20个交易日收盘后日均成交额，单位：万元'},
-          {key:'vol_ratio', label:'量比', width:56, visible:true, frozen:true, help:'当前成交量/近5日均量。1.5-3温和放量，可观测买入；3-5明显放量；>5警惕利好兑现；<0.8缩量观望'},
-          {key:'turnover', label:'换手%', width:68, visible:true, frozen:true, help:'流通筹码交换比例。3%-8%活跃可控，可观测；8%-15%高度活跃短线机会；>20%过热风险；<1%冷清'},
+          {key:'realtime_amount', label:'当天实时成交量（万）', width:100, visible:true, frozen:false, help:'当天截至当前时点的累计成交额，单位：万元。数值大于 T-1 日同期时标红'},
+          {key:'yesterday_amount', label:'T-1日同期成交量（万）', width:100, visible:true, frozen:false, help:'前一个交易日同时点的累计成交额，单位：万元'},
+          {key:'avg_amount_20', label:'20日平均成交量（万）', width:100, visible:true, frozen:false, help:'近20个交易日收盘后日均成交额，单位：万元'},
+          {key:'vol_ratio', label:'量比', width:56, visible:true, frozen:false, help:'当前成交量/近5日均量。1.5-3温和放量，可观测买入；3-5明显放量；>5警惕利好兑现；<0.8缩量观望'},
+          {key:'turnover', label:'换手%', width:68, visible:true, frozen:false, help:'流通筹码交换比例。3%-8%活跃可控，可观测；8%-15%高度活跃短线机会；>20%过热风险；<1%冷清'},
           {key:'intra_amplitude', label:'日内振幅', width:70, visible:true, frozen:false, help:'(最高-最低)/昨收。3%-7%有操作空间，可观测；>10%波动剧烈风险高；<2%太沉闷'},
           {key:'ma5', label:'MA5', width:68, visible:true, frozen:false, help:'现价与5日均线关系。站上=短期强势，偏买入观察；跌下=短期弱势，偏观望'},
           {key:'ma20', label:'MA20', width:68, visible:true, frozen:false, help:'现价与20日均线关系。站上=中期趋势向上，趋势较好；跌下=中期趋势向下，偏谨慎'},
@@ -1385,6 +1380,7 @@ const app = createApp({
           {key:'position_qty', label:'持仓', width:56, visible:true, frozen:false},
           {key:'cost_price', label:'成本', width:60, visible:true, frozen:false},
           {key:'note', label:'备注', width:80, visible:true, frozen:false},
+          {key:'tags', label:'标签', width:112, visible:true, frozen:false},
           {key:'scheme_type', label:'方案', width:70, visible:true, frozen:false},
           {key:'ops', label:'操作', width:120, visible:true, frozen:false, sortable:false, hideable:false}
         ];
