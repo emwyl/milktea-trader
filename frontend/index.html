@@ -128,6 +128,9 @@
   .tracktbl tbody tr:hover{background:#f8fafc}
   .tracktbl tbody tr.editing-row{background:#eff6ff}
   .tracktbl tbody tr.selected-row{background:#eff6ff}
+  /* 可投池单元格：保留微小左右内边距，避免数字贴边显得凌乱 */
+  .tracktbl.pool-tbl thead th,
+  .tracktbl.pool-tbl tbody td{padding:6px 2px}
   /* 冻结列：左侧 复选框~换手%（第1-9列）固定，右侧 操作列 固定 */
   .tracktbl.pool-tbl thead th:nth-child(-n+9),
   .tracktbl.pool-tbl tbody td:nth-child(-n+9){position:sticky;z-index:3}
