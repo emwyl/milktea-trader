@@ -1193,13 +1193,181 @@ def _calc_pass_scores(code: str, out: dict, quotes: list[Quote], spot: dict | No
         out["ai_grade"] = "D"
 
 
-def get_pool_track(code: str, db) -> dict:
+def _operation_advice_for_pool(track: dict, position: dict | None = None) -> dict:
+    """基于 pool track 已有数据生成简化操作建议,供可投池表格一列展示。
+
+    输出结构与 t_analysis.section6 保持一致(title/summary/text/points),
+    便于前端用同一套弹窗渲染完整操作结论。
+    """
+    price = track.get("price") or 0.0
+    change_pct = track.get("change_pct") or 0.0
+    vol_ratio = track.get("vol_ratio") or 0.0
+    turnover = track.get("turnover") or 0.0
+    box_pos = track.get("box_pos")
+    box_high = track.get("box_high")
+    box_low = track.get("box_low")
+    avg_price = track.get("avg_price") or price
+    intra_amplitude = track.get("intra_amplitude") or 0.0
+    tech_signals = track.get("tech_signals") or {"macd": "-", "kdj": "-", "boll": "-"}
+    above_ma5 = track.get("above_ma5")
+    above_ma20 = track.get("above_ma20")
+
+    pos = position or {}
+    cost_price = pos.get("cost_price") or 0.0
+    position_qty = pos.get("position_qty") or 0
+    has_position = bool(position_qty and cost_price > 0)
+
+    # 箱体位置描述
+    if box_pos is not None:
+        if box_pos <= 0.15:
+            box_text = f"箱体下沿附近({box_pos*100:.0f}%), 接近支撑, 可考虑低吸机会"
+        elif box_pos >= 0.85:
+            box_text = f"箱体上沿附近({box_pos*100:.0f}%), 接近压力, 注意高抛或回落风险"
+        else:
+            box_text = f"箱体中间区域({box_pos*100:.0f}%), 方向不明, 建议观望"
+    elif box_high is not None and box_low is not None and price:
+        box_text = f"箱体上沿 {box_high} / 下沿 {box_low}, 当前价 {price}"
+    else:
+        box_text = "箱体数据不足"
+
+    # 默认观望
+    main_key, main_title = "wait", "【观望，不操作】"
+    main_summary = "无明显做T点位, 建议观望, 等待箱体上下沿信号。"
+    main_text = main_summary
+
+    # 1) 持仓止盈优先
+    if has_position and cost_price:
+        pnl_pct = (price - cost_price) / cost_price * 100
+        if pnl_pct >= 10:
+            main_key, main_title = "reduce", "【建议分批止盈/减仓】"
+            main_summary = "持仓已有较大浮盈, 建议先分批减仓锁定利润, 不再净加仓。"
+            main_text = (f"持仓成本 {cost_price:.2f}, 当前价 {price:.2f}, 浮盈约 {pnl_pct:.1f}%。"
+                         f"建议分批减仓锁定利润, 剩余仓位按移动止盈保护。")
+
+    # 2) 风控硬拦
+    if main_key == "wait" and (
+        change_pct <= -5.0
+        or (vol_ratio < 0.5 and above_ma5 is False)
+        or turnover > 20.0
+        or (intra_amplitude > 10 and change_pct < -3)
+    ):
+        main_key, main_title = "wait", "【观望，不操作】"
+        main_summary = "当前存在风险信号, 不建议开新T仓, 等待企稳后再评估。"
+        main_text = "当前存在风险信号(缩量阴跌/量比过低/特殊风控), 不开T仓, 等待企稳。"
+
+    # 3) 等待高抛
+    if main_key == "wait" and box_pos is not None and box_pos >= 0.85 and change_pct > 0 and vol_ratio < 0.8:
+        main_key, main_title = "sell", "【等待高抛机会（卖出T仓）】"
+        main_summary = "价格接近箱体上沿且上涨无量, 持有T仓可分批卖出止盈。"
+        main_text = "到达压力区间, 上涨无量, 持有T仓可分批卖出止盈。"
+
+    # 4) 等待低吸
+    if main_key == "wait" and box_pos is not None and box_pos <= 0.15 and vol_ratio < 1.2 and change_pct >= -0.5:
+        main_key, main_title = "buy", "【等待低吸机会（小仓T）】"
+        main_summary = "价格接近箱体下沿, 等待放量站稳后可极小仓位试做T。"
+        main_text = "到达支撑区间, 等待放量站稳分时均价, 极小仓位试做T, 提前设置止损。"
+
+    # 5) 箱体中间震荡可做T
+    if main_key == "wait" and box_pos is not None and 0.15 < box_pos < 0.85 \
+            and 2.5 <= intra_amplitude <= 8.0 and 0.5 <= vol_ratio <= 2.5 \
+            and 2.0 <= turnover <= 10.0 and -1.0 <= change_pct <= 3.0:
+        main_key, main_title = "t", "【可日内高抛低吸】"
+        main_summary = "箱体中间区域, 日内波动适中, 可在分时均价附近小仓位做T。"
+        main_text = "箱体中间区域, 日内波动适中、量能配合, 可在分时均价附近小仓位做T, 严格止损。"
+
+    # 6) 日内弱势+缩量
+    if main_key == "wait" and price and avg_price and price < avg_price and vol_ratio < 0.8:
+        main_key, main_title = "wait", "【观望，不操作】"
+        main_summary = "日内弱势且缩量无承接, 建议等待企稳信号。"
+        main_text = "日内弱势, 缩量无承接, 等待企稳信号, 不开T仓。"
+
+    # ---- 各维度说明 ----
+    points = []
+    if has_position and cost_price:
+        pnl_pct = (price - cost_price) / cost_price * 100
+        points.append({
+            "dim": "持仓风控",
+            "text": (f"持有成本 {cost_price:.2f}, 当前价 {price:.2f}, 浮盈/亏约 {pnl_pct:.1f}%。"
+                     f"{'已达止盈区间, 优先落袋' if pnl_pct >= 10 else '按原计划持仓, 双线跟踪止盈止损。'}")
+        })
+    else:
+        points.append({
+            "dim": "持仓风控",
+            "text": "未填写持仓成本/股数, 操作建议仅基于盘面指标, 不含个人盈亏约束。"
+        })
+
+    points.append({"dim": "箱体位置", "text": box_text})
+
+    vol_text = (
+        f"量比 {vol_ratio:.2f}({'成交清淡' if vol_ratio < 1 else '正常/放量'}), "
+        f"换手率 {turnover:.2f}%({'流动性合适, 适合做T' if 3 <= turnover <= 10 else '流动性偏弱/偏高'})。"
+    )
+    if track.get("realtime_amount") is not None and track.get("yesterday_amount_at_time") is not None:
+        vol_text += (
+            f" 当天实时成交 {track['realtime_amount']:.0f}万, "
+            f"T-1 同期 {track['yesterday_amount_at_time']:.0f}万"
+        )
+    vol_text += " 当前量能不支持追涨, 更适合高抛或观望。"
+    points.append({"dim": "量能信号", "text": vol_text})
+
+    ma5_text = "站上MA5" if above_ma5 is True else ("跌破MA5" if above_ma5 is False else "MA5数据缺失")
+    ma20_text = "站上MA20" if above_ma20 is True else ("跌破MA20" if above_ma20 is False else "MA20数据缺失")
+    points.append({
+        "dim": "短线信号",
+        "text": f"{ma5_text}；{ma20_text}。短期趋势{'偏强' if above_ma5 is True else ('偏弱' if above_ma5 is False else '震荡')}, 但尚未形成明确单边信号。"
+    })
+
+    vote_overall = "数据不足"
+    bull = bear = neutral = 0
+    ts = tech_signals
+    if ts.get("macd") == "看多":
+        bull += 1
+    elif ts.get("macd") == "看空":
+        bear += 1
+    else:
+        neutral += 1
+    if ts.get("kdj") == "看多":
+        bull += 1
+    elif ts.get("kdj") == "看空":
+        bear += 1
+    else:
+        neutral += 1
+    if ts.get("boll") == "看多":
+        bull += 1
+    elif ts.get("boll") == "看空":
+        bear += 1
+    else:
+        neutral += 1
+    if bull > bear:
+        vote_overall = "偏多"
+    elif bear > bull:
+        vote_overall = "偏空"
+    elif bull == bear and bull > 0:
+        vote_overall = "中性"
+    points.append({
+        "dim": "技术投票",
+        "text": (f"MACD/KDJ/布林综合结论：{vote_overall}"
+                 f"（看多 {bull} / 看空 {bear} / 中性 {neutral}）。"
+                 f"日线趋势{'向好' if vote_overall == '偏多' else ('向淡' if vote_overall == '偏空' else '不明')}, 但需服从短期止盈/风控纪律。")
+    })
+
+    return {
+        "key": main_key,
+        "title": main_title,
+        "summary": main_summary,
+        "text": main_text,
+        "points": points,
+    }
+
+
+def get_pool_track(code: str, db, position: dict | None = None) -> dict:
     """单只标的的「每日跟踪」数据,供短线可投池表格使用。
 
     返回字段:
       - price/change_pct/vol_ratio/turnover: 实时(腾讯/东财/新浪)
       - box_high/box_low/box_pos: 近 20 日箱体上下沿及当前价相对位置(0~1,1=触上沿)
       - ma5/ma20: 均线;above_ma5/above_ma20: 当前价是否站上
+      - operation_advice: 基于当前盘口生成的操作建议对象
       - src: 数据源标识(tencent/eastmoney/sina/demo),失败时为空
       - ts: 拉取时间戳(秒),供前端展示「X秒前」
 
@@ -1277,6 +1445,8 @@ def get_pool_track(code: str, db) -> dict:
         # 短线可投池三类达标项打分
         if quotes:
             _calc_pass_scores(code, out, quotes, spot, db)
+        # 基于 track 数据生成操作建议(结构同 t_analysis.section6)
+        out["operation_advice"] = _operation_advice_for_pool(out, position)
         out["ts"] = int(now)
     except Exception:
         # 任意异常都吞掉,返回当前已聚合的部分(可能为空)

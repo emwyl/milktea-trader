@@ -111,9 +111,11 @@ def list_pool(
 
     # 名称补全 + 「每日跟踪数据」并发拉取:4 只股票同时拉实时+日线,1~2s 完成,
     # 单只失败不阻塞其他。所有跟踪数据带 60s 内存缓存,重复刷新秒开。
+    # 传入持仓/成本, 让操作建议能感知止盈/持仓状态。
     tracks: dict[str, dict] = {}
+    positions = {p.code: {"cost_price": p.cost_price, "position_qty": p.position_qty} for p in page_rows}
     with ThreadPoolExecutor(max_workers=min(8, max(2, len(page_rows)))) as ex:
-        track_futs = {ex.submit(get_pool_track, p.code, db): p.code for p in page_rows}
+        track_futs = {ex.submit(get_pool_track, p.code, db, positions.get(p.code)): p.code for p in page_rows}
         name_futs = {}
         for p in page_rows:
             if not _name(p.code, db):

@@ -180,6 +180,10 @@
   .chip{padding:6px 12px;border:1px solid #d1d5db;border-radius:16px;background:#fff;cursor:pointer;font-size:13px;color:#374151;transition:all .15s}
   .chip:hover{border-color:#9ca3af;background:#f9fafb}
   .chip.active{border-color:transparent;box-shadow:0 0 0 1px rgba(0,0,0,.1) inset}
+  .chip.add{background:#d8f0e4;color:var(--ok);border-color:#a7f3d0}
+  .chip.reduce{background:#fdeccd;color:var(--warn);border-color:#fcd34d}
+  .chip.alert{background:#eff6ff;color:#1d4ed8;border-color:#bfdbfe}
+  .chip.danger{background:#fee2e2;color:var(--danger);border-color:#fecaca}
   .tracktbl input[type="checkbox"]{width:16px;height:16px;cursor:pointer;margin:0;vertical-align:middle}
   .batchbar{display:flex;align-items:center;gap:10px;padding:8px 0;margin-bottom:6px;border-bottom:1px solid #f3f4f6}
   .batchbar .count{font-size:13px;color:#4b5563}
@@ -562,6 +566,21 @@
                 </div>
                 <span v-else class="muted">-</span>
               </template>
+              <template v-else-if="col.key==='operation_advice'">
+                <button v-if="p.track.operation_advice" type="button" class="chip"
+                  :class="{
+                    'alert': p.track.operation_advice.key==='reduce',
+                    'add': p.track.operation_advice.key==='buy' || p.track.operation_advice.key==='t',
+                    'reduce': p.track.operation_advice.key==='sell',
+                    'danger': p.track.operation_advice.key==='wait'
+                  }"
+                  style="cursor:pointer;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
+                  @click.stop="openAdviceModal(p)"
+                  :title="p.track.operation_advice.summary">
+                  {{p.track.operation_advice.title}}
+                </button>
+                <span v-else class="muted">-</span>
+              </template>
               <template v-else-if="col.key==='tech_signals'">
                 <span v-if="p.track.tech_signals">
                   <span :class="p.track.tech_signals.macd==='看多'?'up':(p.track.tech_signals.macd==='看空'?'down':'')">{{p.track.tech_signals.macd==='看多'?'多':(p.track.tech_signals.macd==='看空'?'空':'中')}}</span><span class="muted">/</span>
@@ -894,6 +913,36 @@
             <button type="button" class="ghost" @click="closeColumnSetting">取消</button>
             <button type="button" class="ghost" @click="resetColumnSetting">重置</button>
             <button type="button" @click="saveColumnSetting">确定</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 可投池操作建议详情弹窗 -->
+      <div v-if="adviceModal.show" class="modal" @click.self="closeAdviceModal">
+        <div class="modal-box" style="max-width:640px">
+          <div class="modal-head">
+            <h3>操作参考<span class="dtag pred">综合结论</span></h3>
+            <button type="button" class="close-x" @click="closeAdviceModal" aria-label="关闭">×</button>
+          </div>
+          <div class="modal-body">
+            <div class="kv" style="margin-top:0"><span>{{adviceModal.name}} {{adviceModal.code}}</span><b :class="adviceModal.key==='buy'||adviceModal.key==='t'?'up':(adviceModal.key==='sell'||adviceModal.key==='wait'?'down':'flat')">{{adviceModal.title}}</b></div>
+            <div class="advice" style="font-size:15px; background:#fff; border:1px solid #dbeafe; margin-top:10px">
+              <p style="margin:0; line-height:1.6">{{adviceModal.summary}}</p>
+            </div>
+            <div style="margin-top:14px">
+              <div style="font-weight:600; margin-bottom:8px; color:#374151">各维度判断依据：</div>
+              <div v-for="(pt, idx) in adviceModal.points" :key="idx" style="display:flex; gap:10px; margin-bottom:8px; align-items:flex-start; line-height:1.55">
+                <span style="flex:0 0 auto; min-width:26px; height:26px; display:flex; align-items:center; justify-content:center; background:#e0f2fe; color:#0369a1; border-radius:50%; font-size:13px; font-weight:700">{{idx+1}}</span>
+                <div>
+                  <b style="color:#1d4ed8">{{pt.dim}}：</b>
+                  <span style="color:#374151">{{pt.text}}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="modal-foot">
+            <button type="button" class="ghost" @click="closeAdviceModal">关闭</button>
+            <button type="button" @click="openAnalysis(adviceModal.code); closeAdviceModal();">查看个股分析</button>
           </div>
         </div>
       </div>
@@ -1304,8 +1353,9 @@ const app = createApp({
     deleteConfirmModal:{show:false, codes:[], detail:'', saving:false},  // 可投池批量删除确认弹窗
     importGuideModal:{show:false},  // 可投池导入模板说明弹窗
     columnSettingModal:{show:false, tableKey:'', title:'', columns:[]},  // 通用自定义列设置弹窗
+    adviceModal:{show:false, code:'', name:'', title:'', summary:'', points:[], text:''},  // 可投池操作建议详情弹窗
     columnSettings: (()=>{
-      const currentVer = '20260902-01';
+      const currentVer = '20260902-02';
       const savedVer = localStorage.getItem('columnSettingsVersion');
       if(savedVer !== currentVer){ localStorage.removeItem('columnSettings'); localStorage.setItem('columnSettingsVersion', currentVer); return {}; }
       return JSON.parse(localStorage.getItem('columnSettings')||'{}');
@@ -1409,6 +1459,7 @@ const app = createApp({
           {key:'ma5', label:'MA5', width:62, visible:true, frozen:false, help:'现价与5日均线关系。站上=短期强势，偏买入观察；跌下=短期弱势，偏观望'},
           {key:'ma20', label:'MA20', width:66, visible:true, frozen:false, help:'现价与20日均线关系。站上=中期趋势向上，趋势较好；跌下=中期趋势向下，偏谨慎'},
           {key:'box_pos', label:'箱体位置', width:78, visible:true, frozen:false, help:'当前价在近20日高低点区间位置。<25%接近下沿，超跌反弹机会；25%-75%震荡中枢；>75%接近上沿，注意回落'},
+          {key:'operation_advice', label:'操作\n建议', width:92, visible:true, frozen:false, help:'基于实时盘口、箱体、量能、技术信号生成的简要操作建议，点击查看完整结论'},
           {key:'tech_signals', label:'MACD/\nKDJ/布林', width:92, visible:true, frozen:false},
           {key:'must_pass', label:'必看-达标项', width:78, visible:true, frozen:false},
           {key:'key_pass', label:'重要-达标项', width:78, visible:true, frozen:false},
@@ -1500,6 +1551,22 @@ const app = createApp({
       this.closeColumnSetting();
     },
     colSettingDragStart(idx){ this._dragColIdx = idx; },
+
+    // ===== 可投池操作建议详情弹窗 =====
+    openAdviceModal(p){
+      const adv = (p && p.track && p.track.operation_advice) || {};
+      this.adviceModal = {
+        show:true,
+        code:p.code||'',
+        name:p.name||'',
+        key:adv.key||'wait',
+        title:adv.title||'【观望，不操作】',
+        summary:adv.summary||'暂无操作建议',
+        text:adv.text||'',
+        points:adv.points||[]
+      };
+    },
+    closeAdviceModal(){ this.adviceModal={show:false, code:'', name:'', key:'wait', title:'', summary:'', points:[], text:''}; },
     colSettingDrop(idx){
       const from = this._dragColIdx;
       if(from==null || from===idx) return;
@@ -1528,7 +1595,7 @@ const app = createApp({
     refreshCurrentView(){
       if(!this.token) return;
       // 有弹窗打开时跳过本次刷新，避免干扰用户当前操作
-      if(this.showRulesModal || this.addPoolModal.show || this.tagModal.show || this.batchTagModal.show || this.deleteConfirmModal.show || this.importGuideModal.show || this.editModal.show || this.columnSettingModal.show) return;
+      if(this.showRulesModal || this.addPoolModal.show || this.tagModal.show || this.batchTagModal.show || this.deleteConfirmModal.show || this.importGuideModal.show || this.editModal.show || this.columnSettingModal.show || this.adviceModal.show) return;
       const v = this.view;
       if(v==='dash') this.loadDash();
       else if(v==='pool'){
