@@ -1576,11 +1576,12 @@ const app = createApp({
       const savedMap = ((this.columnSettings||{})[key]||[]).reduce((m,c)=>{ m[c.key]=c; return m; },{});
       const list = defs.map((c,idx)=>{
         const s = savedMap[c.key] || {};
+        const isLocked = c.hideable === false; // 不可隐藏的列：select/ops
         return {
           ...c,
-          visible: s.hasOwnProperty('visible') ? s.visible : c.visible,
-          frozen: s.hasOwnProperty('frozen') ? s.frozen : c.frozen,
-          order: s.hasOwnProperty('order') ? s.order : idx
+          visible: isLocked ? true : (s.hasOwnProperty('visible') ? s.visible : c.visible),
+          frozen: isLocked ? c.frozen : (s.hasOwnProperty('frozen') ? s.frozen : c.frozen),
+          order: isLocked ? idx : (s.hasOwnProperty('order') ? s.order : idx)
         };
       });
       list.sort((a,b)=>a.order-b.order);
