@@ -260,7 +260,7 @@
     <header>
       <h1>🧋 加油赚奶茶钱</h1>
       <span class="sub">个人学习用 · 先控风险再谈收益</span>
-      <span class="version" id="appVersion">v20260902070</span>
+      <span class="version" id="appVersion">v20260902071</span>
       <button class="ghost auto-refresh-btn" :class="{active:autoRefresh}" @click="toggleAutoRefresh" :title="autoRefresh?'自动刷新开启中，每5秒更新当前页面数据':'点击开启每5秒自动刷新'">
         {{autoRefresh?'⏸':'▶'}} 自动 5s
       </button>
@@ -1370,7 +1370,7 @@
 
 <script>
 const { createApp } = Vue;
-const API = (p,opt={}) => fetch('/api'+p, Object.assign({headers:{'Content-Type':'application/json','Authorization':'Bearer '+localStorage.getItem('tk')}},opt)).then(r=>{if(r.status===401){localStorage.removeItem('tk');location.reload();} return r.json();});
+const API = (p,opt={}) => fetch('/api'+p, Object.assign({headers:{'Content-Type':'application/json','X-Auth-Token':(localStorage.getItem('tk')||''),'Authorization':'Bearer '+localStorage.getItem('tk')}},opt)).then(r=>{if(r.status===401){localStorage.removeItem('tk');location.reload();} return r.json();});
 const app = createApp({
   data(){return{
     token:localStorage.getItem('tk')||'', me:{username:'',role:'',is_guest:false}, view:'dash', err:'',
@@ -2060,7 +2060,7 @@ const app = createApp({
       // 导出当前可投池 Excel（证券代码、证券名称）
       const token = localStorage.getItem('tk') || '';
       const url = '/api/pool/export';
-      fetch(url, {headers: token ? {Authorization: `Bearer ${token}`} : {}})
+      fetch(url, {headers: token ? {Authorization: `Bearer ${token}`,'X-Auth-Token':token} : {}})
         .then(async r => {
           if(!r.ok){
             const text = await r.text().catch(()=>'');
@@ -2107,7 +2107,7 @@ const app = createApp({
         const resp = await fetch('/api/pool/import', {
           method:'POST',
           body:form,
-          headers: token ? {Authorization: `Bearer ${token}`} : {}
+          headers: token ? {Authorization: `Bearer ${token}`,'X-Auth-Token':token} : {}
         });
         const r = await resp.json();
         if(resp.ok && r && r.ok){
@@ -2170,7 +2170,7 @@ const app = createApp({
     async exportData(){
       const tk=localStorage.getItem('tk');
       try{
-        const res=await fetch('/api/data/export',{headers:{'Authorization':'Bearer '+tk}});
+        const res=await fetch('/api/data/export',{headers:{'Authorization':'Bearer '+tk,'X-Auth-Token':tk}});
         if(!res.ok){ this.showAlert('导出失败：HTTP '+res.status); return; }
         const obj=await res.json();
         const blob=new Blob([JSON.stringify(obj,null,2)],{type:'application/json'});
@@ -2184,7 +2184,7 @@ const app = createApp({
     async exportAll(){
       const tk=localStorage.getItem('tk');
       try{
-        const res=await fetch('/api/data/export-all',{headers:{'Authorization':'Bearer '+tk}});
+        const res=await fetch('/api/data/export-all',{headers:{'Authorization':'Bearer '+tk,'X-Auth-Token':tk}});
         if(res.status===403){ this.showAlert('需要管理员权限'); return; }
         if(!res.ok){ this.showAlert('导出失败：HTTP '+res.status); return; }
         const obj=await res.json();
@@ -2214,7 +2214,7 @@ const app = createApp({
     async downloadBackup(name){
       const tk=localStorage.getItem('tk');
       try{
-        const res=await fetch('/api/data/backups/'+encodeURIComponent(name),{headers:{'Authorization':'Bearer '+tk}});
+        const res=await fetch('/api/data/backups/'+encodeURIComponent(name),{headers:{'Authorization':'Bearer '+tk,'X-Auth-Token':tk}});
         if(!res.ok){ this.showAlert('下载失败：HTTP '+res.status); return; }
         const blob=await res.blob();
         const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
@@ -2248,7 +2248,7 @@ const app = createApp({
     async downloadCosBackup(name){
       const tk=localStorage.getItem('tk');
       try{
-        const res=await fetch('/api/data/cos-backups/'+encodeURIComponent(name),{headers:{'Authorization':'Bearer '+tk}});
+        const res=await fetch('/api/data/cos-backups/'+encodeURIComponent(name),{headers:{'Authorization':'Bearer '+tk,'X-Auth-Token':tk}});
         if(!res.ok){ this.showAlert('下载失败：HTTP '+res.status); return; }
         const blob=await res.blob();
         const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
@@ -2275,7 +2275,7 @@ const app = createApp({
       this.showConfirm('⚠ 将从云端备份 '+name+' 整库恢复，覆盖所有账号当前数据（恢复前会自动备份当前状态）。确定继续？', async ()=>{
         try{
           const tk=localStorage.getItem('tk');
-          const res=await fetch('/api/data/cos-backups/'+encodeURIComponent(name),{headers:{'Authorization':'Bearer '+tk}});
+          const res=await fetch('/api/data/cos-backups/'+encodeURIComponent(name),{headers:{'Authorization':'Bearer '+tk,'X-Auth-Token':tk}});
           if(!res.ok){ this.showAlert('下载云端备份失败：HTTP '+res.status); return; }
           const obj=await res.json();
           const r=await API('/data/import-all',{method:'POST',body:JSON.stringify(obj)});

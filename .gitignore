@@ -14,8 +14,14 @@ backend/data/backups/
 backend/data/cos.json
 *.log
 
-# ===== 冒烟测试下载产物 =====
-_dl_test.json
+# ===== 临时日志 =====
+*.log
+uvicorn.err
+
+# ===== 部署发布包（不入库） =====
+# publish/ 内含固定会话签名密钥（config.py 的 SECRET_KEY 明文）与含用户数据的 app.db，
+# 若仓库公开会造成 token 伪造风险与数据泄露。部署配方见项目记忆文档。
+/publish/
 
 # ===== 根目录临时/调试文件（下划线前缀） =====
 /_*.js
