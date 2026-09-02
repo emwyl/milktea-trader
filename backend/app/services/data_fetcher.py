@@ -1245,7 +1245,7 @@ def _operation_advice_for_pool(track: dict, position: dict | None = None) -> dic
         box_text = "箱体数据不足"
 
     # 默认观望
-    main_key, main_title = "wait", "【观望，不操作】"
+    main_key, main_title = "wait", "观望，不操作"
     main_summary = "无明显做T点位, 建议观望, 等待箱体上下沿信号。"
     main_text = main_summary
 
@@ -1253,7 +1253,7 @@ def _operation_advice_for_pool(track: dict, position: dict | None = None) -> dic
     if has_position and cost_price:
         pnl_pct = (price - cost_price) / cost_price * 100
         if pnl_pct >= 10:
-            main_key, main_title = "reduce", "【建议分批止盈/减仓】"
+            main_key, main_title = "reduce", "建议分批止盈/减仓"
             main_summary = "持仓已有较大浮盈, 建议先分批减仓锁定利润, 不再净加仓。"
             main_text = (f"持仓成本 {cost_price:.2f}, 当前价 {price:.2f}, 浮盈约 {pnl_pct:.1f}%。"
                          f"建议分批减仓锁定利润, 剩余仓位按移动止盈保护。")
@@ -1265,19 +1265,19 @@ def _operation_advice_for_pool(track: dict, position: dict | None = None) -> dic
         or turnover > 20.0
         or (intra_amplitude > 10 and change_pct < -3)
     ):
-        main_key, main_title = "wait", "【观望，不操作】"
+        main_key, main_title = "wait", "观望，不操作"
         main_summary = "当前存在风险信号, 不建议开新T仓, 等待企稳后再评估。"
         main_text = "当前存在风险信号(缩量阴跌/量比过低/特殊风控), 不开T仓, 等待企稳。"
 
     # 3) 等待高抛
     if main_key == "wait" and box_pos is not None and box_pos >= 0.85 and change_pct > 0 and vol_ratio < 0.8:
-        main_key, main_title = "sell", "【等待高抛机会（卖出T仓）】"
+        main_key, main_title = "sell", "等待高抛机会（卖出T仓）"
         main_summary = "价格接近箱体上沿且上涨无量, 持有T仓可分批卖出止盈。"
         main_text = "到达压力区间, 上涨无量, 持有T仓可分批卖出止盈。"
 
     # 4) 等待低吸
     if main_key == "wait" and box_pos is not None and box_pos <= 0.15 and vol_ratio < 1.2 and change_pct >= -0.5:
-        main_key, main_title = "buy", "【等待低吸机会（小仓T）】"
+        main_key, main_title = "buy", "等待低吸机会（小仓T）"
         main_summary = "价格接近箱体下沿, 等待放量站稳后可极小仓位试做T。"
         main_text = "到达支撑区间, 等待放量站稳分时均价, 极小仓位试做T, 提前设置止损。"
 
@@ -1285,13 +1285,13 @@ def _operation_advice_for_pool(track: dict, position: dict | None = None) -> dic
     if main_key == "wait" and box_pos is not None and 0.15 < box_pos < 0.85 \
             and 2.5 <= intra_amplitude <= 8.0 and 0.5 <= vol_ratio <= 2.5 \
             and 2.0 <= turnover <= 10.0 and -1.0 <= change_pct <= 3.0:
-        main_key, main_title = "t", "【可日内高抛低吸】"
+        main_key, main_title = "t", "可日内高抛低吸"
         main_summary = "箱体中间区域, 日内波动适中, 可在分时均价附近小仓位做T。"
         main_text = "箱体中间区域, 日内波动适中、量能配合, 可在分时均价附近小仓位做T, 严格止损。"
 
     # 6) 日内弱势+缩量
     if main_key == "wait" and price and avg_price and price < avg_price and vol_ratio < 0.8:
-        main_key, main_title = "wait", "【观望，不操作】"
+        main_key, main_title = "wait", "观望，不操作"
         main_summary = "日内弱势且缩量无承接, 建议等待企稳信号。"
         main_text = "日内弱势, 缩量无承接, 等待企稳信号, 不开T仓。"
 
