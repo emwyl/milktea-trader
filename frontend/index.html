@@ -2,8 +2,8 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=2.0, user-scalable=yes, viewport-fit=cover" />
+<meta name="theme-color" content="#2563eb" />
 <meta http-equiv="Pragma" content="no-cache" />
 <meta http-equiv="Expires" content="0" />
 <title>加油赚奶茶钱</title>
@@ -33,6 +33,111 @@
   .grid{display:grid;gap:14px}
   .g2{grid-template-columns:repeat(2,1fr)} .g3{grid-template-columns:repeat(3,1fr)} .g4{grid-template-columns:repeat(4,1fr)}
   @media(max-width:820px){.g2,.g3,.g4{grid-template-columns:1fr}}
+
+  /* ==================== 响应式：移动端适配（≤768px）==================== */
+  /* 通用按钮在窄屏自适应宽度 */
+  @media(max-width:768px){
+    body{font-size:14px;-webkit-text-size-adjust:100%}
+    /* header 紧凑：标题一行/右侧退出两段 */
+    header{flex-wrap:wrap;padding:10px 12px;gap:8px}
+    header h1{font-size:17px}
+    header .sub{font-size:11px;width:100%;order:99;margin-top:2px;opacity:.8}
+    header .version{font-size:10px;padding:1px 6px}
+    header .auto-refresh-btn{padding:4px 8px;font-size:12px}
+    header>span.sub + .auto-refresh-btn{margin-left:auto}
+    /* 导航：横向滚动、按钮紧凑、不换行 */
+    nav{padding:6px 10px;gap:4px;overflow-x:auto;flex-wrap:nowrap;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+    nav::-webkit-scrollbar{display:none}
+    nav a{padding:5px 12px;font-size:13px;flex-shrink:0;white-space:nowrap}
+    .subnav{padding:6px 10px 0;overflow-x:auto;flex-wrap:nowrap;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+    .subnav::-webkit-scrollbar{display:none}
+    .subnav button{padding:6px 12px;font-size:13px;flex-shrink:0;white-space:nowrap}
+    main{padding:8px 10px}
+    .card{padding:10px;border-radius:10px;margin-bottom:10px}
+    /* 统计卡片：横向 2x2 而非 1xN */
+    .grid.g4{grid-template-columns:1fr 1fr;gap:8px}
+    .grid.g3,.grid.g2{grid-template-columns:1fr;gap:8px}
+    .stat{padding:10px}
+    .stat b{font-size:20px}
+    /* 通用元素 */
+    button{padding:7px 12px;font-size:13px}
+    button.btn-sm{padding:4px 8px;font-size:11px}
+    input,select,textarea{font-size:14px;padding:7px 8px}
+    .vote{flex-direction:column}
+    .vchip{min-width:0}
+    /* ===== 通用表格：小屏切换横滚 + 隐藏部分列 ===== */
+    .tracktbl-wrap{margin:0 -10px;padding:0 10px 8px;-webkit-overflow-scrolling:touch}
+    /* ====== 移动端专用：股票池卡片视图 ====== */
+    /* 默认隐藏卡片，窄屏显示并隐藏原表格 */
+    .pool-card-list{display:none;margin-top:8px}
+    .pool-card-list.is-visible{display:block}
+  }
+  @media(max-width:768px){
+    .pool-tbl-wrap{display:none}
+    .pool-card-list{display:block}
+  }
+  /* 平板及以上：恢复表格显示，强制隐藏卡片 */
+  @media(min-width:769px){
+    .pool-card-list{display:none !important}
+    .pool-tbl-wrap{display:block !important}
+  }
+    .pool-card{
+      background:#fff;border:1px solid var(--line);border-radius:12px;
+      padding:12px;margin-bottom:10px;box-shadow:0 2px 6px rgba(30,64,175,.05);
+      position:relative;
+    }
+    .pool-card-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;padding-bottom:8px;border-bottom:1px dashed var(--line)}
+    .pool-card-name{font-weight:700;font-size:15px;color:var(--ink);display:flex;align-items:center;gap:4px;flex-wrap:wrap}
+    .pool-card-code{font-size:11px;color:#2563eb;cursor:pointer;text-decoration:underline}
+    .pool-card-price{text-align:right;line-height:1.2}
+    .pool-card-price .p{font-size:18px;font-weight:700}
+    .pool-card-price .c{font-size:12px;margin-top:2px}
+    .pool-card-grids{display:grid;grid-template-columns:1fr 1fr;gap:6px 10px;font-size:12px;margin:8px 0}
+    .pool-card-grids .k{color:#6b7280;font-size:11px}
+    .pool-card-grids .v{font-weight:600;color:var(--ink);text-align:right}
+    .pool-card-tags{display:flex;gap:4px;flex-wrap:wrap;margin:6px 0}
+    .pool-card-tags:empty{display:none}
+    .pool-card-note{font-size:11px;color:#6b7280;background:#f9fafb;padding:4px 6px;border-radius:6px;margin-top:6px;line-height:1.5}
+    .pool-card-actions{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap}
+    .pool-card-actions button{padding:5px 10px;font-size:12px;flex:1;min-width:0}
+    .pool-card-advice{display:inline-block;font-size:12px}
+    /* 横滚提示带 */
+    .scroll-hint{display:block;text-align:center;font-size:11px;color:#9ca3af;padding:4px 0}
+    .scroll-hint:before{content:"↔ "}
+    /* 调整 toolbar/筛选条为竖排 */
+    .filter-toolbar{flex-direction:column;align-items:stretch !important}
+    .filter-toolbar>div{width:100%}
+    .filter-toolbar input,.filter-toolbar select{max-width:none !important;width:100%}
+    .filter-toolbar .row{flex-wrap:wrap}
+    .filter-toolbar .row button{flex:1;min-width:0}
+    .batchbar{display:grid !important;grid-template-columns:1fr 1fr;gap:6px}
+    .batchbar button{width:100%}
+    /* 弹窗：贴底占满屏幕，舒适单手操作 */
+    .modal{align-items:flex-end !important}
+    .modal-box{max-width:none !important;width:100vw !important;max-height:90vh;margin:0;border-radius:16px 16px 0 0;padding:14px}
+    .modal-body{max-height:70vh}
+    /* 看板总览的统计卡片横向排 */
+    .dash-stats{grid-template-columns:1fr 1fr !important}
+    /* 列设置弹窗的表格 */
+    .col-setting-tbl th,.col-setting-tbl td{padding:6px 4px;font-size:12px}
+    /* P0/P1/P2 表格也加横滚 */
+    .tiertbl{display:block;overflow-x:auto;white-space:nowrap}
+    .detail-tabs{overflow-x:auto;flex-wrap:nowrap !important}
+    .detail-tabs::-webkit-scrollbar{display:none}
+    .detail-tabs a{flex-shrink:0}
+  }
+  /* 480px 以下：进一步压缩 */
+  @media(max-width:480px){
+    header h1{font-size:16px}
+    header .sub{display:none}
+    .grid.g4{grid-template-columns:1fr}
+    .pool-card-grids{grid-template-columns:1fr}
+  }
+  /* 平板及以上保持原样 */
+  @media(min-width:769px){
+    .pool-card-list{display:none !important}
+    .scroll-hint{display:none}
+  }
   .stat{border-radius:12px;padding:14px;color:#fff;text-align:center}
   .stat.risk{background:var(--danger)} .stat.add{background:var(--ok)} .stat.reduce{background:var(--warn)} .stat.pool{background:var(--tea-d)}
   .stat b{font-size:26px;display:block}
@@ -260,7 +365,7 @@
     <header>
       <h1>🧋 加油赚奶茶钱</h1>
       <span class="sub">个人学习用 · 先控风险再谈收益</span>
-      <span class="version" id="appVersion">v20260902071</span>
+      <span class="version" id="appVersion">v20260902073</span>
       <button class="ghost auto-refresh-btn" :class="{active:autoRefresh}" @click="toggleAutoRefresh" :title="autoRefresh?'自动刷新开启中，每5秒更新当前页面数据':'点击开启每5秒自动刷新'">
         {{autoRefresh?'⏸':'▶'}} 自动 5s
       </button>
@@ -489,9 +594,10 @@
         <div v-if="poolMsg" class="hintbar" style="background:#e8f4ed;border-left-color:var(--ok);color:var(--ok)">{{poolMsg}}</div>
         <div class="card">
           <!-- 筛选与批量操作工具条 -->
-          <div style="display:flex;flex-direction:column;align-items:flex-start;gap:10px;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid #e5e7eb">
+          <!-- 工具栏：筛选 + 批量操作（窄屏专列、横滑 + 网格） -->
+          <div :class="['filter-toolbar', 'pool-toolbar']" style="display:flex;align-items:flex-start;gap:10px;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid #e5e7eb">
             <div class="row" style="gap:8px;margin:0;flex-wrap:nowrap">
-              <input v-model="poolFilter.q" placeholder="证券代码/名称" style="max-width:150px" />
+              <input v-model="poolFilter.q" placeholder="代码/名称" style="max-width:150px" />
               <select v-model="poolFilter.tag" style="max-width:130px">
                 <option value="">全部标签</option>
                 <option v-for="t in poolTags" :key="t.id" :value="t.id">{{t.name}}</option>
@@ -500,7 +606,7 @@
               <button @click="searchPool">查询</button>
               <button class="ghost" @click="resetPoolFilter">重置</button>
             </div>
-            <div class="batchbar" style="margin:0;padding-bottom:0;border-bottom:0">
+            <div class="batchbar" style="margin:0;padding-bottom:0;border-bottom:0;display:flex;gap:6px;flex-wrap:wrap">
               <button @click="openAddPoolModal">新增</button>
               <button class="ghost" :disabled="!poolSelected.length" @click="batchDeletePool" style="color:var(--danger);border-color:var(--danger)">删除</button>
               <button class="ghost" @click="exportPool">导出Excel</button>
@@ -511,7 +617,10 @@
               <button class="ghost" @click="openColumnSetting('pool','可投池列设置')">列设置</button>
             </div>
           </div>
-          <div class="tracktbl-wrap">
+          <!-- 桌面端：表格视图 -->
+          <div class="pool-tbl-wrap">
+            <p class="scroll-hint">左右滑动查看全部字段 ↔</p>
+            <div class="tracktbl-wrap">
           <table class="tracktbl pool-tbl"><thead><tr>
             <th v-for="col in visiblePoolColumns" :key="col.key" :class="{frozen: col.frozen}" :style="thStyle(poolColMetrics, col)">
               <template v-if="col.key==='select'"><input v-if="pool.length" type="checkbox" :checked="poolSelected.length===pool.length && pool.length>0" @change="selectAllPool" title="全选/取消全选" /></template>
@@ -634,7 +743,57 @@
             </td>
           </tr></tbody></table>
           </div>
-          <p v-if="!pool.length" class="muted">空，先加入或选股后推送</p>
+          </div><!-- /.pool-tbl-wrap -->
+
+          <!-- 移动端：每只股票一张卡 -->
+          <div class="pool-card-list">
+            <div v-if="!pool.length" class="muted">空，先加入或选股后推送</div>
+            <div v-for="p in pool" :key="p.id" class="pool-card">
+              <label style="position:absolute;top:10px;left:10px"><input type="checkbox" :checked="poolSelected.includes(p.code)" @change.stop="togglePoolSelect(p.code)" /></label>
+              <div class="pool-card-head" style="padding-left:24px">
+                <div>
+                  <div class="pool-card-name">
+                    <b>{{p.name}}</b>
+                    <span v-if="p.status==='archive'" class="pill" style="background:#f3f4f6;color:#6b7280">已归档</span>
+                  </div>
+                  <div class="pool-card-code" @click="openAnalysis(p.code)">{{p.code}}</div>
+                </div>
+                <div class="pool-card-price">
+                  <div class="p">{{ui.fmt(p.track.price)}}</div>
+                  <div :class="['c', ui.classOf(p.track.change_pct)]">{{ui.fmtPct(p.track.change_pct)}}</div>
+                </div>
+              </div>
+              <div class="pool-card-tags">
+                <span v-for="t in (p.tags||[])" :key="t.id" class="pill" :style="{background:t.color,color:'#fff',fontSize:'10px',padding:'1px 6px'}">{{t.name}}</span>
+              </div>
+              <div v-if="p.track.price_note" style="margin:-2px 0 4px"><span class="pill" style="background:#fee2e2;color:#b91c1c;font-size:10px">实时fallback</span></div>
+              <div class="pool-card-grids">
+                <div><div class="k">当天成交额</div><div :class="['v', p.track.realtime_amount != null && p.track.realtime_amount > (p.track.yesterday_amount_at_time||0) && p.track.realtime_amount > (p.track.avg_amount_20||0) ? 'up':'']">{{p.track.realtime_amount!=null?Math.round(p.track.realtime_amount/1e4)+'万':'-'}}</div></div>
+                <div><div class="k">T-1同期成交额</div><div class="v">{{p.track.yesterday_amount_at_time!=null?Math.round(p.track.yesterday_amount_at_time/1e4)+'万':'-'}}</div></div>
+                <div><div class="k">20日均成交额</div><div class="v">{{p.track.avg_amount_20!=null?Math.round(p.track.avg_amount_20/1e4)+'万':'-'}}</div></div>
+                <div><div class="k">量比 / 换手</div><div class="v"><span :class="ui.volClass(p.track.vol_ratio)">{{p.track.vol_ratio||'-'}}</span> / <span :class="(p.track.turnover!=null && p.track.turnover>=3 && p.track.turnover<=8)?'up':''">{{p.track.turnover!=null ? p.track.turnover+'%' : '-'}}</span></div></div>
+                <div><div class="k">日内振幅</div><div class="v"><span :class="(p.track.intra_amplitude!=null && p.track.intra_amplitude>=3 && p.track.intra_amplitude<=7)?'up':''">{{p.track.intra_amplitude!=null ? p.track.intra_amplitude+'%' : '-'}}</span></div></div>
+                <div><div class="k">MA5 / MA20</div><div class="v"><span :class="p.track.above_ma5===true?'up':(p.track.above_ma5===false?'down':'')">{{ui.fmt(p.track.ma5)}}</span>{{p.track.above_ma5===true?'⬆':(p.track.above_ma5===false?'⬇':'—')}} / <span :class="p.track.above_ma20===true?'up':(p.track.above_ma20===false?'down':'')">{{ui.fmt(p.track.ma20)}}</span>{{p.track.above_ma20===true?'⬆':(p.track.above_ma20===false?'⬇':'—')}}</div></div>
+                <div><div class="k">箱体位置</div><div class="v">{{p.track.box_pos!==undefined ? Math.round(p.track.box_pos*100)+'%' : '-'}}</div></div>
+                <div><div class="k">操作建议</div><div class="v"><button v-if="p.track.operation_advice" class="chip pool-card-advice" :class="{alert:p.track.operation_advice.key==='reduce', add:p.track.operation_advice.key==='buy'||p.track.operation_advice.key==='t', reduce:p.track.operation_advice.key==='sell', danger:p.track.operation_advice.key==='wait'}" @click.stop="openAdviceModal(p)" :title="p.track.operation_advice.summary">{{p.track.operation_advice.title}}</button><span v-else class="muted">-</span></div></div>
+                <div><div class="k">必看达标</div><div class="v" :class="{'red':(p.track.must_pass_score||0)<4}">{{p.track.must_pass_score||0}}分 · {{formatPass(p.track.must_pass)}}</div></div>
+                <div><div class="k">重要达标</div><div class="v" :class="{'red':(p.track.key_pass_score||0)<3}">{{p.track.key_pass_score||0}}分 · {{formatPass(p.track.key_pass)}}</div></div>
+                <div><div class="k">辅助达标</div><div class="v" :style="p.track.aux_pass_score===100?{color:'var(--ok)',fontWeight:'bold'}:{}">{{p.track.aux_pass_score||0}}分</div></div>
+                <div><div class="k">AI 评级</div><div class="v"><span v-if="p.track.ai_grade" class="pill" :class="{'add':p.track.ai_grade==='A','alert':p.track.ai_grade==='B','reduce':p.track.ai_grade==='C','danger':p.track.ai_grade==='D'}">{{p.track.ai_grade}}</span><span v-else>-</span></div></div>
+                <div v-if="p.position_qty!=null"><div class="k">持仓 / 成本</div><div class="v">{{p.position_qty}} / {{ui.fmt(p.cost_price)}}</div></div>
+                <div v-if="p.scheme_type"><div class="k">方案</div><div class="v">{{p.scheme_type}}</div></div>
+              </div>
+              <div v-if="p.note" class="pool-card-note">📝 {{p.note}}</div>
+              <div class="pool-card-actions">
+                <button v-if="p.status==='archive'" class="ghost" @click.stop="restorePool(p)">恢复</button>
+                <button class="ghost" @click.stop="startEdit(p)">修改</button>
+                <button class="ghost" @click.stop="removePool(p.code, p.name)">移除</button>
+                <button class="ghost" @click.stop="openAdviceModal(p)">建议</button>
+                <button class="ghost" @click.stop="openAnalysis(p.code)">分析</button>
+              </div>
+            </div>
+          </div>
+
           <p v-if="pool.length" class="muted" style="margin-top:6px">数据源: {{pool[0]&&pool[0].track&&pool[0].track.src||'加载中'}} · 60s 缓存 · 单击进个股分析</p>
           <div v-if="poolTotal>poolPageSize" class="row" style="justify-content:flex-end;gap:8px;margin-top:10px">
             <span class="muted">共 {{poolTotal}} 条 · {{Math.ceil(poolTotal/poolPageSize)}} 页</span>
