@@ -128,20 +128,22 @@
   .tracktbl tbody tr:hover{background:#f8fafc}
   .tracktbl tbody tr.editing-row{background:#eff6ff}
   .tracktbl tbody tr.selected-row{background:#eff6ff}
-  /* 冻结列：左侧 复选框~日内振幅（第1-7列）固定，右侧 操作列 固定 */
-  .tracktbl thead th:nth-child(-n+7),
-  .tracktbl tbody td:nth-child(-n+7){position:sticky;z-index:3}
-  .tracktbl thead th:nth-child(-n+7){z-index:5;background:#f9fafb}
-  .tracktbl tbody td:nth-child(-n+7){background:#fff}
-  .tracktbl tbody tr:hover td:nth-child(-n+7){background:#f8fafc}
-  .tracktbl tbody tr.selected-row td:nth-child(-n+7){background:#eff6ff}
-  .tracktbl th:nth-child(1),.tracktbl td:nth-child(1){left:0;width:34px;min-width:34px;max-width:34px}
-  .tracktbl th:nth-child(2),.tracktbl td:nth-child(2){left:34px;width:112px;min-width:112px;max-width:112px;white-space:normal;word-break:break-all}
-  .tracktbl th:nth-child(3),.tracktbl td:nth-child(3){left:146px;width:92px;min-width:92px;max-width:92px}
-  .tracktbl th:nth-child(4),.tracktbl td:nth-child(4){left:238px;width:140px;min-width:140px;max-width:140px}
-  .tracktbl th:nth-child(5),.tracktbl td:nth-child(5){left:378px;width:120px;min-width:120px;max-width:120px}
-  .tracktbl th:nth-child(6),.tracktbl td:nth-child(6){left:498px;width:56px;min-width:56px;max-width:56px}
-  .tracktbl th:nth-child(7),.tracktbl td:nth-child(7){left:554px;width:68px;min-width:68px;max-width:68px;border-right:2px solid #d1d5db}
+  /* 冻结列：左侧 复选框~换手%（第1-9列）固定，右侧 操作列 固定 */
+  .tracktbl.pool-tbl thead th:nth-child(-n+9),
+  .tracktbl.pool-tbl tbody td:nth-child(-n+9){position:sticky;z-index:3}
+  .tracktbl.pool-tbl thead th:nth-child(-n+9){z-index:5;background:#f9fafb}
+  .tracktbl.pool-tbl tbody td:nth-child(-n+9){background:#fff}
+  .tracktbl.pool-tbl tbody tr:hover td:nth-child(-n+9){background:#f8fafc}
+  .tracktbl.pool-tbl tbody tr.selected-row td:nth-child(-n+9){background:#eff6ff}
+  .tracktbl.pool-tbl th:nth-child(1),.tracktbl.pool-tbl td:nth-child(1){left:0;width:34px;min-width:34px;max-width:34px}
+  .tracktbl.pool-tbl th:nth-child(2),.tracktbl.pool-tbl td:nth-child(2){left:34px;width:112px;min-width:112px;max-width:112px;white-space:normal;word-break:break-all}
+  .tracktbl.pool-tbl th:nth-child(3),.tracktbl.pool-tbl td:nth-child(3){left:146px;width:92px;min-width:92px;max-width:92px}
+  .tracktbl.pool-tbl th:nth-child(4),.tracktbl.pool-tbl td:nth-child(4){left:238px;width:140px;min-width:140px;max-width:140px}
+  .tracktbl.pool-tbl th:nth-child(5),.tracktbl.pool-tbl td:nth-child(5){left:378px;width:100px;min-width:100px;max-width:100px}
+  .tracktbl.pool-tbl th:nth-child(6),.tracktbl.pool-tbl td:nth-child(6){left:478px;width:100px;min-width:100px;max-width:100px}
+  .tracktbl.pool-tbl th:nth-child(7),.tracktbl.pool-tbl td:nth-child(7){left:578px;width:100px;min-width:100px;max-width:100px}
+  .tracktbl.pool-tbl th:nth-child(8),.tracktbl.pool-tbl td:nth-child(8){left:678px;width:56px;min-width:56px;max-width:56px}
+  .tracktbl.pool-tbl th:nth-child(9),.tracktbl.pool-tbl td:nth-child(9){left:734px;width:68px;min-width:68px;max-width:68px;border-right:2px solid #d1d5db}
   .tracktbl thead th:last-child,
   .tracktbl tbody td:last-child{position:sticky;right:0;z-index:3;border-left:2px solid #d1d5db}
   .tracktbl thead th:last-child{z-index:5;background:#f9fafb}
@@ -149,9 +151,23 @@
   .tracktbl tbody tr:hover td:last-child{background:#f8fafc}
   .tracktbl tbody tr.selected-row td:last-child{background:#eff6ff}
   .tracktbl .pill{padding:1px 6px;font-size:11px}
-  /* 账号管理表格：创建时间列加宽，避免日期+时分秒被截断 */
-  .tracktbl.admin-user-tbl th:nth-child(7),.tracktbl.admin-user-tbl td:nth-child(7){width:150px;min-width:150px;max-width:150px;left:510px}
-  .tracktbl.admin-user-tbl thead th:last-child,.tracktbl.admin-user-tbl tbody td:last-child{left:auto}
+  /* 账号管理表格：左侧前7列冻结，创建时间列加宽 */
+  .tracktbl.admin-user-tbl thead th:nth-child(-n+7),
+  .tracktbl.admin-user-tbl tbody td:nth-child(-n+7){position:sticky;z-index:3}
+  .tracktbl.admin-user-tbl thead th:nth-child(-n+7){z-index:5;background:#f9fafb}
+  .tracktbl.admin-user-tbl tbody td:nth-child(-n+7){background:#fff}
+  .tracktbl.admin-user-tbl tbody tr:hover td:nth-child(-n+7){background:#f8fafc}
+  .tracktbl.admin-user-tbl tbody tr.selected-row td:nth-child(-n+7){background:#eff6ff}
+  .tracktbl.admin-user-tbl th:nth-child(1),.tracktbl.admin-user-tbl td:nth-child(1){left:0;width:50px;min-width:50px;max-width:50px}
+  .tracktbl.admin-user-tbl th:nth-child(2),.tracktbl.admin-user-tbl td:nth-child(2){left:50px;width:120px;min-width:120px;max-width:120px}
+  .tracktbl.admin-user-tbl th:nth-child(3),.tracktbl.admin-user-tbl td:nth-child(3){left:170px;width:80px;min-width:80px;max-width:80px}
+  .tracktbl.admin-user-tbl th:nth-child(4),.tracktbl.admin-user-tbl td:nth-child(4){left:250px;width:70px;min-width:70px;max-width:70px}
+  .tracktbl.admin-user-tbl th:nth-child(5),.tracktbl.admin-user-tbl td:nth-child(5){left:320px;width:80px;min-width:80px;max-width:80px}
+  .tracktbl.admin-user-tbl th:nth-child(6),.tracktbl.admin-user-tbl td:nth-child(6){left:400px;width:120px;min-width:120px;max-width:120px}
+  .tracktbl.admin-user-tbl th:nth-child(7),.tracktbl.admin-user-tbl td:nth-child(7){left:520px;width:150px;min-width:150px;max-width:150px;border-right:2px solid #d1d5db}
+  .tracktbl.admin-user-tbl thead th:last-child,.tracktbl.admin-user-tbl tbody td:last-child{position:sticky;right:0;z-index:3;border-left:2px solid #d1d5db;left:auto}
+  .tracktbl.admin-user-tbl thead th:last-child{z-index:5;background:#f9fafb}
+  .tracktbl.admin-user-tbl tbody td:last-child{background:#fff}
   .tag-list{display:inline-flex;flex-wrap:wrap;gap:4px;max-width:120px}
   .tag-chips{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0}
   .chip{padding:6px 12px;border:1px solid #d1d5db;border-radius:16px;background:#fff;cursor:pointer;font-size:13px;color:#374151;transition:all .15s}
@@ -470,12 +486,14 @@
             </div>
           </div>
           <div class="tracktbl-wrap">
-          <table class="tracktbl"><thead><tr>
+          <table class="tracktbl pool-tbl"><thead><tr>
             <th><input v-if="pool.length" type="checkbox" :checked="poolSelected.length===pool.length && pool.length>0" @change="selectAllPool" title="全选/取消全选" /></th>
             <th>标签</th>
             <th>代码/名称</th>
             <th>现价/涨跌幅</th>
-            <th>成交额（万）<i class="info" title="当天成交额 / 近20日日均成交额，单位：万元。当天>20日均额时标红，表示今日资金活跃度高于近期平均水平">?</i></th>
+            <th>当天实时成交量（万）<i class="info" title="当天截至当前时点的累计成交额，单位：万元。数值大于 T-1 日同期时标红">?</i></th>
+            <th>T-1日同期成交量（万）<i class="info" title="前一个交易日同时点的累计成交额，单位：万元。用于对比今天是否放量">?</i></th>
+            <th>20日平均成交量（万）<i class="info" title="近20个交易日收盘后日均成交额，单位：万元">?</i></th>
             <th>量比<i class="info" title="当前成交量/近5日均量。1.5-3温和放量，可观测买入；3-5明显放量；>5警惕利好兑现；<0.8缩量观望">?</i></th>
             <th>换手%<i class="info" title="流通筹码交换比例。3%-8%活跃可控，可观测；8%-15%高度活跃短线机会；>20%过热风险；<1%冷清">?</i></th>
             <th>日内振幅<i class="info" title="(最高-最低)/昨收。3%-7%有操作空间，可观测；>10%波动剧烈风险高；<2%太沉闷">?</i></th>
@@ -510,7 +528,13 @@
               <div :class="ui.classOf(p.track.change_pct)" style="font-size:11px">{{ui.fmtPct(p.track.change_pct)}}</div>
             </td>
             <td>
-              <span :class="{'up':p.track.realtime_amount > p.track.avg_amount_20}">{{p.track.realtime_amount!=null ? Math.round(p.track.realtime_amount/1e4) : '-'}}</span><span class="muted"> / </span><span class="muted">{{p.track.avg_amount_20!=null ? Math.round(p.track.avg_amount_20/1e4) : '-'}}</span>
+              <span :class="{'up':p.track.yesterday_amount_at_time && p.track.realtime_amount > p.track.yesterday_amount_at_time}">{{p.track.realtime_amount!=null ? Math.round(p.track.realtime_amount/1e4) : '-'}}</span>
+            </td>
+            <td>
+              <span class="muted">{{p.track.yesterday_amount_at_time!=null ? Math.round(p.track.yesterday_amount_at_time/1e4) : '-'}}</span>
+            </td>
+            <td>
+              <span class="muted">{{p.track.avg_amount_20!=null ? Math.round(p.track.avg_amount_20/1e4) : '-'}}</span>
             </td>
             <td :class="ui.volClass(p.track.vol_ratio)">{{p.track.vol_ratio||'-'}}</td>
             <td :class="(p.track.turnover!=null && p.track.turnover>=3 && p.track.turnover<=8)?'up':''">{{p.track.turnover!=null ? p.track.turnover+'%' : '-'}}</td>

@@ -473,11 +473,12 @@ def _fetch_intraday_tencent(code: str):
         return None
 
 
-def _fetch_intraday_eastmoney(code: str):
-    """东财分时（trends2），腾讯失败时兜底。返回 (prices, vols, avg_price)。"""
+def _fetch_intraday_eastmoney(code: str, ndays: int = 1):
+    """东财分时（trends2），腾讯失败时兜底。返回 (prices, vols, avg_price, times, amounts)。
+    最后两个字段仅在调用方需要时解析，兼容旧的 `prices, vols, avg_price = ...` 写法。"""
     url = (f"https://push2his.eastmoney.com/api/qt/stock/trends2/get"
            f"?secid={_secid(code)}&fields1=f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,f11,f12,f13"
-           f"&fields2=f51,f52,f53,f54,f55,f56,f57,f58&ndays=1")
+           f"&fields2=f51,f52,f53,f54,f55,f56,f57,f58&ndays={ndays}")
     txt = _http_get(url)
     if not txt:
         return None
@@ -488,18 +489,65 @@ def _fetch_intraday_eastmoney(code: str):
         if not trends:
             return None
         # 每行: "时间,开,收,高,低,量,额,均价"
-        prices, vols = [], []
+        prices, vols, times, amounts = [], [], [], []
         for t in trends:
             parts = t.split(",")
             if len(parts) >= 8:
+                times.append(parts[0])
                 prices.append(_as_float(parts[2]))  # 收(现价)
                 vols.append(_as_float(parts[5]))    # 成交量
+                amounts.append(_as_float(parts[6])) # 成交额(累计)
         if not prices:
             return None
         avg_price = _as_float(trends[-1].split(",")[7])
-        return prices, vols, avg_price
+        return prices, vols, avg_price, times, amounts
     except Exception:
         return None
+
+
+def _yesterday_amount_at_time(code: str) -> float | None:
+    """取昨日同时点的累计成交额（元）。
+    使用东财 2 日分时数据，按当前交易时间找昨日最接近的分钟累计额；
+    失败时返回 None，前端显示为 '-'。
+    """
+    now = dt.datetime.now()
+    res = _fetch_intraday_eastmoney(code, ndays=2)
+    if not res:
+        return None
+    _, _, _, times, amounts = res
+    if not times or not amounts:
+        return None
+
+    # 定位最近交易日
+    yesterday = now - dt.timedelta(days=1)
+    for _ in range(7):
+        if yesterday.weekday() < 5:
+            break
+        yesterday -= dt.timedelta(days=1)
+    yesterday_str = yesterday.strftime("%Y%m%d")
+
+    # times 可能是 "YYYYMMDDHHMM" 或 "HHMM"
+    full_date = len(times[0]) >= 10 and times[0].startswith("20")
+    if full_date:
+        yest_pairs = [(t, amounts[i]) for i, t in enumerate(times) if t.startswith(yesterday_str)]
+    else:
+        half = len(times) // 2
+        yest_pairs = list(zip(times[:half], amounts[:half]))
+
+    if not yest_pairs:
+        return None
+
+    current_hm = int(now.strftime("%H%M"))
+    best_idx = -1
+    best_hm = -1
+    for i, (t, _) in enumerate(yest_pairs):
+        hm = int(t[-4:]) if len(t) >= 4 else int(t)
+        if hm <= current_hm and hm > best_hm:
+            best_hm = hm
+            best_idx = i
+    if best_idx < 0:
+        return None
+    return yest_pairs[best_idx][1]
 
 
 def _fetch_intraday(code: str):
@@ -1134,6 +1182,10 @@ def get_pool_track(code: str, db) -> dict:
             out["turnover"] = round(spot.get("turnover", 0), 2)
             out["realtime_amount"] = round(spot.get("amount", 0), 2)
             out["src"] = spot.get("src", "")
+        # 昨日同时点成交额(与 spot 是否成功无关,独立来源)
+        yest_amount = _yesterday_amount_at_time(code)
+        if yest_amount:
+            out["yesterday_amount_at_time"] = round(yest_amount, 2)
 
         # 日线只取近 30 天足够(算 MA20/箱体)
         quotes = ensure_quotes(code, days=60)
