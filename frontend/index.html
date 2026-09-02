@@ -154,6 +154,16 @@
   .tracktbl tbody tr:hover td:last-child{background:#f8fafc}
   .tracktbl tbody tr.selected-row td:last-child{background:#eff6ff}
   .tracktbl .pill{padding:1px 6px;font-size:11px}
+  /* 自定义列设置弹窗内的表格 */
+  .col-setting-tbl{width:100%;border-collapse:separate;border-spacing:0}
+  .col-setting-tbl th,.col-setting-tbl td{padding:8px 6px;border-bottom:1px solid #e5e7eb;text-align:center}
+  .col-setting-tbl th:first-child,.col-setting-tbl td:first-child{text-align:left}
+  .col-setting-tbl th:nth-child(2),.col-setting-tbl td:nth-child(2){text-align:left}
+  .col-setting-row{cursor:move;background:#fff}
+  .col-setting-row:hover{background:#f8fafc}
+  .col-setting-row.dragging{opacity:.5}
+  .drag-handle{color:#9ca3af;cursor:move;font-size:16px;line-height:1;padding:0 4px}
+  .drag-handle:hover{color:#4b5563}
   /* 账号管理表格：左侧前7列冻结，创建时间列加宽 */
   .tracktbl.admin-user-tbl thead th:nth-child(-n+7),
   .tracktbl.admin-user-tbl tbody td:nth-child(-n+7){position:sticky;z-index:3}
@@ -476,6 +486,7 @@
               <input type="file" ref="poolImportFile" style="display:none" accept=".xlsx,.xls,.csv" @change="onImportPoolFile" />
               <button class="ghost" :disabled="!poolSelected.length" @click="openBatchTagModal">打标签</button>
               <button class="ghost" @click="openTagManager">标签配置</button>
+              <button class="ghost" @click="openColumnSetting('pool','可投池列设置')">列设置</button>
             </div>
             <div class="row" style="gap:8px;margin:0;flex-wrap:nowrap">
               <input v-model="poolFilter.q" placeholder="证券代码/名称" style="max-width:150px" />
@@ -490,99 +501,101 @@
           </div>
           <div class="tracktbl-wrap">
           <table class="tracktbl pool-tbl"><thead><tr>
-            <th><input v-if="pool.length" type="checkbox" :checked="poolSelected.length===pool.length && pool.length>0" @change="selectAllPool" title="全选/取消全选" /></th>
-            <th>标签</th>
-            <th>代码/名称</th>
-            <th>现价/涨跌幅</th>
-            <th>当天实时成交量（万）<i class="info" title="当天截至当前时点的累计成交额，单位：万元。数值大于 T-1 日同期时标红">?</i></th>
-            <th>T-1日同期成交量（万）<i class="info" title="前一个交易日同时点的累计成交额，单位：万元。用于对比今天是否放量">?</i></th>
-            <th>20日平均成交量（万）<i class="info" title="近20个交易日收盘后日均成交额，单位：万元">?</i></th>
-            <th>量比<i class="info" title="当前成交量/近5日均量。1.5-3温和放量，可观测买入；3-5明显放量；>5警惕利好兑现；<0.8缩量观望">?</i></th>
-            <th>换手%<i class="info" title="流通筹码交换比例。3%-8%活跃可控，可观测；8%-15%高度活跃短线机会；>20%过热风险；<1%冷清">?</i></th>
-            <th>日内振幅<i class="info" title="(最高-最低)/昨收。3%-7%有操作空间，可观测；>10%波动剧烈风险高；<2%太沉闷">?</i></th>
-            <th>MA5<small style="display:block;font-weight:400;color:#9ca3af">站上/跌下</small><i class="info" title="现价与5日均线关系。站上=短期强势，偏买入观察；跌下=短期弱势，偏观望">?</i></th>
-            <th>MA20<small style="display:block;font-weight:400;color:#9ca3af">站上/跌下</small><i class="info" title="现价与20日均线关系。站上=中期趋势向上，趋势较好；跌下=中期趋势向下，偏谨慎">?</i></th>
-            <th>箱体位置<i class="info" title="当前价在近20日高低点区间位置。<25%接近下沿，超跌反弹机会；25%-75%震荡中枢；>75%接近上沿，注意回落">?</i></th>
-            <th>MACD／KDJ／布林</th>
-            <th>必看-达标项</th>
-            <th>重要-达标项</th>
-            <th>辅助-达标项</th>
-            <th>AI评等级</th>
-            <th>持仓</th><th>成本</th><th>备注</th><th>方案</th>
-            <th>操作</th>
+            <th v-for="col in activePoolColumns" :key="col.key" v-if="col.visible" :style="thStyle(poolColMetrics, col)">
+              <template v-if="col.key==='select'"><input v-if="pool.length" type="checkbox" :checked="poolSelected.length===pool.length && pool.length>0" @change="selectAllPool" title="全选/取消全选" /></template>
+              <template v-else>{{col.label}}<i v-if="col.help" class="info" :title="col.help">?</i></template>
+            </th>
           </tr></thead>
           <tbody><tr v-for="p in pool" :key="p.id" :class="{'selected-row':poolSelected.includes(p.code)}">
-            <td><input type="checkbox" :checked="poolSelected.includes(p.code)" @change.stop="togglePoolSelect(p.code)" /></td>
-            <td>
-              <span v-if="p.tags && p.tags.length" class="tag-list">
-                <span v-for="t in p.tags" :key="t.id" class="pill" :style="{background:t.color,color:'#fff'}">{{t.name}}</span>
-              </span>
-              <span v-else class="muted">-</span>
-            </td>
-            <td>
-              <b>{{p.name}}</b>
-              <span v-if="p.status==='archive'" class="pill" style="background:#f3f4f6;color:#6b7280;margin-left:3px" title="已从可投池移除(数据保留),点「恢复」可重新启用">已归档</span>
-              <div style="font-size:11px;color:#2563eb;text-decoration:underline;cursor:pointer" @click.stop="openAnalysis(p.code)">{{p.code}}</div>
-            </td>
-            <td>
-              <div><b>{{ui.fmt(p.track.price)}}</b>
-                <span v-if="p.track.price_note" class="pill" style="background:#fee2e2;color:#b91c1c;font-size:10px;margin-left:4px" :title="p.track.price_note">实时fallback</span>
-              </div>
-              <div :class="ui.classOf(p.track.change_pct)" style="font-size:11px">{{ui.fmtPct(p.track.change_pct)}}</div>
-            </td>
-            <td>
-              <span :class="{'up':p.track.yesterday_amount_at_time && p.track.realtime_amount > p.track.yesterday_amount_at_time}">{{p.track.realtime_amount!=null ? Math.round(p.track.realtime_amount/1e4) : '-'}}</span>
-            </td>
-            <td>
-              <span class="muted">{{p.track.yesterday_amount_at_time!=null ? Math.round(p.track.yesterday_amount_at_time/1e4) : '-'}}</span>
-            </td>
-            <td>
-              <span class="muted">{{p.track.avg_amount_20!=null ? Math.round(p.track.avg_amount_20/1e4) : '-'}}</span>
-            </td>
-            <td :class="ui.volClass(p.track.vol_ratio)">{{p.track.vol_ratio||'-'}}</td>
-            <td :class="(p.track.turnover!=null && p.track.turnover>=3 && p.track.turnover<=8)?'up':''">{{p.track.turnover!=null ? p.track.turnover+'%' : '-'}}</td>
-            <td :class="(p.track.intra_amplitude!=null && p.track.intra_amplitude>=3 && p.track.intra_amplitude<=7)?'up':''">{{p.track.intra_amplitude!=null ? p.track.intra_amplitude+'%' : '-'}}</td>
-            <td><span :class="p.track.above_ma5===true?'up':(p.track.above_ma5===false?'down':'')">{{ui.fmt(p.track.ma5)}}<span v-if="p.track.above_ma5===true" style="margin-left:2px">⬆</span><span v-else-if="p.track.above_ma5===false" style="margin-left:2px">⬇</span></span></td>
-            <td><span :class="p.track.above_ma20===true?'up':(p.track.above_ma20===false?'down':'')">{{ui.fmt(p.track.ma20)}}<span v-if="p.track.above_ma20===true" style="margin-left:2px">⬆</span><span v-else-if="p.track.above_ma20===false" style="margin-left:2px">⬇</span></span></td>
-            <td>
-              <div v-if="p.track.box_pos!==undefined" class="boxbar" :title="'箱体位置 '+Math.round(p.track.box_pos*100)+'%：'+(p.track.box_pos<=0.15?'贴近下沿支撑（相对低位），等企稳低吸':(p.track.box_pos>=0.85?'贴近上沿压力（相对高位），可观察高抛':'箱体中间，方向不明，观望'))">
-                <small :class="{'up':p.track.box_pos<0.25}" :style="{left: (p.track.box_pos*100)+'%'}">{{Math.round(p.track.box_pos*100)}}%</small>
-                <i :class="{'up':p.track.box_pos<0.25}" :style="{left: (p.track.box_pos*100)+'%'}"></i>
-              </div>
-              <span v-else class="muted">-</span>
-            </td>
-            <td>
-              <span v-if="p.track.tech_signals">
-                <span :class="p.track.tech_signals.macd==='看多'?'up':(p.track.tech_signals.macd==='看空'?'down':'')">{{p.track.tech_signals.macd==='看多'?'多':(p.track.tech_signals.macd==='看空'?'空':'中')}}</span><span class="muted">/</span>
-                <span :class="p.track.tech_signals.kdj==='看多'?'up':(p.track.tech_signals.kdj==='看空'?'down':'')">{{p.track.tech_signals.kdj==='看多'?'多':(p.track.tech_signals.kdj==='看空'?'空':'中')}}</span><span class="muted">/</span>
-                <span :class="p.track.tech_signals.boll==='看多'?'up':(p.track.tech_signals.boll==='看空'?'down':'')">{{p.track.tech_signals.boll==='看多'?'多':(p.track.tech_signals.boll==='看空'?'空':'中')}}</span>
-              </span>
-              <span v-else class="muted">-</span>
-            </td>
-            <td :class="{'red':(p.track.must_pass_score||0)<4}" :title="formatPassTitle(p.track.must_pass)">
-              <b>{{p.track.must_pass_score}}</b><span class="muted" style="font-size:11px">分 · {{formatPass(p.track.must_pass)}}</span>
-            </td>
-            <td :class="{'red':(p.track.key_pass_score||0)<3}" :title="formatPassTitle(p.track.key_pass)">
-              <b>{{p.track.key_pass_score}}</b><span class="muted" style="font-size:11px">分 · {{formatPass(p.track.key_pass)}}</span>
-            </td>
-            <td :style="p.track.aux_pass_score===100?{color:'var(--ok)',fontWeight:'bold'}:{}" :title="formatPassTitle(p.track.aux_pass)">
-              <b>{{p.track.aux_pass_score}}</b><span class="muted" style="font-size:11px">分</span>
-            </td>
-            <td>
-              <span class="pill"
-                :class="{'add':p.track.ai_grade==='A','alert':p.track.ai_grade==='B','reduce':p.track.ai_grade==='C','danger':p.track.ai_grade==='D'}"
-                :title="p.track.veto_reasons && p.track.veto_reasons.length ? '一票否决: '+p.track.veto_reasons.join(' / ') : '总分 '+p.track.total_score+' 分'">
-                {{p.track.ai_grade||'-'}}
-              </span>
-            </td>
-            <td>{{p.position_qty!=null ? p.position_qty : '-'}}</td>
-            <td>{{p.cost_price!=null ? ui.fmt(p.cost_price) : '-'}}</td>
-            <td class="muted">{{p.note||'-'}}</td>
-            <td>{{p.scheme_type||'-'}}</td>
-            <td>
-              <button v-if="p.status==='archive'" class="ghost btn-sm" @click.stop="restorePool(p)">恢复</button>
-              <button class="ghost btn-sm" @click.stop="startEdit(p)">修改</button>
-              <button class="ghost btn-sm" @click.stop="removePool(p.code, p.name)">移除</button>
+            <td v-for="col in activePoolColumns" :key="col.key" v-if="col.visible" :style="tdStyle(poolColMetrics, col)">
+              <template v-if="col.key==='select'"><input type="checkbox" :checked="poolSelected.includes(p.code)" @change.stop="togglePoolSelect(p.code)" /></template>
+              <template v-else-if="col.key==='tags'">
+                <span v-if="p.tags && p.tags.length" class="tag-list">
+                  <span v-for="t in p.tags" :key="t.id" class="pill" :style="{background:t.color,color:'#fff'}">{{t.name}}</span>
+                </span>
+                <span v-else class="muted">-</span>
+              </template>
+              <template v-else-if="col.key==='code_name'">
+                <b>{{p.name}}</b>
+                <span v-if="p.status==='archive'" class="pill" style="background:#f3f4f6;color:#6b7280;margin-left:3px" title="已从可投池移除(数据保留),点「恢复」可重新启用">已归档</span>
+                <div style="font-size:11px;color:#2563eb;text-decoration:underline;cursor:pointer" @click.stop="openAnalysis(p.code)">{{p.code}}</div>
+              </template>
+              <template v-else-if="col.key==='price_change'">
+                <div><b>{{ui.fmt(p.track.price)}}</b>
+                  <span v-if="p.track.price_note" class="pill" style="background:#fee2e2;color:#b91c1c;font-size:10px;margin-left:4px" :title="p.track.price_note">实时fallback</span>
+                </div>
+                <div :class="ui.classOf(p.track.change_pct)" style="font-size:11px">{{ui.fmtPct(p.track.change_pct)}}</div>
+              </template>
+              <template v-else-if="col.key==='realtime_amount'">
+                <span :class="{'up':p.track.yesterday_amount_at_time && p.track.realtime_amount > p.track.yesterday_amount_at_time}">{{p.track.realtime_amount!=null ? Math.round(p.track.realtime_amount/1e4) : '-'}}</span>
+              </template>
+              <template v-else-if="col.key==='yesterday_amount'">
+                <span class="muted">{{p.track.yesterday_amount_at_time!=null ? Math.round(p.track.yesterday_amount_at_time/1e4) : '-'}}</span>
+              </template>
+              <template v-else-if="col.key==='avg_amount_20'">
+                <span class="muted">{{p.track.avg_amount_20!=null ? Math.round(p.track.avg_amount_20/1e4) : '-'}}</span>
+              </template>
+              <template v-else-if="col.key==='vol_ratio'">
+                <span :class="ui.volClass(p.track.vol_ratio)">{{p.track.vol_ratio||'-'}}</span>
+              </template>
+              <template v-else-if="col.key==='turnover'">
+                <span :class="(p.track.turnover!=null && p.track.turnover>=3 && p.track.turnover<=8)?'up':''">{{p.track.turnover!=null ? p.track.turnover+'%' : '-'}}</span>
+              </template>
+              <template v-else-if="col.key==='intra_amplitude'">
+                <span :class="(p.track.intra_amplitude!=null && p.track.intra_amplitude>=3 && p.track.intra_amplitude<=7)?'up':''">{{p.track.intra_amplitude!=null ? p.track.intra_amplitude+'%' : '-'}}</span>
+              </template>
+              <template v-else-if="col.key==='ma5'">
+                <span :class="p.track.above_ma5===true?'up':(p.track.above_ma5===false?'down':'')">{{ui.fmt(p.track.ma5)}}<span v-if="p.track.above_ma5===true" style="margin-left:2px">⬆</span><span v-else-if="p.track.above_ma5===false" style="margin-left:2px">⬇</span></span>
+              </template>
+              <template v-else-if="col.key==='ma20'">
+                <span :class="p.track.above_ma20===true?'up':(p.track.above_ma20===false?'down':'')">{{ui.fmt(p.track.ma20)}}<span v-if="p.track.above_ma20===true" style="margin-left:2px">⬆</span><span v-else-if="p.track.above_ma20===false" style="margin-left:2px">⬇</span></span>
+              </template>
+              <template v-else-if="col.key==='box_pos'">
+                <div v-if="p.track.box_pos!==undefined" class="boxbar" :title="'箱体位置 '+Math.round(p.track.box_pos*100)+'%：'+(p.track.box_pos<=0.15?'贴近下沿支撑（相对低位），等企稳低吸':(p.track.box_pos>=0.85?'贴近上沿压力（相对高位），可观察高抛':'箱体中间，方向不明，观望'))">
+                  <small :class="{'up':p.track.box_pos<0.25}" :style="{left: (p.track.box_pos*100)+'%'}">{{Math.round(p.track.box_pos*100)}}%</small>
+                  <i :class="{'up':p.track.box_pos<0.25}" :style="{left: (p.track.box_pos*100)+'%'}"></i>
+                </div>
+                <span v-else class="muted">-</span>
+              </template>
+              <template v-else-if="col.key==='tech_signals'">
+                <span v-if="p.track.tech_signals">
+                  <span :class="p.track.tech_signals.macd==='看多'?'up':(p.track.tech_signals.macd==='看空'?'down':'')">{{p.track.tech_signals.macd==='看多'?'多':(p.track.tech_signals.macd==='看空'?'空':'中')}}</span><span class="muted">/</span>
+                  <span :class="p.track.tech_signals.kdj==='看多'?'up':(p.track.tech_signals.kdj==='看空'?'down':'')">{{p.track.tech_signals.kdj==='看多'?'多':(p.track.tech_signals.kdj==='看空'?'空':'中')}}</span><span class="muted">/</span>
+                  <span :class="p.track.tech_signals.boll==='看多'?'up':(p.track.tech_signals.boll==='看空'?'down':'')">{{p.track.tech_signals.boll==='看多'?'多':(p.track.tech_signals.boll==='看空'?'空':'中')}}</span>
+                </span>
+                <span v-else class="muted">-</span>
+              </template>
+              <template v-else-if="col.key==='must_pass'">
+                <span :class="{'red':(p.track.must_pass_score||0)<4}" :title="formatPassTitle(p.track.must_pass)">
+                  <b>{{p.track.must_pass_score}}</b><span class="muted" style="font-size:11px">分 · {{formatPass(p.track.must_pass)}}</span>
+                </span>
+              </template>
+              <template v-else-if="col.key==='key_pass'">
+                <span :class="{'red':(p.track.key_pass_score||0)<3}" :title="formatPassTitle(p.track.key_pass)">
+                  <b>{{p.track.key_pass_score}}</b><span class="muted" style="font-size:11px">分 · {{formatPass(p.track.key_pass)}}</span>
+                </span>
+              </template>
+              <template v-else-if="col.key==='aux_pass'">
+                <span :style="p.track.aux_pass_score===100?{color:'var(--ok)',fontWeight:'bold'}:{}" :title="formatPassTitle(p.track.aux_pass)">
+                  <b>{{p.track.aux_pass_score}}</b><span class="muted" style="font-size:11px">分</span>
+                </span>
+              </template>
+              <template v-else-if="col.key==='ai_grade'">
+                <span class="pill"
+                  :class="{'add':p.track.ai_grade==='A','alert':p.track.ai_grade==='B','reduce':p.track.ai_grade==='C','danger':p.track.ai_grade==='D'}"
+                  :title="p.track.veto_reasons && p.track.veto_reasons.length ? '一票否决: '+p.track.veto_reasons.join(' / ') : '总分 '+p.track.total_score+' 分'">
+                  {{p.track.ai_grade||'-'}}
+                </span>
+              </template>
+              <template v-else-if="col.key==='position_qty'">{{p.position_qty!=null ? p.position_qty : '-'}}</template>
+              <template v-else-if="col.key==='cost_price'">{{p.cost_price!=null ? ui.fmt(p.cost_price) : '-'}}</template>
+              <template v-else-if="col.key==='note'" class="muted">{{p.note||'-'}}</template>
+              <template v-else-if="col.key==='scheme_type'">{{p.scheme_type||'-'}}</template>
+              <template v-else-if="col.key==='ops'">
+                <button v-if="p.status==='archive'" class="ghost btn-sm" @click.stop="restorePool(p)">恢复</button>
+                <button class="ghost btn-sm" @click.stop="startEdit(p)">修改</button>
+                <button class="ghost btn-sm" @click.stop="removePool(p.code, p.name)">移除</button>
+              </template>
             </td>
           </tr></tbody></table>
           </div>
@@ -823,6 +836,35 @@
         </div>
       </div>
 
+      <!-- 通用自定义列设置弹窗 -->
+      <div v-if="columnSettingModal.show" class="modal" @click.self="closeColumnSetting">
+        <div class="modal-box" style="max-width:520px">
+          <div class="modal-head">
+            <h3>{{columnSettingModal.title || '自定义列设置'}}</h3>
+            <button type="button" class="close-x" @click="closeColumnSetting" aria-label="关闭">×</button>
+          </div>
+          <div class="modal-body">
+            <table class="tracktbl col-setting-tbl">
+              <thead><tr><th style="width:40px"></th><th>展示名称</th><th style="width:90px">是否显示</th><th style="width:90px">是否冻结</th></tr></thead>
+              <tbody>
+                <tr v-for="(c,i) in columnSettingModal.columns" :key="c.key" draggable="true" @dragstart="colSettingDragStart(i)" @dragover.prevent @drop="colSettingDrop(i)" class="col-setting-row">
+                  <td><span class="drag-handle">☰</span></td>
+                  <td>{{c.label}}</td>
+                  <td><input type="checkbox" v-model="c.visible" /></td>
+                  <td><input type="checkbox" v-model="c.frozen" /></td>
+                </tr>
+              </tbody>
+            </table>
+            <p class="muted" style="margin-top:8px;font-size:12px">拖动 ☰ 可调整列顺序；取消勾选「是否显示」可隐藏该列；勾选「是否冻结」可在横向滚动时固定该列。</p>
+          </div>
+          <div class="modal-foot">
+            <button type="button" class="ghost" @click="closeColumnSetting">取消</button>
+            <button type="button" class="ghost" @click="resetColumnSetting">重置</button>
+            <button type="button" @click="saveColumnSetting">确定</button>
+          </div>
+        </div>
+      </div>
+
       <!-- 设置 -->
       <div v-if="view==='settings'">
         <div class="card"><h3 style="margin-top:0">AI（DeepSeek，本地加密）</h3>
@@ -850,22 +892,31 @@
           <div class="row"><button @click="saveNt">保存</button><button class="ghost" @click="testNt">测试发送</button></div>
         </div>
         <div class="card" v-if="me.role==='admin'" style="border-left:4px solid var(--danger)">
-          <h3 style="margin-top:0">账号管理（admin）</h3>
+          <div class="row" style="justify-content:space-between;align-items:center">
+            <h3 style="margin-top:0">账号管理（admin）</h3>
+            <button class="ghost btn-sm" @click="openColumnSetting('adminUsers','账号管理列设置')">列设置</button>
+          </div>
           <table class="tracktbl admin-user-tbl">
-            <thead><tr><th>ID</th><th>用户名</th><th>角色</th><th>游客</th><th>状态</th><th>IP地址</th><th>创建时间</th><th>操作</th></tr></thead>
+            <thead><tr>
+              <th v-for="col in activeAdminColumns" :key="col.key" v-if="col.visible" :style="thStyle(adminColMetrics, col)">{{col.label}}</th>
+            </tr></thead>
             <tbody>
               <tr v-for="u in users" :key="u.id">
-                <td>{{u.id}}</td>
-                <td>{{u.username}}</td>
-                <td>{{u.role}}</td>
-                <td>{{u.is_guest?'是':'否'}}</td>
-                <td>{{u.is_active?'正常':'已禁用'}}</td>
-                <td>{{u.last_ip||'-'}}</td>
-                <td>{{u.created_at}}</td>
-                <td style="display:flex;gap:8px;flex-wrap:wrap">
-                  <button class="ghost" @click="toggleUser(u.id)">{{u.is_active?'禁用':'启用'}}</button>
-                  <button class="ghost" @click="changeUserPw(u.id)">修改密码</button>
-                  <button class="ghost" style="color:var(--danger)" @click="deleteUser(u.id)">删除</button>
+                <td v-for="col in activeAdminColumns" :key="col.key" v-if="col.visible" :style="tdStyle(adminColMetrics, col)">
+                  <template v-if="col.key==='id'">{{u.id}}</template>
+                  <template v-else-if="col.key==='username'">{{u.username}}</template>
+                  <template v-else-if="col.key==='role'">{{u.role}}</template>
+                  <template v-else-if="col.key==='is_guest'">{{u.is_guest?'是':'否'}}</template>
+                  <template v-else-if="col.key==='is_active'">{{u.is_active?'正常':'已禁用'}}</template>
+                  <template v-else-if="col.key==='last_ip'">{{u.last_ip||'-'}}</template>
+                  <template v-else-if="col.key==='created_at'">{{u.created_at}}</template>
+                  <template v-else-if="col.key==='ops'">
+                    <div style="display:flex;gap:8px;flex-wrap:wrap">
+                      <button class="ghost" @click="toggleUser(u.id)">{{u.is_active?'禁用':'启用'}}</button>
+                      <button class="ghost" @click="changeUserPw(u.id)">修改密码</button>
+                      <button class="ghost" style="color:var(--danger)" @click="deleteUser(u.id)">删除</button>
+                    </div>
+                  </template>
                 </td>
               </tr>
             </tbody>
@@ -1218,6 +1269,8 @@ const app = createApp({
     tagModal:{show:false, id:null, name:'', color:'#3b82f6', saving:false},  // 可投池标签配置弹窗
     batchTagModal:{show:false, tag_ids:[], saving:false},  // 可投池批量打标签弹窗
     deleteConfirmModal:{show:false, codes:[], detail:'', saving:false},  // 可投池批量删除确认弹窗
+    columnSettingModal:{show:false, tableKey:'', title:'', columns:[]},  // 通用自定义列设置弹窗
+    columnSettings: JSON.parse(localStorage.getItem('columnSettings')||'{}'),  // 各表格列显隐/冻结/顺序持久化
   }},
   computed:{
     // 批量录入框实时解析出的 6 位代码（去重）
@@ -1253,6 +1306,37 @@ const app = createApp({
       if(v==='settings') return 'settings';
       return '';
     },
+
+    // 可投池当前生效的列配置（已按 order 排序）
+    activePoolColumns(){ return this.getColumns('pool'); },
+    // 可投池可见列的冻结 left 与宽度汇总
+    poolColMetrics(){
+      const cols = (this.activePoolColumns||[]).filter(c=>c.visible);
+      let left = 0;
+      const metrics = {};
+      const frozen = [];
+      for(const c of cols){
+        metrics[c.key] = {width:c.width, left:c.frozen?left:null, frozen:c.frozen};
+        if(c.frozen){ left += c.width; frozen.push(c.key); }
+      }
+      if(frozen.length){ metrics[frozen[frozen.length-1]].lastFrozen = true; }
+      return metrics;
+    },
+
+    // 账号管理当前生效的列配置
+    activeAdminColumns(){ return this.getColumns('adminUsers'); },
+    adminColMetrics(){
+      const cols = (this.activeAdminColumns||[]).filter(c=>c.visible);
+      let left = 0;
+      const metrics = {};
+      const frozen = [];
+      for(const c of cols){
+        metrics[c.key] = {width:c.width, left:c.frozen?left:null, frozen:c.frozen};
+        if(c.frozen){ left += c.width; frozen.push(c.key); }
+      }
+      if(frozen.length){ metrics[frozen[frozen.length-1]].lastFrozen = true; }
+      return metrics;
+    },
   },
   mounted(){ if(this.token){ this.loadMe(); this.loadDash(); }
     // 个股分析页：每 60 秒定时刷新实时数据（仅在该页且已加载时）
@@ -1263,6 +1347,122 @@ const app = createApp({
   },
   beforeUnmount(){ if(this._timer) clearInterval(this._timer); if(this._keydown) document.removeEventListener('keydown', this._keydown); },
   methods:{
+    // ===== 表格自定义列 =====
+    getDefaultColumns(key){
+      if(key==='pool'){
+        return [
+          {key:'select', label:'', width:34, visible:true, frozen:true, sortable:false, hideable:false},
+          {key:'tags', label:'标签', width:112, visible:true, frozen:true},
+          {key:'code_name', label:'代码/名称', width:92, visible:true, frozen:true},
+          {key:'price_change', label:'现价/涨跌幅', width:140, visible:true, frozen:true},
+          {key:'realtime_amount', label:'当天实时成交量（万）', width:100, visible:true, frozen:true, help:'当天截至当前时点的累计成交额，单位：万元。数值大于 T-1 日同期时标红'},
+          {key:'yesterday_amount', label:'T-1日同期成交量（万）', width:100, visible:true, frozen:true, help:'前一个交易日同时点的累计成交额，单位：万元'},
+          {key:'avg_amount_20', label:'20日平均成交量（万）', width:100, visible:true, frozen:true, help:'近20个交易日收盘后日均成交额，单位：万元'},
+          {key:'vol_ratio', label:'量比', width:56, visible:true, frozen:true, help:'当前成交量/近5日均量。1.5-3温和放量，可观测买入；3-5明显放量；>5警惕利好兑现；<0.8缩量观望'},
+          {key:'turnover', label:'换手%', width:68, visible:true, frozen:true, help:'流通筹码交换比例。3%-8%活跃可控，可观测；8%-15%高度活跃短线机会；>20%过热风险；<1%冷清'},
+          {key:'intra_amplitude', label:'日内振幅', width:70, visible:true, frozen:false, help:'(最高-最低)/昨收。3%-7%有操作空间，可观测；>10%波动剧烈风险高；<2%太沉闷'},
+          {key:'ma5', label:'MA5', width:68, visible:true, frozen:false, help:'现价与5日均线关系。站上=短期强势，偏买入观察；跌下=短期弱势，偏观望'},
+          {key:'ma20', label:'MA20', width:68, visible:true, frozen:false, help:'现价与20日均线关系。站上=中期趋势向上，趋势较好；跌下=中期趋势向下，偏谨慎'},
+          {key:'box_pos', label:'箱体位置', width:80, visible:true, frozen:false, help:'当前价在近20日高低点区间位置。<25%接近下沿，超跌反弹机会；25%-75%震荡中枢；>75%接近上沿，注意回落'},
+          {key:'tech_signals', label:'MACD／KDJ／布林', width:88, visible:true, frozen:false},
+          {key:'must_pass', label:'必看-达标项', width:72, visible:true, frozen:false},
+          {key:'key_pass', label:'重要-达标项', width:72, visible:true, frozen:false},
+          {key:'aux_pass', label:'辅助-达标项', width:72, visible:true, frozen:false},
+          {key:'ai_grade', label:'AI评等级', width:70, visible:true, frozen:false},
+          {key:'position_qty', label:'持仓', width:56, visible:true, frozen:false},
+          {key:'cost_price', label:'成本', width:60, visible:true, frozen:false},
+          {key:'note', label:'备注', width:80, visible:true, frozen:false},
+          {key:'scheme_type', label:'方案', width:70, visible:true, frozen:false},
+          {key:'ops', label:'操作', width:120, visible:true, frozen:false, sortable:false, hideable:false}
+        ];
+      }
+      if(key==='adminUsers'){
+        return [
+          {key:'id', label:'ID', width:50, visible:true, frozen:true},
+          {key:'username', label:'用户名', width:120, visible:true, frozen:true},
+          {key:'role', label:'角色', width:80, visible:true, frozen:true},
+          {key:'is_guest', label:'游客', width:70, visible:true, frozen:true},
+          {key:'is_active', label:'状态', width:80, visible:true, frozen:true},
+          {key:'last_ip', label:'IP地址', width:120, visible:true, frozen:false},
+          {key:'created_at', label:'创建时间', width:150, visible:true, frozen:false},
+          {key:'ops', label:'操作', width:140, visible:true, frozen:false, sortable:false, hideable:false}
+        ];
+      }
+      return [];
+    },
+    // 合并默认配置与持久化配置，按 order 排序
+    getColumns(key){
+      const defs = this.getDefaultColumns(key);
+      const savedMap = ((this.columnSettings||{})[key]||[]).reduce((m,c)=>{ m[c.key]=c; return m; },{});
+      const list = defs.map((c,idx)=>{
+        const s = savedMap[c.key] || {};
+        return {
+          ...c,
+          visible: s.hasOwnProperty('visible') ? s.visible : c.visible,
+          frozen: s.hasOwnProperty('frozen') ? s.frozen : c.frozen,
+          order: s.hasOwnProperty('order') ? s.order : idx
+        };
+      });
+      list.sort((a,b)=>a.order-b.order);
+      return list;
+    },
+    // 表头单元格样式（动态 left/width）
+    thStyle(metrics, col){
+      const m = metrics[col.key] || {width:col.width};
+      const s = {width:m.width+'px', minWidth:m.width+'px', maxWidth:m.width+'px'};
+      if(col.frozen){
+        s.position='sticky'; s.left=(m.left||0)+'px'; s.zIndex=5; s.background='#f9fafb';
+      }
+      if(m.lastFrozen) s.borderRight='2px solid #d1d5db';
+      return s;
+    },
+    // 内容单元格样式（动态 left/width）
+    tdStyle(metrics, col){
+      const m = metrics[col.key] || {width:col.width};
+      const s = {width:m.width+'px', minWidth:m.width+'px', maxWidth:m.width+'px'};
+      if(col.frozen){
+        s.position='sticky'; s.left=(m.left||0)+'px'; s.zIndex=3; s.background='#fff';
+      }
+      if(m.lastFrozen) s.borderRight='2px solid #d1d5db';
+      return s;
+    },
+    openColumnSetting(key, title){
+      const cols = this.getColumns(key).filter(c=>c.hideable!==false && c.key!=='select' && c.key!=='ops');
+      this.columnSettingModal = {show:true, tableKey:key, title:title||'自定义列设置', columns:JSON.parse(JSON.stringify(cols))};
+    },
+    closeColumnSetting(){ this.columnSettingModal.show=false; },
+    resetColumnSetting(){
+      const defs = this.getDefaultColumns(this.columnSettingModal.tableKey);
+      this.columnSettingModal.columns = JSON.parse(JSON.stringify(defs.filter(c=>c.hideable!==false && c.key!=='select' && c.key!=='ops')));
+    },
+    saveColumnSetting(){
+      const {tableKey, columns} = this.columnSettingModal;
+      const all = this.getColumns(tableKey);
+      const updated = new Map(columns.map((c,i)=>[c.key,{...c, order:i}]));
+      const merged = all.map(c=>{
+        if(updated.has(c.key)){
+          const u = updated.get(c.key);
+          return {...c, visible:u.visible, frozen:u.frozen, order:u.order};
+        }
+        // select/ops 保持原顺序，排在最前/最后
+        const isSelect = c.key==='select', isOps = c.key==='ops';
+        return {...c, order: isSelect ? -1 : (isOps ? 9999 : c.order)};
+      });
+      merged.sort((a,b)=>a.order-b.order);
+      this.columnSettings[tableKey] = merged.map((c,idx)=>({key:c.key, visible:c.visible, frozen:c.frozen, order:idx}));
+      localStorage.setItem('columnSettings', JSON.stringify(this.columnSettings));
+      this.closeColumnSetting();
+    },
+    colSettingDragStart(idx){ this._dragColIdx = idx; },
+    colSettingDrop(idx){
+      const from = this._dragColIdx;
+      if(from==null || from===idx) return;
+      const cols = this.columnSettingModal.columns;
+      const item = cols.splice(from,1)[0];
+      cols.splice(idx,0,item);
+      this._dragColIdx = null;
+    },
+
     go(v){ this.view=v; if(v==='dash')this.loadDash(); if(v==='screens'){this.loadScreens();this.loadIndustries();this.refreshCounts();this.checkWarmup();this.loadPref();} if(v==='pool'){this.loadPool(); this.loadPoolTags(); if(this.poolTab==='recommend') this.loadRecommendations();} if(v==='pref')this.loadPref(); if(v==='settings'){this.loadSettings(); if(this.me.role==='admin'){this.loadUsers(); this.loadBackups(); this.loadCosStatus();}} if(v==='t')this.loadT(); },
     openRulesModal(){ this.showRulesModal=true; this.loadRules(); },
     async doLogin(){ this.err=''; const r=await API('/auth/login',{method:'POST',body:JSON.stringify({username:this.login.u,password:this.login.p})}); if(r.token){ this.token=r.token; localStorage.setItem('tk',r.token); this.me=r.user; this.loadDash(); } else this.err=(r.detail||'登录失败'); },
