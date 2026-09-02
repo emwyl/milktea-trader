@@ -105,6 +105,17 @@
     .pool-card-actions{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap}
     .pool-card-actions button{padding:5px 10px;font-size:12px;flex:1;min-width:0}
     .pool-card-advice{display:inline-block;font-size:12px}
+    /* 折叠按钮：右上角 ▼/▲ 切换，默认收起只看摘要 */
+    .pool-card-toggle{position:absolute;top:8px;right:8px;background:transparent;border:0;cursor:pointer;padding:0;width:32px;height:32px;border-radius:8px;color:#6b7280;display:flex;align-items:center;justify-content:center;transition:background .15s,color .15s;z-index:2}
+    .pool-card-toggle:hover{background:#f3f4f6;color:var(--ink)}
+    .pool-card-toggle .arrow{display:inline-block;font-size:13px;line-height:1;transition:transform .2s}
+    .pool-card.is-open .pool-card-toggle .arrow{transform:rotate(180deg)}
+    /* 收起时给 head 留出右侧空间,避免价格被按钮盖住;同时去掉虚线分割 */
+    .pool-card-head{padding-right:40px !important;border-bottom:0 !important;margin-bottom:0 !important;padding-bottom:0 !important}
+    /* 展开态:head 与 body 之间恢复虚线分割 */
+    .pool-card.is-open .pool-card-head{padding-bottom:8px !important;border-bottom:1px dashed var(--line) !important;margin-bottom:8px !important}
+    .pool-card-body{animation:fadeIn .15s ease}
+    @keyframes fadeIn{from{opacity:0}to{opacity:1}}
     /* 横滚提示带 */
     .scroll-hint{display:block;text-align:center;font-size:11px;color:#9ca3af;padding:4px 0}
     .scroll-hint:before{content:"↔ "}
@@ -399,7 +410,7 @@
     <header>
       <h1>🧋 加油赚奶茶钱</h1>
       <span class="sub">个人学习用 · 先控风险再谈收益</span>
-      <span class="version" id="appVersion">v20260902079</span>
+      <span class="version" id="appVersion">v20260902080</span>
       <button class="ghost auto-refresh-btn" :class="{active:autoRefresh}" @click="toggleAutoRefresh" :title="autoRefresh?'自动刷新开启中，每5秒更新当前页面数据':'点击开启每5秒自动刷新'">
         {{autoRefresh?'⏸':'▶'}} 自动 5s
       </button>
@@ -787,8 +798,9 @@
           <!-- 移动端：每只股票一张卡 -->
           <div class="pool-card-list">
             <div v-if="!pool.length" class="muted">空，先加入或选股后推送</div>
-            <div v-for="p in pool" :key="p.id" class="pool-card">
+            <div v-for="p in pool" :key="p.id" class="pool-card" :class="{'is-open':poolCardOpen[p.code]}">
               <label style="position:absolute;top:10px;left:10px"><input type="checkbox" :checked="poolSelected.includes(p.code)" @change.stop="togglePoolSelect(p.code)" /></label>
+              <button type="button" class="pool-card-toggle" @click.stop="togglePoolCard(p.code)" :title="poolCardOpen[p.code]?'收起详情':'展开详情'" :aria-label="poolCardOpen[p.code]?'收起详情':'展开详情'"><span class="arrow">▼</span></button>
               <div class="pool-card-head" style="padding-left:24px">
                 <div>
                   <div class="pool-card-name">
@@ -802,6 +814,7 @@
                   <div :class="['c', ui.classOf(p.track.change_pct)]">{{ui.fmtPct(p.track.change_pct)}}</div>
                 </div>
               </div>
+              <div v-if="poolCardOpen[p.code]" class="pool-card-body">
               <div class="pool-card-tags">
                 <span v-for="t in (p.tags||[])" :key="t.id" class="pill" :style="{background:t.color,color:'#fff',fontSize:'10px',padding:'1px 6px'}">{{t.name}}</span>
               </div>
@@ -829,6 +842,7 @@
                 <button class="ghost" @click.stop="removePool(p.code, p.name)">移除</button>
                 <button class="ghost" @click.stop="openAdviceModal(p)">建议</button>
                 <button class="ghost" @click.stop="openAnalysis(p.code)">分析</button>
+              </div>
               </div>
             </div>
           </div>
@@ -1598,6 +1612,7 @@ const app = createApp({
     pool:[], poolFilter:{q:'',tag:''}, poolPage:1, poolPageSize:15, poolTotal:0, rules:[], nr:{name:'',scope:'all',action:'reduce',conditions:'{"logic":"AND","conditions":[{"type":"below_ma","ma":20,"days":3}]}'},
     poolTab:'manual',  // 可投池页 tab: manual|recommend
     poolSelected:[],  // 可投池表格当前勾选中的 code
+    poolCardOpen:{},  // 可投池卡片展开态 {code:true},默认全部收起只看摘要
     poolTags:[],  // 当前用户的可投池自定义标签列表
     showRulesModal:false,  // 加减仓规则弹窗显隐
     recommendations:null,  // {items,msg,archetype,scheme,source}
@@ -2223,8 +2238,10 @@ const app = createApp({
     },
     togglePoolSelect(code){
       const idx = this.poolSelected.indexOf(code);
-      if(idx>=0) this.poolSelected.splice(idx,1);
-      else this.poolSelected.push(code);
+      if(idx>=0) this.poolSelected.splice(idx,1);      else this.poolSelected.push(code);
+    },
+    togglePoolCard(code){  // 可投池卡片展开/收起（默认收起只看摘要,点击 ▼ 展开全部字段+操作按钮）
+      this.poolCardOpen = Object.assign({}, this.poolCardOpen, {[code]: !this.poolCardOpen[code]});
     },
     selectAllPool(e){
       this.poolSelected = e.target.checked ? this.pool.map(p=>p.code) : [];
