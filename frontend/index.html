@@ -837,6 +837,34 @@
         </div>
       </div>
 
+      <!-- 可投池导入模板说明弹窗 -->
+      <div v-if="importGuideModal.show" class="modal" @click.self="closeImportGuide">
+        <div class="modal-box" style="max-width:520px">
+          <div class="modal-head">
+            <h3>导入可投池</h3>
+            <button type="button" class="close-x" @click="closeImportGuide" aria-label="关闭">×</button>
+          </div>
+          <div class="modal-body">
+            <p>支持导入 <strong>Excel（.xlsx / .xls）</strong> 或 <strong>CSV（.csv）</strong> 文件。系统会自动识别表头中的「证券代码 / code」和「证券名称 / name」列，并校验证券信息后添加到可投池。</p>
+            <div style="background:#f3f4f6;border-radius:8px;padding:12px 14px;margin:14px 0">
+              <p style="margin:0 0 8px;font-weight:600">导入要求：</p>
+              <ul style="margin:0;padding-left:18px;font-size:13px;line-height:1.8;color:#4b5563">
+                <li>至少包含一列证券代码或证券名称；</li>
+                <li>代码列支持 6 位数字（如 300377），名称列支持中文简称；</li>
+                <li>已在可投池中的证券会自动跳过，不会重复添加；</li>
+                <li>无法识别的代码/名称会单独列出失败原因。</li>
+              </ul>
+            </div>
+            <p class="muted" style="font-size:13px">不确定格式？可先下载模板，按模板填写后导入。</p>
+          </div>
+          <div class="modal-foot">
+            <button type="button" class="ghost" @click="closeImportGuide">取消</button>
+            <button type="button" class="ghost" @click="downloadImportTemplate">下载模板</button>
+            <button type="button" @click="confirmImportPool">选择文件导入</button>
+          </div>
+        </div>
+      </div>
+
       <!-- 通用自定义列设置弹窗 -->
       <div v-if="columnSettingModal.show" class="modal" @click.self="closeColumnSetting">
         <div class="modal-box" style="max-width:520px">
@@ -1270,6 +1298,7 @@ const app = createApp({
     tagModal:{show:false, id:null, name:'', color:'#3b82f6', saving:false},  // 可投池标签配置弹窗
     batchTagModal:{show:false, tag_ids:[], saving:false},  // 可投池批量打标签弹窗
     deleteConfirmModal:{show:false, codes:[], detail:'', saving:false},  // 可投池批量删除确认弹窗
+    importGuideModal:{show:false},  // 可投池导入模板说明弹窗
     columnSettingModal:{show:false, tableKey:'', title:'', columns:[]},  // 通用自定义列设置弹窗
     columnSettings: (()=>{
       const currentVer = '20260902-01';
@@ -1495,7 +1524,7 @@ const app = createApp({
     refreshCurrentView(){
       if(!this.token) return;
       // 有弹窗打开时跳过本次刷新，避免干扰用户当前操作
-      if(this.showRulesModal || this.addPoolModal.show || this.tagModal.show || this.batchTagModal.show || this.deleteConfirmModal.show || this.editModal.show || this.columnSettingModal.show) return;
+      if(this.showRulesModal || this.addPoolModal.show || this.tagModal.show || this.batchTagModal.show || this.deleteConfirmModal.show || this.importGuideModal.show || this.editModal.show || this.columnSettingModal.show) return;
       const v = this.view;
       if(v==='dash') this.loadDash();
       else if(v==='pool'){
@@ -1871,7 +1900,18 @@ const app = createApp({
       const token = localStorage.getItem('tk') || '';
       const url = '/api/pool/export';
       fetch(url, {headers: token ? {Authorization: `Bearer ${token}`} : {}})
-        .then(r => { if(!r.ok) throw new Error('导出失败'); return r.blob(); })
+        .then(async r => {
+          if(!r.ok){
+            const text = await r.text().catch(()=>'');
+            let msg = '导出失败';
+            try{
+              const j = JSON.parse(text);
+              msg = j.detail || j.message || text || `导出失败（${r.status}）`;
+            }catch(_){ msg = text || `导出失败（${r.status}）`; }
+            throw new Error(msg);
+          }
+          return r.blob();
+        })
         .then(blob => {
           const a = document.createElement('a');
           a.href = URL.createObjectURL(blob);
@@ -1882,7 +1922,20 @@ const app = createApp({
         })
         .catch(e => { alert(e.message || '导出失败'); });
     },
-    triggerImportPool(){ this.$refs.poolImportFile && this.$refs.poolImportFile.click(); },
+    openImportGuide(){ this.importGuideModal={show:true}; },
+    closeImportGuide(){ this.importGuideModal={show:false}; },
+    downloadImportTemplate(){
+      // 下载导入模板 CSV（UTF-8 BOM，Excel 可直接打开）
+      const rows = [['证券代码','证券名称'],['300377','赢时胜'],['002153','石基信息'],['603093','南华期货']];
+      const csv = '\uFEFF' + rows.map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
+      const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `可投池导入模板_${new Date().toISOString().slice(0,10).replace(/-/g,'')}.csv`;
+      document.body.appendChild(a); a.click();
+      setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+    },
+    confirmImportPool(){ this.closeImportGuide(); this.$refs.poolImportFile && this.$refs.poolImportFile.click(); },
     async onImportPoolFile(e){
       const file = e.target.files[0];
       if(!file) return;
