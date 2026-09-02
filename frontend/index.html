@@ -538,10 +538,11 @@
                 <div style="font-size:11px;color:#2563eb;text-decoration:underline;cursor:pointer" @click.stop="openAnalysis(p.code)">{{p.code}}</div>
               </template>
               <template v-else-if="col.key==='price_change'">
-                <div><b>{{ui.fmt(p.track.price)}}</b>
-                  <span v-if="p.track.price_note" class="pill" style="background:#fee2e2;color:#b91c1c;font-size:10px;margin-left:4px" :title="p.track.price_note">实时fallback</span>
-                </div>
+                <div><b>{{ui.fmt(p.track.price)}}</b></div>
                 <div :class="ui.classOf(p.track.change_pct)" style="font-size:11px">{{ui.fmtPct(p.track.change_pct)}}</div>
+                <div v-if="p.track.price_note" style="margin-top:2px">
+                  <span class="pill" style="background:#fee2e2;color:#b91c1c;font-size:10px" :title="p.track.price_note">实时fallback</span>
+                </div>
               </template>
               <template v-else-if="col.key==='realtime_amount'">
                 <span :class="{'up':p.track.yesterday_amount_at_time && p.track.realtime_amount > p.track.yesterday_amount_at_time}">{{p.track.realtime_amount!=null ? Math.round(p.track.realtime_amount/1e4) : '-'}}</span>
