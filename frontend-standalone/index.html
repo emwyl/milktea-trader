@@ -399,6 +399,16 @@
     .tracktbl.admin-user-tbl{display:table !important}
     .backup-tbl-wrap,.cosback-tbl-wrap{display:block !important}
   }
+  /* 走势分析卡片：窄屏工具栏/canvas 自适应（避免 360px 宽按钮溢出） */
+  @media(max-width:768px){
+    .chart-toolbar{flex-direction:column;align-items:stretch;gap:8px}
+    .chart-tabs{justify-content:stretch}
+    .chart-tab{flex:1;text-align:center}
+    .ma-toggles{margin-left:0;justify-content:space-between;width:100%}
+    .ma-chip{flex:1;justify-content:center;padding:5px 6px}
+    .chart-kpi{gap:6px 14px;padding:6px 10px}
+    .chart-canvas-wrap{overflow-x:auto}  /* 极端窄屏避免 canvas 被压变形*/
+  }
 
   .tag-chips{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0}
   .chip{padding:6px 12px;border:1px solid #d1d5db;border-radius:16px;background:#fff;cursor:pointer;font-size:13px;color:#374151;transition:all .15s}
@@ -491,7 +501,7 @@
     <header>
       <h1>🧋 加油赚奶茶钱</h1>
       <span class="sub">个人学习用 · 先控风险再谈收益</span>
-      <span class="version" id="appVersion">v20260903097</span>
+      <span class="version" id="appVersion">v20260903098</span>
       <button class="ghost auto-refresh-btn" :class="{active:autoRefresh}" @click="toggleAutoRefresh" :title="autoRefresh?'自动刷新开启中，每5秒更新当前页面数据':'点击开启每5秒自动刷新'">
         {{autoRefresh?'⏸':'▶'}} 自动 5s
       </button>
