@@ -85,7 +85,8 @@
     .pool-toolbar > .row input{flex:2 1 220px;min-width:160px;max-width:none}
     .pool-toolbar > .row select{flex:1 1 150px;min-width:130px;max-width:none}
     .pool-toolbar > .row button{flex:0 0 auto}
-    .pool-toolbar{flex-wrap:wrap}                /* 让 batchbar 始终换到第二行：操作区在筛选条件下面 */
+    .pool-toolbar{flex-wrap:wrap}                /* 让 batchbar 独占一行：操作按钮在筛选条件下方、表格上方 */
+    .pool-toolbar > .batchbar{width:100%;margin-top:6px}
   }
   @media(max-width:768px){
     .pool-card{
@@ -501,7 +502,7 @@
     <header>
       <h1>🧋 加油赚奶茶钱</h1>
       <span class="sub">个人学习用 · 先控风险再谈收益</span>
-      <span class="version" id="appVersion">v20260903107</span>
+      <span class="version" id="appVersion">v20260903108</span>
       <button class="ghost auto-refresh-btn" :class="{active:autoRefresh}" @click="toggleAutoRefresh" :title="autoRefresh?'自动刷新开启中，每5秒更新当前页面数据':'点击开启每5秒自动刷新'">
         {{autoRefresh?'⏸':'▶'}} 自动 5s
       </button>
