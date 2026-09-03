@@ -512,7 +512,7 @@
     <header>
       <h1>🧋 加油赚奶茶钱</h1>
       <span class="sub">个人学习用 · 先控风险再谈收益</span>
-      <span class="version" id="appVersion">v20260903112</span>
+      <span class="version" id="appVersion">v20260903113</span>
       <button class="ghost auto-refresh-btn" :class="{active:autoRefresh}" @click="toggleAutoRefresh" :title="autoRefresh?'自动刷新开启中，每5秒更新当前页面数据':'点击开启每5秒自动刷新'">
         {{autoRefresh?'⏸':'▶'}} 自动 5s
       </button>
@@ -1454,7 +1454,8 @@
                   <template v-else-if="col.key==='is_guest'">{{u.is_guest?'是':'否'}}</template>
                   <template v-else-if="col.key==='is_active'">{{u.is_active?'正常':'已禁用'}}</template>
                   <template v-else-if="col.key==='last_ip'">{{u.last_ip||'-'}}</template>
-                  <template v-else-if="col.key==='created_at'">{{u.created_at}}</template>
+                  <template v-else-if="col.key==='created_at'">{{fmtDateTimeCN(u.created_at)}}</template>
+                  <template v-else-if="col.key==='last_login_at'">{{fmtDateTimeCN(u.last_login_at)}}</template>
                   <template v-else-if="col.key==='ops'">
                     <div style="display:flex;gap:8px;flex-wrap:wrap">
                       <button class="ghost" @click="toggleUser(u.id)">{{u.is_active?'禁用':'启用'}}</button>
@@ -1482,7 +1483,8 @@
               <div class="user-card-grids">
                 <div><div class="k">游客账号</div><div class="v">{{u.is_guest?'是':'否'}}</div></div>
                 <div><div class="k">最后登录IP</div><div class="v">{{u.last_ip||'-'}}</div></div>
-                <div><div class="k">创建时间</div><div class="v">{{u.created_at}}</div></div>
+                <div><div class="k">创建时间</div><div class="v">{{fmtDateTimeCN(u.created_at)}}</div></div>
+                <div><div class="k">最后登录时间</div><div class="v">{{fmtDateTimeCN(u.last_login_at)}}</div></div>
               </div>
               <div class="user-card-actions">
                 <button class="ghost" @click="toggleUser(u.id)">{{u.is_active?'禁用':'启用'}}</button>
@@ -2151,6 +2153,7 @@ const app = createApp({
           {key:'is_active', label:'状态', width:80, visible:true, frozen:true},
           {key:'last_ip', label:'IP地址', width:120, visible:true, frozen:false},
           {key:'created_at', label:'创建时间', width:150, visible:true, frozen:false},
+          {key:'last_login_at', label:'最后登录时间', width:150, visible:true, frozen:false},
           {key:'ops', label:'操作', width:140, visible:true, frozen:false, sortable:false, hideable:false}
         ];
       }
@@ -2192,6 +2195,14 @@ const app = createApp({
       }
       if(m.lastFrozen) s.borderRight='2px solid #d1d5db';
       return s;
+    },
+    // 将 ISO 时间（含时区）格式化为 年月日 时分秒，如 20260903 15:30:01
+    fmtDateTimeCN(iso){
+      if(!iso) return '-';
+      const d = new Date(iso);
+      if(isNaN(d.getTime())) return iso;
+      const s = d.toLocaleString('zh-CN', {timeZone:'Asia/Shanghai', hour12:false, year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit'});
+      return s.replace(/\//g, '').replace(/,/g, '');
     },
     // ===== 可投池表格排序 =====
     // 提取可投池行在指定列上的可比较值；返回 null 表示"无数据"（始终置底）
