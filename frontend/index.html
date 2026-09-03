@@ -211,6 +211,7 @@
   .warnbox{background:rgba(245,158,11,.12);border-left:4px solid var(--warn);padding:10px 12px;border-radius:8px;font-size:12.5px;line-height:1.7;color:var(--ink)}
   .kv{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px dashed var(--line);font-size:13px}
   .advice{background:#eff6ff;border-left:4px solid var(--tea);padding:10px 12px;border-radius:8px;font-size:13px;white-space:pre-wrap}
+  .advice.warn{background:#fffbeb;border-left-color:#d97706;color:#78350f}
   /* 登录 / 注册 / 游客：Ant Design 风格居中卡片 */
   .login-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;background:linear-gradient(160deg,#f0f5ff 0%,#fff 55%,#f6ffed 100%);padding:20px}
   .login-card{width:100%;max-width:420px;background:#fff;border-radius:16px;box-shadow:0 8px 32px rgba(17,24,39,.08);padding:40px 36px 36px;border:0}
@@ -466,7 +467,7 @@
     <header>
       <h1>🧋 加油赚奶茶钱</h1>
       <span class="sub">个人学习用 · 先控风险再谈收益</span>
-      <span class="version" id="appVersion">v20260903094</span>
+      <span class="version" id="appVersion">v20260903095</span>
       <button class="ghost auto-refresh-btn" :class="{active:autoRefresh}" @click="toggleAutoRefresh" :title="autoRefresh?'自动刷新开启中，每5秒更新当前页面数据':'点击开启每5秒自动刷新'">
         {{autoRefresh?'⏸':'▶'}} 自动 5s
       </button>
@@ -1590,6 +1591,8 @@
               <span class="tag">ATR(14) = {{enh.atr}}（日均波幅 {{enh.atr_pct}}%）</span>
               <span class="tag">{{enh.is_intraday?'交易时段·价位随现价动态刷新':'非交易时段·价位以最新价推算'}}</span>
             </div>
+            <!-- 口径说明：放在表格上方，更显眼（amber 警示色，与 ⚠️ 语义一致） -->
+            <div class="advice warn" style="margin-bottom:10px">⚠️ 口径说明：{{enh.confidence.note}}</div>
             <table class="tiertbl">
               <thead><tr><th>档位</th><th>策略口径</th><th>高抛参考价</th><th>低吸参考价</th><th>距现价</th></tr></thead>
               <tbody>
@@ -1602,7 +1605,6 @@
                 </tr>
               </tbody>
             </table>
-            <div class="advice" style="margin-top:10px">⚠️ 口径说明：{{enh.confidence.note}}</div>
             <div class="kv" style="margin-top:8px">
               <span style="flex:0 0 auto">抛压／承接评估<span class="dtag live">实时</span></span>
               <b style="max-width:72%;text-align:right;font-weight:500">{{enh.pressure_eval.text}}</b>
