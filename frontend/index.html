@@ -255,6 +255,12 @@
   .dtag{display:inline-block;font-size:10px;line-height:1.6;padding:0 5px;border-radius:4px;margin-left:5px;font-weight:600;vertical-align:middle;white-space:nowrap}
   .dtag.live{background:#dcfce7;color:#047857;border:1px solid #6ee7b7}
   .dtag.pred{background:#ede9fe;color:#6d28d9;border:1px solid #c4b5fd}
+  /* 合并面板内的子分组（量能/箱体/信号），用细虚线分隔，子标题左侧 3px 色块强调 */
+  .sub-section{margin-top:6px}
+  .sub-section:first-child{margin-top:0}
+  .sub-section .sub-title{font-size:12px;font-weight:600;color:var(--ink);margin:0 0 6px;display:flex;align-items:center;gap:6px;line-height:1}
+  .sub-section .sub-title::before{content:'';display:inline-block;width:3px;height:12px;background:var(--tea);border-radius:2px;flex:0 0 auto}
+  .sub-divider{height:0;border-top:1px dashed var(--line);margin:10px 0}
   /* P0/P1/P2 置信空间表 */
   .tiertbl{width:100%;border-collapse:separate;border-spacing:0;font-size:13px}
   .tiertbl thead th{background:#f9fafb;color:#6b7280;font-weight:600;padding:8px;border-bottom:1px solid #e5e7eb;font-size:12px;white-space:nowrap}
@@ -460,7 +466,7 @@
     <header>
       <h1>🧋 加油赚奶茶钱</h1>
       <span class="sub">个人学习用 · 先控风险再谈收益</span>
-      <span class="version" id="appVersion">v20260903092</span>
+      <span class="version" id="appVersion">v20260903093</span>
       <button class="ghost auto-refresh-btn" :class="{active:autoRefresh}" @click="toggleAutoRefresh" :title="autoRefresh?'自动刷新开启中，每5秒更新当前页面数据':'点击开启每5秒自动刷新'">
         {{autoRefresh?'⏸':'▶'}} 自动 5s
       </button>
@@ -1513,28 +1519,35 @@
             </div>
           </div>
 
-          <!-- 分区2：量能 -->
-          <div class="card"><h3 style="margin-top:0">核心量能指标<span class="dtag live">实时</span></h3>
-            <div class="kv"><span>量比</span><b>{{t.data.section2.vol_ratio}} — {{t.data.section2.vol_ratio_text}}</b></div>
-            <div class="kv"><span>成交量对比</span><b>今日 {{fmtVol(t.data.section2.today_volume)}} 万手 vs 上一交易日{{t.data.section2.prev_date?'('+t.data.section2.prev_date+')':''}} {{fmtVol(t.data.section2.prev_volume)}} 万手 → {{t.data.section2.amount_cmp}}</b></div>
-            <div class="kv"><span>换手率</span><b>{{t.data.section2.turnover}}% — {{t.data.section2.turnover_text}}</b></div>
-          </div>
-
-          <!-- 分区3：箱体 -->
-          <div class="card"><h3 style="margin-top:0">箱体关键价位（近20日）<span class="dtag live">实时</span></h3>
-            <div class="kv"><span>箱体上沿(压力)/下沿(支撑)</span><b>{{t.data.section3.pressure}} / {{t.data.section3.support}}</b></div>
-            <div class="advice">{{t.data.section3.box_text}}</div>
-            <div class="row" style="margin-top:10px">
-              <label style="width:auto">自定义支撑</label><input v-model="t.cfg.custom_support" style="max-width:110px" />
-              <label style="width:auto">自定义压力</label><input v-model="t.cfg.custom_pressure" style="max-width:110px" />
-              <button class="ghost" @click="saveTConfig">保存（本机记忆）</button>
+          <!-- 分区2+3+4 合并：量能 / 箱体 / 极简短线信号（同类实时面板，单卡分组更清爽） -->
+          <div class="card">
+            <h3 style="margin-top:0">核心盘面诊断<span class="dtag live">实时</span></h3>
+            <!-- 子分组：量能 -->
+            <div class="sub-section">
+              <div class="sub-title">量能</div>
+              <div class="kv"><span>量比</span><b>{{t.data.section2.vol_ratio}} — {{t.data.section2.vol_ratio_text}}</b></div>
+              <div class="kv"><span>成交量对比</span><b>今日 {{fmtVol(t.data.section2.today_volume)}} 万手 vs 上一交易日{{t.data.section2.prev_date?'('+t.data.section2.prev_date+')':''}} {{fmtVol(t.data.section2.prev_volume)}} 万手 → {{t.data.section2.amount_cmp}}</b></div>
+              <div class="kv"><span>换手率</span><b>{{t.data.section2.turnover}}% — {{t.data.section2.turnover_text}}</b></div>
             </div>
-          </div>
-
-          <!-- 分区4：短线信号 -->
-          <div class="card"><h3 style="margin-top:0">极简短线辅助信号<span class="dtag live">实时</span></h3>
-            <div class="kv"><span>5日线对比</span><b>{{t.data.section4.ma5_signal}}（MA5={{t.data.section4.ma5}}）</b></div>
-            <div class="kv"><span>量价匹配</span><b :style="t.data.section4.vp_level==='risk'?'color:var(--danger)':(t.data.section4.vp_level==='ok'?'color:var(--ok)':'')">{{t.data.section4.vp_text}}</b></div>
+            <div class="sub-divider"></div>
+            <!-- 子分组：箱体（近20日） -->
+            <div class="sub-section">
+              <div class="sub-title">箱体（近20日）</div>
+              <div class="kv"><span>箱体上沿(压力)/下沿(支撑)</span><b>{{t.data.section3.pressure}} / {{t.data.section3.support}}</b></div>
+              <div class="advice">{{t.data.section3.box_text}}</div>
+              <div class="row" style="margin-top:10px">
+                <label style="width:auto">自定义支撑</label><input v-model="t.cfg.custom_support" style="max-width:110px" />
+                <label style="width:auto">自定义压力</label><input v-model="t.cfg.custom_pressure" style="max-width:110px" />
+                <button class="ghost" @click="saveTConfig">保存（本机记忆）</button>
+              </div>
+            </div>
+            <div class="sub-divider"></div>
+            <!-- 子分组：极简短线信号 -->
+            <div class="sub-section">
+              <div class="sub-title">极简短线信号</div>
+              <div class="kv"><span>5日线对比</span><b>{{t.data.section4.ma5_signal}}（MA5={{t.data.section4.ma5}}）</b></div>
+              <div class="kv"><span>量价匹配</span><b :style="t.data.section4.vp_level==='risk'?'color:var(--danger)':(t.data.section4.vp_level==='ok'?'color:var(--ok)':'')">{{t.data.section4.vp_text}}</b></div>
+            </div>
           </div>
 
           <!-- 分区4b：引擎信号(运行引擎后生成) -->
