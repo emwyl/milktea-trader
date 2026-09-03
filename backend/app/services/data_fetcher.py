@@ -376,8 +376,12 @@ def _fetch_spot_tencent(code: str) -> dict | None:
         turnover = _as_float(f[38]) if len(f) > 38 else 0.0
         vol_ratio = _as_float(f[49]) if len(f) > 49 else 0.0
         avg_price = _as_float(f[51]) if len(f) > 51 else price
-        volume = _as_float(f[36]) if len(f) > 36 else _as_float(f[6])    # 单位: 股
-        volume_wan = volume / 1e6 if volume else 0.0                          # 万手 (1手=100股)
+        # f[6]/f[36] 实测单位 = 手（2026-09-03 交叉验证：
+        #   600519 现价 1297.58、成交额 f[37]=101270 万 → 66106 手×100×1297.58 ≈ 成交额，吻合；
+        #   且腾讯日线 09-02 volume=20308 手 ↔ 新浪K线 2013445 股 → 口径一致）。
+        # 旧注释误写为「股」并按 /1e6 换算，导致当天实时成交量被缩小 100 倍。
+        volume = _as_float(f[36]) if len(f) > 36 else _as_float(f[6])   # 单位: 手
+        volume_wan = volume / 1e4 if volume else 0.0                    # 万手 (1手=100股)
         return {
             "name": f[1], "price": price, "pre_close": pre_close, "open": open0,
             "change": change, "change_pct": change_pct, "high": high, "low": low,
@@ -404,7 +408,7 @@ def _fetch_spot_eastmoney(code: str) -> dict | None:
         if not d:
             return None
         price = _as_float(d.get("f43")) / 100
-        vol_raw = _as_float(d.get("f47"))                          # 单位: 手(东财成交量的字段约定: 手)
+        vol_raw = _as_float(d.get("f47"))                          # 单位: 手(东财 push2 f47 约定为手)
         return {
             "name": d.get("f58", ""), "price": price,
             "pre_close": _as_float(d.get("f60")) / 100,
@@ -438,12 +442,14 @@ def _fetch_spot_sina(code: str) -> dict | None:
         name = f[0]
         open0 = _as_float(f[1]); pre_close = _as_float(f[2]); price = _as_float(f[3])
         high = _as_float(f[4]); low = _as_float(f[5]); volume = _as_float(f[8]); amount = _as_float(f[9])
-        volume_wan = volume / 1e4 if volume else 0.0  # 新浪 hq 也是「股」单位, /1e4 → 万手
+        # 新浪 hq 的 volume 单位是「股」（与新浪K线一致，f[9] 成交额(元) 可反推校验），
+        # 股 → 万手 需 /100(/手) /1e4(万手) = /1e6。旧代码 /1e4 少除了 100。
+        volume_wan = volume / 1e6 if volume else 0.0
         return {
             "name": name, "price": price, "pre_close": pre_close, "open": open0,
             "change": round(price - pre_close, 2),
             "change_pct": round((price - pre_close) / pre_close * 100, 2) if pre_close else 0,
-            "high": high, "low": low, "volume": volume, "volume_wan": volume_wan,
+            "high": high, "low": low, "volume": volume / 100.0, "volume_wan": volume_wan,
             "amount": amount,
             "turnover": 0.0, "vol_ratio": 0.0, "avg_price": price,
             "ts": f[30] if len(f) > 30 else "", "src": "sina",
@@ -546,8 +552,8 @@ def _fetch_intraday_cached(code: str, ndays: int = 2) -> tuple | None:
     return res
 
 
-def _fetch_sina_minute_range(code: str, days_back: int = 10) -> list[tuple[str, int, float]] | None:
-    """新浪分钟级 K 线。返回 [(date_str, hm_int, cum_amount_yuan), ...] 或 None。
+def _fetch_sina_minute_range(code: str, days_back: int = 10) -> list[tuple[str, int, float, float]] | None:
+    """新浪分钟级 K 线。返回 [(date_str, hm_int, cum_amount_yuan, cum_volume_hand), ...] 或 None。
 
     说明(2026-09-03):
       旧实现用腾讯 web.ifzq.gtimg.cn/appstock/app/minute/query?date=YYYY-MM-DD 取「T-1 同期累计成交额」，
@@ -561,11 +567,21 @@ def _fetch_sina_minute_range(code: str, days_back: int = 10) -> list[tuple[str, 
       - 单根 amount 是「该分钟成交额」而非累计, 本函数内部把它累加成 cum_amount_yuan。
       - day 字段带日期, 可以按日期切分到具体某天。
 
+    两个已踩过的坑(2026-09-03 修复):
+      1) datalen 有硬上限: 实测 1800 正常、>=2000 直接返回 "=(null);" (57 字节),
+         而 days_back=10 会算出 2430 -> 整条链路静默返回 None。已钳制到 1800
+         (= 7.5 个交易日, 覆盖 10 自然日的需求, 遇超长假期才可能取不到 T-1)。
+      2) 累计量必须「按日重置」: 单根 amount/volume 是当分钟的增量,
+         跨天后若不归零, cum 会变成「自窗口起点以来的总量」,
+         导致 T-1 全天成交量被放大若干倍(且随 datalen 增大而变)。
+         cum_* 的语义固定为「当日累计」。
+
     缓存：_INTRADAY_CACHE（30s, 同其它分钟接口, 避免连续刷新打爆新浪）。
     """
     mkt = _market_of(code)  # sh/sz/bj, 新浪也是同样前缀
     sym = f"{mkt}{code}"
-    datalen = max(days_back * 240 + 30, 800)
+    # 上限 1800：新浪 >=2000 返回 null（见 docstring 坑 1）
+    datalen = min(max(days_back * 240 + 30, 800), 1800)
     url = (
         f"https://quotes.sina.cn/cn/api/jsonp_v2.php/="
         f"/CN_MarketDataService.getKLineData?symbol={sym}&scale=1&datalen={datalen}"
@@ -584,22 +600,35 @@ def _fetch_sina_minute_range(code: str, days_back: int = 10) -> list[tuple[str, 
             m = _re.search(r'=\(\[', s)
             body = s[m.end() - 1:-2] if m else s
         arr = _json.loads(body)
+        # 新浪超上限时返回 "=(null);" -> arr 为 None
         if not isinstance(arr, list) or not arr:
             return None
         out: list[tuple[str, int, float, float]] = []  # (date, hm, cum_amount_yuan, cum_volume_hand)
         cum_amt = 0.0
         cum_vol = 0.0
+        last_date = None
         for a in arr:
             date_str = str(a.get("day", ""))  # "2026-09-02 09:45:00"
             if not date_str or len(date_str) < 16:
                 continue
+            d = date_str[:10]
+            if d != last_date:
+                # 换交易日 -> 累计归零，保证 cum_* 语义 = 当日累计（见 docstring 坑 2）
+                cum_amt = 0.0
+                cum_vol = 0.0
+                last_date = d
             amt = _as_float(a.get("amount", 0))
-            vol = _as_float(a.get("volume", 0))  # 手(单根)
+            # 新浪K线 volume 实测单位 = 股（2026-09-03 交叉验证：
+            #   000001 T-1 volume_total=89224752，成交额 10.63 亿、均价 ~11.91
+            #   → 89224752股×11.91 ≈ 10.63 亿，完全吻合；若按手算会大 100 倍；
+            #   且 /100 = 892248 手 与腾讯日线 09-02 volume=892248 完全一致）。
+            # 这里统一折算成「手」，与腾讯日线 / 盘口口径对齐，避免下游再踩单位坑。
+            vol = _as_float(a.get("volume", 0)) / 100.0
             cum_amt += amt
             cum_vol += vol
             # hm_int: HHMM 整数, 例 09:45 -> 945
             hm = int(date_str[11:13]) * 100 + int(date_str[14:16])
-            out.append((date_str[:10], hm, cum_amt, cum_vol))
+            out.append((d, hm, cum_amt, cum_vol))
         return out if out else None
     except Exception:
         return None
