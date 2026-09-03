@@ -502,7 +502,7 @@
     <header>
       <h1>🧋 加油赚奶茶钱</h1>
       <span class="sub">个人学习用 · 先控风险再谈收益</span>
-      <span class="version" id="appVersion">v20260903108</span>
+      <span class="version" id="appVersion">v20260903109</span>
       <button class="ghost auto-refresh-btn" :class="{active:autoRefresh}" @click="toggleAutoRefresh" :title="autoRefresh?'自动刷新开启中，每5秒更新当前页面数据':'点击开启每5秒自动刷新'">
         {{autoRefresh?'⏸':'▶'}} 自动 5s
       </button>
@@ -766,7 +766,7 @@
             <p class="scroll-hint">左右滑动查看全部字段 ↔</p>
             <div class="tracktbl-wrap">
           <table class="tracktbl pool-tbl"><thead><tr>
-            <th v-for="col in visiblePoolColumns" :key="col.key" :class="{frozen: col.frozen, sortable: col.sortable!==false, sorted: col.sortable!==false && poolSort.key===col.key}" :style="thStyle(poolColMetrics, col)" @click="col.sortable!==false && sortPool(col)">
+            <th v-for="col in visiblePoolColumns" :key="col.key" :class="{frozen: col.frozen, sortable: col.sortable===true, sorted: col.sortable===true && poolSort.key===col.key}" :style="thStyle(poolColMetrics, col)" @click="col.sortable===true && sortPool(col)">
               <template v-if="col.key==='select'"><input v-if="pool.length" type="checkbox" :checked="poolSelected.length===pool.length && pool.length>0" @change="selectAllPool" title="全选/取消全选" /></template>
               <template v-else>
                 <span class="th-label" :title="col.label">
@@ -2025,31 +2025,31 @@ const app = createApp({
       if(key==='pool'){
         return [
           {key:'select', label:'', width:60, visible:true, frozen:false, sortable:false, hideable:false},
-          {key:'code_name', label:'代码/名称', width:144, visible:true, frozen:true},
-          {key:'price', label:'现价', width:75, visible:true, frozen:true},
-          {key:'change_pct', label:'涨跌幅', width:75, visible:true, frozen:true},
-          {key:'realtime_volume', label:'当天实时\n成交量（万手）', width:117, visible:true, frozen:false, help:'当天截至当前时点的累计成交量,单位:万手(1手=100股)。同时大于 T-1 日同期 与 20日平均成交量 时标红'},
-          {key:'yesterday_volume_at_time', label:'T-1日同期\n成交量（万手）', width:117, visible:true, frozen:false, help:'前一个交易日同时点的累计成交量,单位:万手。按 30 分钟向下取整 + 盘前强制 09:30 / 盘后强制 15:00'},
-          {key:'avg_volume_20', label:'20日平均\n成交量（万手）', width:117, visible:true, frozen:false, help:'近20个交易日收盘后日均成交量,单位:万手'},
-          {key:'yesterday_volume_total', label:'T-1日全天\n成交量（万手）', width:117, visible:true, frozen:false, help:'前一交易日收盘后全天累计成交量,单位:万手。'+
+          {key:'code_name', label:'代码/名称', width:144, visible:true, frozen:true, sortable:true},
+          {key:'price', label:'现价', width:75, visible:true, frozen:true, sortable:true},
+          {key:'change_pct', label:'涨跌幅', width:75, visible:true, frozen:true, sortable:true},
+          {key:'realtime_volume', label:'当天实时\n成交量（万手）', width:117, visible:true, frozen:false, sortable:true, help:'当天截至当前时点的累计成交量,单位:万手(1手=100股)。同时大于 T-1 日同期 与 20日平均成交量 时标红'},
+          {key:'yesterday_volume_at_time', label:'T-1日同期\n成交量（万手）', width:117, visible:true, frozen:false, sortable:true, help:'前一个交易日同时点的累计成交量,单位:万手。按 30 分钟向下取整 + 盘前强制 09:30 / 盘后强制 15:00'},
+          {key:'avg_volume_20', label:'20日平均\n成交量（万手）', width:117, visible:true, frozen:false, sortable:true, help:'近20个交易日收盘后日均成交量,单位:万手'},
+          {key:'yesterday_volume_total', label:'T-1日全天\n成交量（万手）', width:117, visible:true, frozen:false, sortable:true, help:'前一交易日收盘后全天累计成交量,单位:万手。'+
               '来源:新浪 quotes.sina.cn K 线取 T-1 15:00 那根累计。'},
-          {key:'vol_ratio', label:'量比', width:81, visible:true, frozen:false, help:'当前成交量/近5日均量。1.5-3温和放量，可观测买入；3-5明显放量；>5警惕利好兑现；<0.8缩量观望'},
-          {key:'turnover', label:'换手%', width:93, visible:true, frozen:false, help:'流通筹码交换比例。3%-8%活跃可控，可观测；8%-15%高度活跃短线机会；>20%过热风险；<1%冷清'},
-          {key:'intra_amplitude', label:'日内振幅', width:105, visible:true, frozen:false, help:'(最高-最低)/昨收。3%-7%有操作空间，可观测；>10%波动剧烈风险高；<2%太沉闷'},
-          {key:'ma5', label:'MA5', width:93, visible:true, frozen:false, help:'现价与5日均线关系。站上=短期强势，偏买入观察；跌下=短期弱势，偏观望'},
-          {key:'ma20', label:'MA20', width:99, visible:true, frozen:false, help:'现价与20日均线关系。站上=中期趋势向上，趋势较好；跌下=中期趋势向下，偏谨慎'},
-          {key:'box_pos', label:'箱体位置', width:117, visible:true, frozen:false, help:'当前价在近20日高低点区间位置。<25%接近下沿，超跌反弹机会；25%-75%震荡中枢；>75%接近上沿，注意回落'},
-          {key:'operation_advice', label:'操作\n建议', width:138, visible:true, frozen:false, help:'基于实时盘口、箱体、量能、技术信号生成的简要操作建议，点击查看完整结论'},
-          {key:'tech_signals', label:'MACD/\nKDJ/布林', width:138, visible:true, frozen:false},
-          {key:'must_pass', label:'必看-达标项', width:117, visible:true, frozen:false},
-          {key:'key_pass', label:'重要-达标项', width:117, visible:true, frozen:false},
-          {key:'aux_pass', label:'辅助-达标项', width:117, visible:true, frozen:false},
-          {key:'ai_grade', label:'AI评等级', width:108, visible:true, frozen:false},
-          {key:'position_qty', label:'持仓', width:90, visible:true, frozen:false},
-          {key:'cost_price', label:'成本', width:99, visible:true, frozen:false},
-          {key:'note', label:'备注', width:138, visible:true, frozen:false},
-          {key:'tags', label:'标签', width:180, visible:true, frozen:false},
-          {key:'scheme_type', label:'方案', width:111, visible:true, frozen:false},
+          {key:'vol_ratio', label:'量比', width:81, visible:true, frozen:false, sortable:true, help:'当前成交量/近5日均量。1.5-3温和放量，可观测买入；3-5明显放量；>5警惕利好兑现；<0.8缩量观望'},
+          {key:'turnover', label:'换手%', width:93, visible:true, frozen:false, sortable:true, help:'流通筹码交换比例。3%-8%活跃可控，可观测；8%-15%高度活跃短线机会；>20%过热风险；<1%冷清'},
+          {key:'intra_amplitude', label:'日内振幅', width:105, visible:true, frozen:false, sortable:true, help:'(最高-最低)/昨收。3%-7%有操作空间，可观测；>10%波动剧烈风险高；<2%太沉闷'},
+          {key:'ma5', label:'MA5', width:93, visible:true, frozen:false, sortable:true, help:'现价与5日均线关系。站上=短期强势，偏买入观察；跌下=短期弱势，偏观望'},
+          {key:'ma20', label:'MA20', width:99, visible:true, frozen:false, sortable:true, help:'现价与20日均线关系。站上=中期趋势向上，趋势较好；跌下=中期趋势向下，偏谨慎'},
+          {key:'box_pos', label:'箱体位置', width:117, visible:true, frozen:false, sortable:true, help:'当前价在近20日高低点区间位置。<25%接近下沿，超跌反弹机会；25%-75%震荡中枢；>75%接近上沿，注意回落'},
+          {key:'operation_advice', label:'操作\n建议', width:138, visible:true, frozen:false, sortable:true, help:'基于实时盘口、箱体、量能、技术信号生成的简要操作建议，点击查看完整结论'},
+          {key:'tech_signals', label:'MACD/\nKDJ/布林', width:138, visible:true, frozen:false, sortable:true},
+          {key:'must_pass', label:'必看-达标项', width:117, visible:true, frozen:false, sortable:true},
+          {key:'key_pass', label:'重要-达标项', width:117, visible:true, frozen:false, sortable:true},
+          {key:'aux_pass', label:'辅助-达标项', width:117, visible:true, frozen:false, sortable:true},
+          {key:'ai_grade', label:'AI评等级', width:108, visible:true, frozen:false, sortable:true},
+          {key:'position_qty', label:'持仓', width:90, visible:true, frozen:false, sortable:true},
+          {key:'cost_price', label:'成本', width:99, visible:true, frozen:false, sortable:true},
+          {key:'note', label:'备注', width:138, visible:true, frozen:false, sortable:true},
+          {key:'tags', label:'标签', width:180, visible:true, frozen:false, sortable:true},
+          {key:'scheme_type', label:'方案', width:111, visible:true, frozen:false, sortable:true},
           {key:'ops', label:'操作', width:110, visible:true, frozen:false, sortable:false, hideable:false}
         ];
       }
