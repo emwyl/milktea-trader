@@ -9,7 +9,9 @@
 from __future__ import annotations
 import datetime as dt
 import hashlib
+import json
 import random
+import re
 import time
 from collections import OrderedDict
 
@@ -1750,6 +1752,294 @@ def _operation_advice_for_pool(track: dict, position: dict | None = None) -> dic
     }
 
 
+# ============ 可投池扩展指标：多源真实数据抓取 ============
+# 说明：资金流/北向等"当日"类指标仅在交易时段有数据，收盘后源端会清空，
+# 此时函数返回 None，前端统一显示 "-"（带 tooltip 说明），不编造数据。
+_NORTHBOUND_CACHE: dict = {}
+_VALUATION_CACHE: dict = {}
+_UNLOCK_CACHE: dict = {}
+_FIN_CACHE: dict = {}
+_NEWS_CACHE: dict = {}
+
+
+def _em_json(url: str):
+    """拉取并解析东方财富类 JSON 接口；失败返回 None。"""
+    txt = _http_get(url)
+    if not txt:
+        return None
+    try:
+        return json.loads(txt)
+    except Exception:
+        return None
+
+
+def _fetch_capital_flow(code: str) -> dict | None:
+    """主力/大单资金流（真实数据，东方财富数据中心日级资金流报表 RPT_DMSK_TS_STOCKNEW）。
+
+    之所以用 datacenter-web 而非 push2 实时接口：push2 在本机/部分部署环境被网络掐断
+    （RemoteDisconnected），而 datacenter-web 可达；该报表在交易时段与收盘后均可取，
+    返回个股当日主力净流入净额、超大单/大单流入流出等真实数据。
+
+    返回字段(均为元): main_net=主力净流入净额, xl_net=超大单净流入净额, l_net=大单净流入净额。
+    主力净流入占比(%) 由调用方用 main_net / 当日成交额 计算（见 get_pool_track 区块 3）。"""
+    url = ("https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_DMSK_TS_STOCKNEW"
+           f"&columns=ALL&filter=(SECURITY_CODE%3D%22{code}%22)&pageSize=2"
+           "&sortColumns=TRADE_DATE&sortTypes=-1")
+    j = _em_json(url)
+    if not j or not isinstance(j.get("result"), dict):
+        return None
+    rows = j["result"].get("data") or []
+    if not rows:
+        return None
+    r = rows[0]
+    s_in = _as_float(r.get("SUPERDEAL_INFLOW")) or 0.0
+    s_out = _as_float(r.get("SUPERDEAL_OUTFLOW")) or 0.0
+    b_in = _as_float(r.get("BIGDEAL_INFLOW")) or 0.0
+    b_out = _as_float(r.get("BIGDEAL_OUTFLOW")) or 0.0
+    return {
+        "main_net": _as_float(r.get("PRIME_INFLOW")),   # 主力净流入净额(元)
+        "xl_net": s_in - s_out,                          # 超大单净流入净额(元)
+        "l_net": b_in - b_out,                           # 大单净流入净额(元)
+        "trade_date": (r.get("TRADE_DATE") or "")[:10],
+    }
+
+
+def _fetch_northbound_map() -> dict:
+    """沪深股通全部个股当日净买入 map: code -> {net(元), pct(%)}. 仅交易时段有数据。"""
+    cached = _NORTHBOUND_CACHE
+    if cached and (time.time() - cached.get("_t", 0)) < 600 and len(cached) > 1:
+        return cached
+    mp: dict = {}
+    try:
+        url = ("https://push2.eastmoney.com/api/qt/clist/get?pn=1&pz=6000&po=1&np=1"
+               "&fltt=2&invt=2&fid=f62&fs=m:0+t:3,m:1+t:3&fields=f12,f14,f62,f184")
+        data = _em_json(url)
+        if data and isinstance(data.get("data"), dict) and data["data"].get("diff"):
+            for it in data["data"]["diff"]:
+                c = it.get("f12")
+                if c:
+                    mp[c] = {"net": _as_float(it.get("f62")), "pct": _as_float(it.get("f184"))}
+    except Exception:
+        pass
+    mp["_t"] = time.time()
+    _NORTHBOUND_CACHE.clear()
+    _NORTHBOUND_CACHE.update(mp)
+    return mp
+
+
+def _fetch_northbound(code: str) -> dict | None:
+    """北向资金（沪深股通）个股当日净买入与占比。失败/收盘后返回 None。"""
+    mp = _fetch_northbound_map()
+    return mp.get(code)
+
+
+def _fetch_valuation(code: str) -> dict | None:
+    """近3年 PE/PB 历史百分位 + 当前 PE/PB（真实数据，东方财富估值分析页）。"""
+    market = "SH" if _market_of(code) == "sh" else ("SZ" if _market_of(code) == "sz" else "BJ")
+    secid = _secid(code)
+    cached = _VALUATION_CACHE.get(code)
+    if cached and (time.time() - cached.get("_t", 0)) < 3600:
+        return cached
+    out: dict = {}
+    # 当前 PE/PB
+    try:
+        url = (f"https://push2.eastmoney.com/api/qt/stock/get?secid={secid}"
+               f"&fields=f162,f167&invt=2&ut=fa5fd194d4d9e83cfbfd4f3f3b5f1c5")
+        j = _em_json(url)
+        if j and isinstance(j.get("data"), dict):
+            out["pe_ttm"] = _as_float(j["data"].get("f162"))
+            out["pb"] = _as_float(j["data"].get("f167"))
+    except Exception:
+        pass
+    # 近3年 PE 历史，算当前 PE 分位
+    try:
+        vurl = (f"https://emweb.securities.eastmoney.com/PC_HSF10/ValuationAnalysis/"
+                f"PageAjax?code={market}{code}&type=0&isforettm=0")
+        jv = _em_json(vurl)
+        if jv and isinstance(jv.get("result"), dict):
+            rows = jv["result"].get("data") or []
+            pes = [_as_float(r.get("PE_TTM")) for r in rows if _as_float(r.get("PE_TTM")) > 0]
+            if pes:
+                out["pe_history_count"] = len(pes)
+                if out.get("pe_ttm"):
+                    below = sum(1 for v in pes if v <= out["pe_ttm"])
+                    out["pe_pct_3y"] = round(below / len(pes) * 100, 1)
+    except Exception:
+        pass
+    out["_t"] = time.time()
+    _VALUATION_CACHE[code] = out
+    return out
+
+
+def _fetch_unlock(code: str) -> dict | None:
+    """未来解禁：最近一次解禁日与数量（真实数据，东方财富解禁报表）。"""
+    cached = _UNLOCK_CACHE.get(code)
+    if cached and (time.time() - cached.get("_t", 0)) < 86400:
+        return cached
+    out: dict = {"_t": time.time()}
+    try:
+        url = ("https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_FA_LIFT_LOCK_MAIN"
+               "&columns=ALL&filter=(SECURITY_CODE%3D%22" + code + "%22)&pageSize=8"
+               "&sortColumns=LISTING_DATE&sortTypes=-1")
+        j = _em_json(url)
+        if j and isinstance(j.get("result"), dict) and j["result"].get("data"):
+            rows = j["result"]["data"]
+            today = dt.date.today()
+            future = [r for r in rows if r.get("LISTING_DATE") and
+                      dt.datetime.strptime(str(r["LISTING_DATE"])[:10], "%Y-%m-%d").date() >= today]
+            if future:
+                nx = future[0]
+                out["next_date"] = str(nx.get("LISTING_DATE"))[:10]
+                out["next_amount"] = _as_float(nx.get("LIFT_LOCK_AMOUNT"))    # 解禁数量(股)
+                out["next_ratio"] = _as_float(nx.get("LIFT_LOCK_RATIO"))      # 解禁占比(%)
+    except Exception:
+        pass
+    _UNLOCK_CACHE[code] = out
+    return out
+
+
+def _fetch_financials(code: str) -> dict | None:
+    """最新财报关键指标（真实数据，东方财富业绩报表）：净利润、净资产、商誉、营收同比。"""
+    cached = _FIN_CACHE.get(code)
+    if cached and (time.time() - cached.get("_t", 0)) < 86400:
+        return cached
+    out: dict = {"_t": time.time()}
+    try:
+        url = ("https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_FCI_PERFORMANCE"
+               "&columns=ALL&filter=(SECURITY_CODE%3D%22" + code + "%22)&pageSize=4"
+               "&sortColumns=REPORT_DATE&sortTypes=-1")
+        j = _em_json(url)
+        if j and isinstance(j.get("result"), dict) and j["result"].get("data"):
+            r = j["result"]["data"][0]
+            out["report_date"] = str(r.get("REPORT_DATE"))[:10]
+            out["net_profit"] = _as_float(r.get("NET_PROFIT"))          # 净利润(元)
+            out["net_profit_yoy"] = _as_float(r.get("NET_PROFIT_YOY"))  # 净利润同比(%)
+            out["revenue_yoy"] = _as_float(r.get("REVENUE_YOY"))        # 营收同比(%)
+            out["equity"] = _as_float(r.get("EQUITY"))                  # 股东权益(元)
+            out["eps"] = _as_float(r.get("BASIC_EPS"))                  # 每股收益
+    except Exception:
+        pass
+    # 商誉（资产负债表）：单独报表
+    try:
+        gurl = ("https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_FCI_BUSINESSASSET"
+                "&columns=ALL&filter=(SECURITY_CODE%3D%22" + code + "%22)&pageSize=2"
+                "&sortColumns=REPORT_DATE&sortTypes=-1")
+        jg = _em_json(gurl)
+        if jg and isinstance(jg.get("result"), dict) and jg["result"].get("data"):
+            g = jg["result"]["data"][0]
+            out["goodwill"] = _as_float(g.get("GOOD_WILL"))             # 商誉(元)
+    except Exception:
+        pass
+    _FIN_CACHE[code] = out
+    return out
+
+
+def _classify_sentiment(text: str) -> str:
+    """关键词启发式判定新闻情绪：利好/利空/中性。明确为启发式，非权威分类。"""
+    if not text:
+        return "neutral"
+    bull = ["利好", "增持", "回购", "中标", "签约", "增长", "扭亏", "预增", "获批", "大涨",
+            "突破", "合作", "订单", "扩产", "分红", "高送转", "业绩预增", "上调", "机构调研", "新高"]
+    bear = ["减持", "亏损", "预亏", "下滑", "下降", "退市", "ST", "问询", "处罚", "诉讼",
+            "商誉减值", "暴雷", "跌停", "解禁", "警示", "暂停", "立案", "质押", "冻结",
+            "下调", "投诉", "监管", "风险", "下调评级"]
+    t = text
+    b = sum(1 for k in bear if k in t)
+    u = sum(1 for k in bull if k in t)
+    if b > u:
+        return "bear"
+    if u > b:
+        return "bull"
+    return "neutral"
+
+
+def _fetch_news(code: str, days: int = 5) -> list | None:
+    """近 N 日个股相关大事/新闻（真实数据，东方财富 F10 大事提醒）。返回 [{title,time,sentiment}]。"""
+    market = "SH" if _market_of(code) == "sh" else ("SZ" if _market_of(code) == "sz" else "BJ")
+    cached = _NEWS_CACHE.get(code)
+    if cached and (time.time() - cached.get("_t", 0)) < 1800:
+        return cached.get("list")
+    out: dict = {"_t": time.time(), "list": []}
+    try:
+        url = f"https://emweb.securities.eastmoney.com/PC_HSF10/OperationsRequired/PageAjax?code={market}{code}"
+        j = _em_json(url)
+        items = []
+        if isinstance(j, dict):
+            # 大事提醒在 dstx.data（数组）; 每条含 EVENT_TYPE / NOTICE_DATE / LEVEL1_CONTENT 等
+            dstx = j.get("dstx") or {}
+            rows = dstx.get("data") if isinstance(dstx, dict) else None
+            if not rows:
+                rows = j.get("data") or []
+            # dstx.data 可能是 [[{...}],[{...}]]（按类别分组的嵌套数组），展平
+            flat = []
+            for it in (rows or []):
+                if isinstance(it, list):
+                    flat.extend(it)
+                else:
+                    flat.append(it)
+            for it in flat:
+                if not isinstance(it, dict):
+                    continue
+                title = (it.get("LEVEL1_CONTENT") or it.get("LEVEL2_CONTENT")
+                         or it.get("EVENT_TYPE") or it.get("TITLE") or "")
+                tms = it.get("NOTICE_DATE") or it.get("DATE") or it.get("EVENT_DATE") or ""
+                if title:
+                    items.append({"title": str(title), "time": str(tms)[:10],
+                                  "sentiment": _classify_sentiment(str(title))})
+        # 仅保留近 N 日
+        cutoff = dt.datetime.now() - dt.timedelta(days=days)
+        recent = []
+        for it in items:
+            try:
+                tt = dt.datetime.strptime(it["time"][:10], "%Y-%m-%d")
+                if tt >= cutoff:
+                    recent.append(it)
+            except Exception:
+                recent.append(it)
+        out["list"] = recent[:20]
+    except Exception:
+        pass
+    _NEWS_CACHE[code] = out
+    return out["list"]
+
+
+# 大盘(沪深300)近 N 日收益率缓存，供板块强度对比
+_MARKET_RETURN_CACHE: dict = {}
+
+
+def _market_return(days: int = 20) -> float | None:
+    """上证指数(sh000001)近 days 日收益率(%)，缓存。失败返回 None。"""
+    cached = _MARKET_RETURN_CACHE.get(days)
+    if cached and (time.time() - cached[0]) < 3600:
+        return cached[1]
+    ret = None
+    try:
+        # 腾讯指数日线（已验证可用）：day 行 = [date, open, close, high, low, volume]
+        url = f"https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=sh000001,day,,,{days+1},qfq"
+        j = _em_json(url)
+        node = (j or {}).get("data", {}).get("sh000001", {})
+        rows = node.get("day") or node.get("qfqday") or []
+        closes = [_as_float(r[2]) for r in rows if len(r) >= 3]
+        if len(closes) >= 2:
+            ret = (closes[-1] - closes[0]) / closes[0] * 100
+    except Exception:
+        pass
+    _MARKET_RETURN_CACHE[days] = (time.time(), ret)
+    return ret
+
+
+def _stock_return(quotes: list, days: int = 20) -> float | None:
+    """个股近 days 日收益率(%)，用日线前复权收盘。"""
+    try:
+        closes = [q.close for q in quotes if q.close]
+        if len(closes) < 2:
+            return None
+        n = min(days, len(closes) - 1)
+        return (closes[-1] - closes[-1 - n]) / closes[-1 - n] * 100
+    except Exception:
+        return None
+
+
 def get_pool_track(code: str, db, position: dict | None = None) -> dict:
     """单只标的的「每日跟踪」数据,供短线可投池表格使用。
 
@@ -1843,6 +2133,176 @@ def get_pool_track(code: str, db, position: dict | None = None) -> dict:
             _calc_pass_scores(code, out, quotes, spot, db)
         # 基于 track 数据生成操作建议(结构同 t_analysis.section6)
         out["operation_advice"] = _operation_advice_for_pool(out, position)
+
+        # ===== 可投池扩展指标（真实数据 + 可计算） =====
+        # 1) 5日涨跌幅(%)
+        try:
+            if len(closes) >= 2:
+                n = min(6, len(closes))
+                base = closes[-n]
+                if base:
+                    out["pct_5d"] = round((closes[-1] - base) / base * 100, 2)
+        except Exception:
+            pass
+        # 2) 跳空缺口（今日开盘 vs 昨日高低）
+        try:
+            if len(quotes) >= 2 and quotes[-1].open and quotes[-2].close:
+                today_open = quotes[-1].open
+                y_high = quotes[-2].high
+                y_low = quotes[-2].low
+                y_close = quotes[-2].close
+                if y_close:
+                    if today_open > y_high and y_high:
+                        amp = (today_open - y_high) / y_close * 100
+                        out["gap"] = {"dir": "up", "amp": round(amp, 2),
+                                      "text": f"向上缺口 +{round(amp, 2)}%"}
+                    elif today_open < y_low and y_low:
+                        amp = (today_open - y_low) / y_close * 100
+                        out["gap"] = {"dir": "down", "amp": round(amp, 2),
+                                      "text": f"向下缺口 {round(amp, 2)}%"}
+                    else:
+                        out["gap"] = {"dir": "flat", "amp": 0.0, "text": "无缺口"}
+        except Exception:
+            pass
+        # 3) 主力资金净流入占比(%) + 4) 主力资金简易信号 + 5) 大单近流向(万元)
+        try:
+            cf = _fetch_capital_flow(code)
+            if cf and cf.get("main_net") is not None:
+                # 主力净流入占比 = 主力净流入净额 / 当日成交额；成交额取日线最新一根(amount)
+                amount = (quotes[-1].amount if quotes else 0) or 0.0
+                if amount <= 0 and quotes:
+                    # 兜底估算：成交量(手)*100*收盘价
+                    amount = (quotes[-1].volume or 0) * 100 * (quotes[-1].close or 0)
+                main_net_pct = round(cf["main_net"] / amount * 100, 2) if amount else None
+                out["main_net_pct"] = main_net_pct
+                l_net_wan = round(cf["l_net"] / 1e4, 1) if cf.get("l_net") is not None else None
+                out["big_order_net"] = l_net_wan  # 万元（带符号）
+                pct = main_net_pct or 0.0
+                l_net = cf.get("l_net") or 0.0
+                if pct > 3 and l_net > 0:
+                    out["main_signal"] = {"level": "strong_bull", "text": "主力大幅流入"}
+                elif pct > 0:
+                    out["main_signal"] = {"level": "bull", "text": "主力流入"}
+                elif pct < -3 and l_net < 0:
+                    out["main_signal"] = {"level": "strong_bear", "text": "主力大幅流出"}
+                elif pct < 0:
+                    out["main_signal"] = {"level": "bear", "text": "主力流出"}
+                else:
+                    out["main_signal"] = {"level": "flat", "text": "主力均衡"}
+        except Exception:
+            pass
+        # 6) 估值百分位（近3年）：优先真实 PE 历史分位；不可用时以近3年价格分位近似
+        try:
+            val = _fetch_valuation(code)
+            quotes_long = ensure_quotes(code, days=750)
+            closes_long = [q.close for q in quotes_long if q.close]
+            price_pct = None
+            if len(closes_long) >= 20 and out.get("price"):
+                below = sum(1 for c in closes_long if c <= out["price"])
+                price_pct = round(below / len(closes_long) * 100, 1)
+            if val and val.get("pe_pct_3y") is not None:
+                out["valuation_pct_3y"] = val["pe_pct_3y"]
+                out["valuation_basis"] = "pe"
+            elif price_pct is not None:
+                out["valuation_pct_3y"] = price_pct
+                out["valuation_basis"] = "price"   # 价格分位近似（PE 历史接口暂不可用）
+            out["valuation_pe"] = (val or {}).get("pe_ttm")
+            out["valuation_pb"] = (val or {}).get("pb")
+        except Exception:
+            pass
+        # 7) 板块强度（个股20日收益 vs 大盘）
+        try:
+            stock_ret = _stock_return(quotes, 20)
+            mkt_ret = _market_return(20)
+            if stock_ret is not None and mkt_ret is not None:
+                diff = stock_ret - mkt_ret
+                out["sector_strength"] = {
+                    "diff": round(diff, 2),
+                    "level": "strong" if diff > 3 else ("weak" if diff < -3 else "sync"),
+                    "text": "强于大盘" if diff > 3 else ("弱于大盘" if diff < -3 else "同步"),
+                }
+        except Exception:
+            pass
+        # 8) 北向资金（方向+占比），仅交易时段有数据
+        try:
+            nb = _fetch_northbound(code)
+            if nb and (nb.get("net") is not None):
+                out["northbound"] = {
+                    "net": nb.get("net"),                     # 元
+                    "pct": nb.get("pct"),                      # %
+                    "dir": "in" if (nb.get("net") or 0) > 0 else "out",
+                }
+        except Exception:
+            pass
+        # 9) 事件风险标签（10类，真实源/启发式）
+        try:
+            tags: dict = {}
+            fin = _fetch_financials(code)
+            if fin:
+                if fin.get("net_profit") is not None and fin["net_profit"] < 0:
+                    tags["业绩亏损"] = True
+                if fin.get("net_profit_yoy") is not None and fin["net_profit_yoy"] < 0:
+                    tags["预亏"] = True
+                if fin.get("goodwill") and fin.get("equity") and fin["equity"] > 0:
+                    if fin["goodwill"] / fin["equity"] > 0.3:
+                        tags["商誉高"] = True
+            unl = _fetch_unlock(code)
+            if unl and unl.get("next_date"):
+                try:
+                    nd = dt.datetime.strptime(unl["next_date"], "%Y-%m-%d").date()
+                    if (nd - dt.date.today()).days <= 30:
+                        tags["解禁临近"] = True
+                except Exception:
+                    pass
+            # 名称含 ST / 退市
+            name = (position or {}).get("name") or ""
+            if "ST" in name or "退" in name:
+                tags["ST风险"] = True
+            # 新闻关键词扫描
+            news = _fetch_news(code, 5) or []
+            titles = " ".join(n.get("title", "") for n in news)
+            if any(k in titles for k in ["减持", "大额减持"]):
+                tags["大额减持"] = True
+            if "增持" in titles:
+                tags["股东增持"] = True
+            if any(k in titles for k in ["异动", "波动", "异常波动"]):
+                tags["股价异动公告"] = True
+            if any(k in titles for k in ["问询", "监管", "立案", "警示函"]):
+                tags["监管问询"] = True
+            if "质押" in titles:
+                tags["股东质押高"] = True
+            if any(k in titles for k in ["解禁", "限售股"]):
+                tags["解禁临近"] = True
+            if tags:
+                out["event_risk_tags"] = tags
+        except Exception:
+            pass
+        # 10) 财报风险快速标记（3-6字摘要 + 近5日新闻）
+        try:
+            fin = _fetch_financials(code)
+            summary = "无明显风险"
+            reasons = []
+            if fin:
+                if fin.get("net_profit") is not None and fin["net_profit"] < 0:
+                    reasons.append("盈利为负")
+                elif fin.get("net_profit_yoy") is not None and fin["net_profit_yoy"] < 0:
+                    reasons.append("盈利下滑")
+                if fin.get("revenue_yoy") is not None and fin["revenue_yoy"] < 0:
+                    reasons.append("营收下滑")
+                if fin.get("goodwill") and fin.get("equity") and fin["equity"] > 0:
+                    if fin["goodwill"] / fin["equity"] > 0.3:
+                        reasons.append("商誉偏高")
+            if reasons:
+                summary = "、".join(reasons)[:6]
+            news = _fetch_news(code, 5) or []
+            out["finance_risk"] = {
+                "summary": summary,
+                "report_date": (fin or {}).get("report_date"),
+                "news": news,
+            }
+        except Exception:
+            pass
+
         out["ts"] = int(now)
     except Exception:
         # 任意异常都吞掉,返回当前已聚合的部分(可能为空)

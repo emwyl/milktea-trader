@@ -318,6 +318,11 @@
   .tracktbl.pool-tbl thead th .resize-handle.active{background:rgba(59,130,246,.45)}
   @media(max-width:768px){ .tracktbl.pool-tbl thead th .resize-handle{display:none} }
   .tracktbl .pill{padding:1px 6px;font-size:11px}
+  /* 可投池事件风险/财报风险标签配色 */
+  .pill.risk{background:#fee2e2;color:#b91c1c;border-color:#fca5a5}
+  .pill.ok{background:#dcfce7;color:#15803d;border-color:#86efac}
+  .finance-risk .pill{cursor:pointer}
+  .finance-risk .pill:hover{filter:brightness(.96)}
   /* 自定义列设置弹窗内的表格 */
   .col-setting-tbl{width:100%;border-collapse:separate;border-spacing:0}
   .col-setting-tbl th,.col-setting-tbl td{padding:8px 6px;border-bottom:1px solid #e5e7eb;text-align:center}
@@ -507,7 +512,7 @@
     <header>
       <h1>🧋 加油赚奶茶钱</h1>
       <span class="sub">个人学习用 · 先控风险再谈收益</span>
-      <span class="version" id="appVersion">v20260903110</span>
+      <span class="version" id="appVersion">v20260903111</span>
       <button class="ghost auto-refresh-btn" :class="{active:autoRefresh}" @click="toggleAutoRefresh" :title="autoRefresh?'自动刷新开启中，每5秒更新当前页面数据':'点击开启每5秒自动刷新'">
         {{autoRefresh?'⏸':'▶'}} 自动 5s
       </button>
@@ -849,6 +854,47 @@
                   <small :class="{'up':p.track.box_pos<0.25}" :style="{left: (p.track.box_pos*100)+'%'}">{{Math.round(p.track.box_pos*100)}}%</small>
                   <i :class="{'up':p.track.box_pos<0.25}" :style="{left: (p.track.box_pos*100)+'%'}"></i>
                 </div>
+                <span v-else class="muted">-</span>
+              </template>
+              <template v-else-if="col.key==='pct_5d'">
+                <span :class="ui.classOf(p.track.pct_5d)" :title="p.track.pct_5d!=null?'近5日累计涨跌幅':'-'"><b>{{p.track.pct_5d!=null ? p.track.pct_5d+'%' : '-'}}</b></span>
+              </template>
+              <template v-else-if="col.key==='gap'">
+                <span v-if="p.track.gap" :class="p.track.gap.dir==='up'?'up':(p.track.gap.dir==='down'?'down':'muted')" :title="p.track.gap.text">{{p.track.gap.text}}</span>
+                <span v-else class="muted">-</span>
+              </template>
+              <template v-else-if="col.key==='main_net_pct'">
+                <span :class="ui.classOf(p.track.main_net_pct)" :title="p.track.main_net_pct!=null?'主力资金当日净流入占比(%)':'仅交易时段有数据'">{{p.track.main_net_pct!=null ? p.track.main_net_pct+'%' : '-'}}</span>
+              </template>
+              <template v-else-if="col.key==='main_signal'">
+                <span v-if="p.track.main_signal" :class="(p.track.main_signal.level==='strong_bull'||p.track.main_signal.level==='bull')?'up':((p.track.main_signal.level==='strong_bear'||p.track.main_signal.level==='bear')?'down':'muted')">{{p.track.main_signal.text}}</span>
+                <span v-else class="muted">-</span>
+              </template>
+              <template v-else-if="col.key==='big_order_net'">
+                <span :class="ui.classOf(p.track.big_order_net)" :title="p.track.big_order_net!=null?'大单近流向(万元)，正数净买入/负数净卖出':'仅交易时段有数据'">{{p.track.big_order_net!=null ? p.track.big_order_net : '-'}}</span>
+              </template>
+              <template v-else-if="col.key==='northbound'">
+                <span v-if="p.track.northbound" :class="p.track.northbound.dir==='in'?'up':'down'" :title="p.track.northbound.dir==='in'?'北向(沪深股通)当日净买入':'北向(沪深股通)当日净卖出'">{{p.track.northbound.dir==='in'?'净买':'净卖'}} {{p.track.northbound.pct!=null ? p.track.northbound.pct+'%' : ''}}</span>
+                <span v-else class="muted" title="仅交易时段有北向数据">-</span>
+              </template>
+              <template v-else-if="col.key==='valuation_pct_3y'">
+                <span v-if="p.track.valuation_pct_3y!=null" :class="p.track.valuation_pct_3y<30?'up':(p.track.valuation_pct_3y>70?'down':'')" :title="'近3年分位 '+(p.track.valuation_basis==='price'?'（价格分位近似，PE历史接口暂不可用）':'（PE历史分位）')+(p.track.valuation_pe?(' · PE '+p.track.valuation_pe):'')+(p.track.valuation_pb?(' · PB '+p.track.valuation_pb):'')">{{p.track.valuation_pct_3y}}%</span>
+                <span v-else class="muted">-</span>
+              </template>
+              <template v-else-if="col.key==='sector_strength'">
+                <span v-if="p.track.sector_strength" :class="p.track.sector_strength.level==='strong'?'up':(p.track.sector_strength.level==='weak'?'down':'muted')" :title="'相对大盘(上证)近20日强弱，差值 '+(p.track.sector_strength.diff||0)+'%'">{{p.track.sector_strength.text}}</span>
+                <span v-else class="muted">-</span>
+              </template>
+              <template v-else-if="col.key==='event_risk_tags'">
+                <span v-if="p.track.event_risk_tags && Object.keys(p.track.event_risk_tags).length" class="tag-list">
+                  <span v-for="(v,k) in p.track.event_risk_tags" :key="k" class="pill risk" :title="k">{{k}}</span>
+                </span>
+                <span v-else class="muted">无</span>
+              </template>
+              <template v-else-if="col.key==='finance_risk'">
+                <span v-if="p.track.finance_risk" class="finance-risk" @click.stop="openFinanceRisk(p)" :title="'点击查看近5日相关大事/新闻(利好红/利空绿/中性灰)'" style="cursor:pointer">
+                  <span class="pill" :class="p.track.finance_risk.summary==='无明显风险'?'ok':'risk'">{{p.track.finance_risk.summary}}</span>
+                </span>
                 <span v-else class="muted">-</span>
               </template>
               <template v-else-if="col.key==='operation_advice'">
@@ -1286,6 +1332,29 @@
           <div class="modal-foot">
             <button type="button" class="ghost" @click="closeAdviceModal">关闭</button>
             <button type="button" @click="openAnalysis(adviceModal.code); closeAdviceModal();">查看个股分析</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 可投池财报风险快速标记弹窗（近5日大事/新闻） -->
+      <div v-if="financeRiskModal.show" class="modal" @click.self="closeFinanceRiskModal">
+        <div class="modal-box" style="max-width:640px">
+          <div class="modal-head">
+            <h3>财报风险快速标记<span class="dtag">近5日大事/新闻</span></h3>
+            <button type="button" class="close-x" @click="closeFinanceRiskModal" aria-label="关闭">×</button>
+          </div>
+          <div class="modal-body">
+            <div class="kv" style="margin-top:0"><span>{{financeRiskModal.name}} {{financeRiskModal.code}}</span><b :class="financeRiskModal.summary==='无明显风险'?'up':'down'">{{financeRiskModal.summary}}</b></div>
+            <div v-if="financeRiskModal.report_date" class="muted" style="margin-top:6px">报告期：{{financeRiskModal.report_date}}</div>
+            <div style="margin-top:14px; font-weight:600; color:#374151; margin-bottom:8px">近5日相关大事 / 新闻（利好红 · 利空绿 · 中性灰）：</div>
+            <div v-for="(n, idx) in financeRiskModal.news" :key="idx" style="display:flex; gap:10px; margin:8px 0; line-height:1.5; align-items:flex-start">
+              <span :class="n.sentiment==='bull'?'up':(n.sentiment==='bear'?'down':'muted')" style="flex:0 0 auto; font-weight:700; min-width:32px">{{n.sentiment==='bull'?'利好':(n.sentiment==='bear'?'利空':'中性')}}</span>
+              <span style="color:#374151">{{n.title}} <small class="muted" style="margin-left:4px">{{n.time}}</small></span>
+            </div>
+            <div v-if="!financeRiskModal.news || !financeRiskModal.news.length" class="muted" style="margin-top:8px">近5日无相关大事 / 新闻</div>
+          </div>
+          <div class="modal-foot">
+            <button type="button" class="ghost" @click="closeFinanceRiskModal">关闭</button>
           </div>
         </div>
       </div>
@@ -1850,6 +1919,7 @@ const app = createApp({
     importGuideModal:{show:false},  // 可投池导入模板说明弹窗
     columnSettingModal:{show:false, tableKey:'', title:'', columns:[]},  // 通用自定义列设置弹窗
     adviceModal:{show:false, code:'', name:'', title:'', summary:'', points:[], text:''},  // 可投池操作建议详情弹窗
+    financeRiskModal:{show:false, code:'', name:'', summary:'', report_date:'', news:[]},  // 可投池财报风险弹窗(近5日大事/新闻)
     columnSettings: (()=>{
       const currentVer = '20260902-02';
       const savedVer = localStorage.getItem('columnSettingsVersion');
@@ -2048,6 +2118,16 @@ const app = createApp({
           {key:'ma5', label:'MA5', width:93, visible:true, frozen:false, sortable:true, help:'现价与5日均线关系。站上=短期强势，偏买入观察；跌下=短期弱势，偏观望'},
           {key:'ma20', label:'MA20', width:99, visible:true, frozen:false, sortable:true, help:'现价与20日均线关系。站上=中期趋势向上，趋势较好；跌下=中期趋势向下，偏谨慎'},
           {key:'box_pos', label:'箱体位置', width:117, visible:true, frozen:false, sortable:true, help:'当前价在近20日高低点区间位置。<25%接近下沿，超跌反弹机会；25%-75%震荡中枢；>75%接近上沿，注意回落'},
+          {key:'pct_5d', label:'5日\n涨跌幅', width:96, visible:true, frozen:false, sortable:true, help:'近5个交易日累计涨跌幅(%)'},
+          {key:'gap', label:'跳空\n缺口', width:132, visible:true, frozen:false, sortable:true, help:'今日开盘相对昨日高低点的跳空。向上缺口=强势信号；向下缺口=弱势/风险'},
+          {key:'main_net_pct', label:'主力\n净流入%', width:108, visible:true, frozen:false, sortable:true, help:'主力资金当日净流入占成交额比例(%)。正数偏利好(红)，负数偏利空(绿)'},
+          {key:'main_signal', label:'主力\n信号', width:108, visible:true, frozen:false, sortable:true, help:'基于主力净流入占比与大单流向的简易信号'},
+          {key:'big_order_net', label:'大单流向\n(万元)', width:108, visible:true, frozen:false, sortable:true, help:'大单近流向(万元)。正数=大单净买入(红)，负数=大单净卖出(绿)'},
+          {key:'northbound', label:'北向\n资金', width:132, visible:true, frozen:false, sortable:true, help:'沪深股通当日净买入方向+占比(%)。仅交易时段有数据，收盘后显示-'},
+          {key:'valuation_pct_3y', label:'估值分位\n(近3年)', width:108, visible:true, frozen:false, sortable:true, help:'近3年估值/价格分位(%)。越低越便宜(潜在机会)，越高越贵(注意回落)'},
+          {key:'sector_strength', label:'板块\n强度', width:108, visible:true, frozen:false, sortable:true, help:'个股近20日收益相对大盘(上证)强弱：强于大盘/同步/弱于大盘'},
+          {key:'event_risk_tags', label:'事件\n风险', width:156, visible:true, frozen:false, sortable:false, help:'近期事件风险标签(业绩亏损/大额减持/股东增持/股价异动公告/商誉高/解禁临近/预亏/ST风险/监管问询/股东质押高)'},
+          {key:'finance_risk', label:'财报\n风险', width:120, visible:true, frozen:false, sortable:false, help:'财报风险快速标记，点击查看近5日相关大事/新闻(利好红/利空绿/中性灰)'},
           {key:'operation_advice', label:'操作\n建议', width:138, visible:true, frozen:false, sortable:true, help:'基于实时盘口、箱体、量能、技术信号生成的简要操作建议，点击查看完整结论'},
           {key:'tech_signals', label:'MACD/\nKDJ/布林', width:138, visible:true, frozen:false, sortable:true},
           {key:'must_pass', label:'必看-达标项', width:117, visible:true, frozen:false, sortable:true},
@@ -2257,6 +2337,18 @@ const app = createApp({
       };
     },
     closeAdviceModal(){ this.adviceModal={show:false, code:'', name:'', key:'wait', title:'', summary:'', points:[], text:''}; },
+    openFinanceRisk(p){
+      const fr = (p && p.track && p.track.finance_risk) || {};
+      this.financeRiskModal = {
+        show:true,
+        code:p.code||'',
+        name:p.name||'',
+        summary:fr.summary||'无明显风险',
+        report_date:fr.report_date||'',
+        news:(fr.news||[]).slice()
+      };
+    },
+    closeFinanceRiskModal(){ this.financeRiskModal={show:false, code:'', name:'', summary:'', report_date:'', news:[]}; },
     colSettingDrop(idx){
       const from = this._dragColIdx;
       if(from==null || from===idx) return;
