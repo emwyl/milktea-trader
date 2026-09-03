@@ -466,7 +466,7 @@
     <header>
       <h1>🧋 加油赚奶茶钱</h1>
       <span class="sub">个人学习用 · 先控风险再谈收益</span>
-      <span class="version" id="appVersion">v20260903093</span>
+      <span class="version" id="appVersion">v20260903094</span>
       <button class="ghost auto-refresh-btn" :class="{active:autoRefresh}" @click="toggleAutoRefresh" :title="autoRefresh?'自动刷新开启中，每5秒更新当前页面数据':'点击开启每5秒自动刷新'">
         {{autoRefresh?'⏸':'▶'}} 自动 5s
       </button>
@@ -1550,18 +1550,7 @@
             </div>
           </div>
 
-          <!-- 分区4b：引擎信号(运行引擎后生成) -->
-          <div class="card" v-if="ext.data">
-            <h3 style="margin-top:0">引擎信号(运行引擎后生成)</h3>
-            <div v-for="s in ext.data.signals" :key="s.id" class="advice" style="margin-bottom:8px">
-              <span class="pill" :class="s.risk_level">{{s.risk_level}}</span>
-              <b>{{s.signal_type}}</b> · {{s.reason}}
-              <div class="muted">风控提示:{{s.risk_advice}}({{s.generated_at}})</div>
-            </div>
-            <p v-if="!ext.data.signals.length" class="muted">暂无信号,去「看板总览」点"运行引擎"后这里会显示</p>
-          </div>
-
-          <!-- 分区5：风控 -->
+          <!-- 分区5：风控 + 引擎信号（合并；引擎信号无内容时不显示子分组） -->
           <div class="card"><h3 style="margin-top:0">动态风险提醒<span class="dtag live">实时</span></h3>
             <div v-if="!t.data.section5.warnings.length" class="muted">暂无风险提醒</div>
             <div v-for="w in t.data.section5.warnings" :key="w" class="red" style="margin:4px 0">{{w}}</div>
@@ -1578,6 +1567,18 @@
               <div class="red" style="margin-top:6px;font-size:13px">{{t.data.section5.position_risk.plan}}</div>
               <div class="muted" style="margin-top:4px;font-size:12px">{{t.data.section5.position_risk.warn_line_text}}</div>
             </div>
+            <!-- 引擎信号子分组：仅在 ext.data 存在且 signals 非空时显示；无内容则整段不渲染 -->
+            <template v-if="ext.data && ext.data.signals && ext.data.signals.length">
+              <div class="sub-divider"></div>
+              <div class="sub-section">
+                <div class="sub-title">引擎信号</div>
+                <div v-for="s in ext.data.signals" :key="s.id" class="advice" style="margin-bottom:8px">
+                  <span class="pill" :class="s.risk_level">{{s.risk_level}}</span>
+                  <b>{{s.signal_type}}</b> · {{s.reason}}
+                  <div class="muted">风控提示:{{s.risk_advice}}({{s.generated_at}})</div>
+                </div>
+              </div>
+            </template>
           </div>
 
           <!-- 分区7a：盘间三档置信空间（P0/P1/P2） -->
