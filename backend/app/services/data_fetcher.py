@@ -1241,10 +1241,9 @@ def _calc_pass_scores(code: str, out: dict, quotes: list[Quote], spot: dict | No
     # avg_volume_20: 近20个交易日日均成交量, 单位「万手」。前端列名"20日平均 成交量(万)"
     avg_volume_20 = (sum(volumes[-20:]) / min(20, len(volumes))) / 1e4 if volumes else 0.0
     out["avg_volume_20"] = round(avg_volume_20, 2)
-    # 同步估算 avg_amount_20 (元) 用于流动性阈值判断(保留"日均成交额<2亿"原业务语义,
-    # 但底层 source 已从 amount 转为 volume), 估算式 = 万手→手→股 × 均价(元/股) = 元
-    avg_close_20 = (sum(closes[-20:]) / min(20, len(closes))) if closes else 0.0
-    avg_amount_20 = avg_volume_20 * 1e4 * avg_close_20 * 100  # 单位: 元
+    # 流动性阈值改为「日均成交量(万手)」口径(见下方否决项与 A 档评分),
+    # 不再用成交额(元)。注意: 万手口径与价格无关, 高价股(如茅台)成交量(万手)偏小,
+    # 用万手阈值判流动性会低估其真实流动性 —— 这是切换口径的固有代价(用户2026-09-03确认)。
     # 日内振幅:按当前交易时段选择最准的数据源(盘中用实时盘口,盘前/盘后回退日线),
     # 并把 source 标签一起带上,前端可悬停展示"取自 xxx"。
     intra_amp, intra_src = _pick_intra_amplitude(spot, quotes)
@@ -1271,9 +1270,9 @@ def _calc_pass_scores(code: str, out: dict, quotes: list[Quote], spot: dict | No
     # ===== 一票否决项 =====
     veto_reasons: list[str] = []
 
-    # 1) 日均成交额<2亿
-    if avg_amount_20 < 2e8:
-        veto_reasons.append("日均成交额<2亿")
+    # 1) 日均成交量(20日)<5万手
+    if avg_volume_20 < 5.0:
+        veto_reasons.append("日均成交量<5万手")
     # 2) 日内振幅长期<2%(近5日平均<2%)
     if 0 < avg_amplitude_5 < 2.0:
         veto_reasons.append("日内振幅长期<2%")
@@ -1285,21 +1284,21 @@ def _calc_pass_scores(code: str, out: dict, quotes: list[Quote], spot: dict | No
     # 5) 近期有重大利空(数据未接入,需人工复核)
 
     # ===== A. 流动性与波动(40分) =====
-    # 1) 日均成交额(20日) 15分
-    if avg_amount_20 >= 10e8:
+    # 1) 日均成交量(20日, 万手) 15分  —— 万手口径(用户2026-09-03要求从成交额改为成交量)
+    if avg_volume_20 >= 40.0:
         score_a += 15
-        detail.append("成交额≥10亿(+15)")
-    elif avg_amount_20 >= 5e8:
+        detail.append("成交量≥40万手(+15)")
+    elif avg_volume_20 >= 20.0:
         score_a += 12
-        detail.append("成交额5~10亿(+12)")
-    elif avg_amount_20 >= 3e8:
+        detail.append("成交量20~40万手(+12)")
+    elif avg_volume_20 >= 10.0:
         score_a += 9
-        detail.append("成交额3~5亿(+9)")
-    elif avg_amount_20 >= 2e8:
+        detail.append("成交量10~20万手(+9)")
+    elif avg_volume_20 >= 5.0:
         score_a += 5
-        detail.append("成交额2~3亿(+5)")
+        detail.append("成交量5~10万手(+5)")
     else:
-        detail.append("成交额<2亿(否决)")
+        detail.append("成交量<5万手(否决)")
 
     # 2) 日内振幅(近5日平均) 15分
     if avg_amplitude_5 >= 6.0:
