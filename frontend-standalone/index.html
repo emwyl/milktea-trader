@@ -501,7 +501,7 @@
     <header>
       <h1>🧋 加油赚奶茶钱</h1>
       <span class="sub">个人学习用 · 先控风险再谈收益</span>
-      <span class="version" id="appVersion">v20260903099</span>
+      <span class="version" id="appVersion">v20260903100</span>
       <button class="ghost auto-refresh-btn" :class="{active:autoRefresh}" @click="toggleAutoRefresh" :title="autoRefresh?'自动刷新开启中，每5秒更新当前页面数据':'点击开启每5秒自动刷新'">
         {{autoRefresh?'⏸':'▶'}} 自动 5s
       </button>
@@ -2474,8 +2474,8 @@ const app = createApp({
         i ? ctx.lineTo(px(i),py(v)) : ctx.moveTo(px(i),py(v));
       });
       ctx.stroke();
-      // X 轴时间标签（约 6 个等间距；若无真实时间戳则用"点 N"）
-      const hasTime = typeof intra.times === 'string' && intra.times.length===N;
+      // X 轴时间标签（约 6 个等间距；后端现统一返回 times 数组，无则用"点 N"）
+      const hasTime = Array.isArray(intra.times) && intra.times.length === N;
       ctx.fillStyle='#6b7280'; ctx.font='11px sans-serif';
       ctx.textAlign='center'; ctx.textBaseline='top';
       const ticks = 6;
@@ -2534,14 +2534,15 @@ const app = createApp({
         };
       }else{
         // 分时悬浮：显示 HH:MM + 现价 + 当时均价
-        const intra=this.intra; const prices=intra.prices||[]; const vwap=intra.vwap||[];
+        const intra=this.intra; const prices=intra.prices||[]; const vwap=intra.vwap||[]; const times=intra.times||[];
         if(prices.length<2) return;
         const padL=42, padR=48;
         const i = Math.max(0, Math.min(prices.length-1, Math.round((cvX-padL)/(cv.width-padL-padR)*(prices.length-1))));
+        const t = times[i] || `第 ${i+1} 分钟`;
         this.chartTip = {
           x: Math.min(rect.width-180, evt.clientX-rect.left+12),
           y: Math.max(0, evt.clientY-rect.top-10),
-          html: `<div><b>第 ${i+1} 分钟</b></div>
+          html: `<div><b>${t}</b></div>
                  <div>价 <b>${(+prices[i]).toFixed(2)}</b></div>
                  <div style="color:#d97706">均价 <b>${(vwap[i]!=null?(+vwap[i]).toFixed(2):'-')}</b></div>`
         };

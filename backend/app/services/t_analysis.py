@@ -511,7 +511,7 @@ def _intraday_analysis(code: str, daily_quotes: list) -> dict:
     if not intra:
         out["summary"] = "分时数据获取失败(演示/沙箱环境下腾讯分时接口不可达),分时解读暂不可用"
         return out
-    prices, vols, avg_price = intra
+    prices, vols, avg_price, times = intra
     if not prices or len(prices) < 2:
         out["summary"] = "分时数据为空,分时解读暂不可用"
         return out
@@ -565,9 +565,10 @@ def _intraday_analysis(code: str, daily_quotes: list) -> dict:
     else:
         summary = "日内震荡,量价配合中性,等待箱体上下沿信号再做T"
     out.update({"ok": True, "source": "live", "prices": prices, "vwap": vwap,
-                "avg_price": round(avg_price, 2), "vwap_slope": round(vwap_slope, 2),
-                "deviation": round(deviation, 2), "divergence": divergence,
-                "early_dir": early_dir, "summary": summary, "tags": tags})
+                "times": times, "avg_price": round(avg_price, 2),
+                "vwap_slope": round(vwap_slope, 2), "deviation": round(deviation, 2),
+                "divergence": divergence, "early_dir": early_dir,
+                "summary": summary, "tags": tags})
     return out
 
 

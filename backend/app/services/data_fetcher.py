@@ -529,8 +529,26 @@ def _fetch_spot_direct(code: str) -> dict | None:
     return None
 
 
+def _norm_intraday_time(t: str) -> str:
+    """把各数据源的分时时间统一成 HH:MM。
+
+    腾讯是 "0930"（无分隔符，且不带日期）；东财是 "2026-09-03 09:30"（带日期）。
+    前端 X 轴直接显示，必须口径一致，否则会出现 "0930" 和 "09:30" 混排。
+    """
+    t = (t or "").strip()
+    if not t:
+        return ""
+    if " " in t:                 # 东财：日期 + 时间，只留时间部分
+        t = t.split(" ")[-1]
+    if len(t) >= 5 and t[2] == ":":   # 已是 HH:MM(:SS)
+        return t[:5]
+    if len(t) >= 4:              # 腾讯：HHMM
+        return f"{t[:2]}:{t[2:4]}"
+    return t
+
+
 def _fetch_intraday_tencent(code: str):
-    """腾讯分时。返回 (prices, vols, avg_price)。
+    """腾讯分时。返回 (prices, vols, avg_price, times)。
     每根数据: "0930 7.68 553 424704.00" = 时间 价格 量(手) 累计额(元)。
     均价 = 最后一根累计额 / 累计成交量(手*100股)。"""
     mkt = _market_of(code)
@@ -541,10 +559,11 @@ def _fetch_intraday_tencent(code: str):
     try:
         import json
         node = json.loads(txt)["data"][f"{mkt}{code}"]["data"]["data"]
-        prices, vols = [], []
+        prices, vols, times = [], [], []
         for line in node:
             parts = line.split()
             if len(parts) >= 3:
+                times.append(_norm_intraday_time(parts[0]))
                 prices.append(_as_float(parts[1]))
                 vols.append(_as_float(parts[2]))  # 累计量(手)
         if not prices:
@@ -556,14 +575,16 @@ def _fetch_intraday_tencent(code: str):
         avg_price = round(cum_amount / (cum_vol * 100.0), 2) if cum_vol else prices[-1]
         # 换算成每根增量量（供画分时量用，非累计）
         vols = [vols[0]] + [max(0.0, vols[i] - vols[i - 1]) for i in range(1, len(vols))]
-        return prices, vols, avg_price
+        return prices, vols, avg_price, times
     except Exception:
         return None
 
 
 def _fetch_intraday_eastmoney(code: str, ndays: int = 1):
     """东财分时（trends2），腾讯失败时兜底。返回 (prices, vols, avg_price, times, amounts)。
-    最后两个字段仅在调用方需要时解析，兼容旧的 `prices, vols, avg_price = ...` 写法。"""
+
+    注意：这里是 5 元组，与腾讯源的 4 元组不同，
+    **不要**直接把本函数的返回值透传给按 3/4 元组解包的调用方。"""
     url = (f"https://push2his.eastmoney.com/api/qt/stock/trends2/get"
            f"?secid={_secid(code)}&fields1=f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,f11,f12,f13"
            f"&fields2=f51,f52,f53,f54,f55,f56,f57,f58&ndays={ndays}")
@@ -581,7 +602,7 @@ def _fetch_intraday_eastmoney(code: str, ndays: int = 1):
         for t in trends:
             parts = t.split(",")
             if len(parts) >= 8:
-                times.append(parts[0])
+                times.append(_norm_intraday_time(parts[0]))
                 prices.append(_as_float(parts[2]))  # 收(现价)
                 vols.append(_as_float(parts[5]))    # 成交量
                 amounts.append(_as_float(parts[6])) # 成交额(累计)
@@ -886,8 +907,22 @@ def _yesterday_day_metrics(code: str) -> dict | None:
 
 
 def _fetch_intraday(code: str):
-    """分时多源互备：腾讯 → 东财。"""
-    return _fetch_intraday_tencent(code) or _fetch_intraday_eastmoney(code)
+    """分时多源互备：腾讯 → 东财。
+
+    **统一返回 4 元组 (prices, vols, avg_price, times)**。
+
+    两个源的原始结构不同：腾讯 4 元组、东财 5 元组（多 amounts）。
+    若直接 `return tencent() or eastmoney()` 透传，一旦腾讯失败、东财接管，
+    调用方 `prices, vols, avg = intra` 会 ValueError（东财 5 元组解不进 3 个变量），
+    且该处不在 try 内 → 整个做T分析接口 500。故在此归一。
+    times 不可用时为空列表，调用方需按长度判断是否可用。
+    """
+    raw = _fetch_intraday_tencent(code) or _fetch_intraday_eastmoney(code)
+    if not raw:
+        return None
+    prices, vols, avg_price = raw[0], raw[1], raw[2]
+    times = raw[3] if len(raw) > 3 else []
+    return prices, vols, avg_price, times
 
 
 def get_t_realtime(code: str, daily_quotes: list) -> dict:
@@ -973,7 +1008,7 @@ def get_t_realtime(code: str, daily_quotes: list) -> dict:
         source = spot["src"]
         intra = _fetch_intraday(code)
         if intra:
-            _, _, avg_price = intra
+            _, _, avg_price, _ = intra
             avg_price = round(avg_price * factor, 2)
             today_high, today_low = spot["high"], spot["low"]
         else:
