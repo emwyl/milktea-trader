@@ -501,7 +501,7 @@
     <header>
       <h1>🧋 加油赚奶茶钱</h1>
       <span class="sub">个人学习用 · 先控风险再谈收益</span>
-      <span class="version" id="appVersion">v20260903102</span>
+      <span class="version" id="appVersion">v20260903103</span>
       <button class="ghost auto-refresh-btn" :class="{active:autoRefresh}" @click="toggleAutoRefresh" :title="autoRefresh?'自动刷新开启中，每5秒更新当前页面数据':'点击开启每5秒自动刷新'">
         {{autoRefresh?'⏸':'▶'}} 自动 5s
       </button>
@@ -860,12 +860,12 @@
                 <span v-else class="muted">-</span>
               </template>
               <template v-else-if="col.key==='must_pass'">
-                <span :class="{'red':(p.track.must_pass_score||0)<4}" :title="formatPassTitle(p.track.must_pass)">
+                <span :class="{'red':(p.track.must_pass_score||0)>20}" :title="formatPassTitle(p.track.must_pass)">
                   <b>{{p.track.must_pass_score}}</b><span class="muted" style="font-size:11px">分 · {{formatPass(p.track.must_pass)}}</span>
                 </span>
               </template>
               <template v-else-if="col.key==='key_pass'">
-                <span :class="{'red':(p.track.key_pass_score||0)<3}" :title="formatPassTitle(p.track.key_pass)">
+                <span :class="{'red':(p.track.key_pass_score||0)>20}" :title="formatPassTitle(p.track.key_pass)">
                   <b>{{p.track.key_pass_score}}</b><span class="muted" style="font-size:11px">分 · {{formatPass(p.track.key_pass)}}</span>
                 </span>
               </template>
