@@ -232,3 +232,25 @@ class HistoryPoint(BaseModel):
     ma5: Optional[float] = None
     ma10: Optional[float] = None
     ma20: Optional[float] = None
+
+
+class IntradayProfile(BaseModel):
+    """分时走势数据契约。
+
+    由 _intraday_analysis() 构造，前端走势分析卡的分时视图直接消费。
+    字段包括价格序列、VWAP、时间轴、均价、斜率、偏离度、量价背离、
+    早盘方向、解读文案和标签。契约化后可防止新增前端字段时后端漏返
+    （如 v100 加入的 times 如果以后被前端强依赖，缺失会直接报错）。
+    """
+    ok: bool = False
+    source: str = "none"
+    prices: list[float] = []
+    vwap: list[float] = []
+    times: list[str] = []
+    avg_price: float = 0.0
+    vwap_slope: float = 0.0
+    deviation: float = 0.0
+    divergence: str = "unknown"
+    early_dir: str = "unknown"
+    summary: str = ""
+    tags: list[str] = []

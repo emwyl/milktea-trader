@@ -9,6 +9,7 @@ from __future__ import annotations
 import datetime as dt
 
 from app.models import Stock, StockTConfig, TrackedPool
+from app.schemas import IntradayProfile
 from app.services.data_fetcher import ensure_quotes, get_market_status, get_t_realtime, get_sector_trend, _fetch_intraday
 from app.services.indicators import _sma, compute_snapshot  # 复用简单移动平均工具 + 指标快照(三维投票)
 
@@ -569,7 +570,7 @@ def _intraday_analysis(code: str, daily_quotes: list) -> dict:
                 "vwap_slope": round(vwap_slope, 2), "deviation": round(deviation, 2),
                 "divergence": divergence, "early_dir": early_dir,
                 "summary": summary, "tags": tags})
-    return out
+    return IntradayProfile(**out).model_dump()
 
 
 def _nextday_plan(P_close: float, S: float, R: float, atr: float, is_intraday: bool) -> dict:
