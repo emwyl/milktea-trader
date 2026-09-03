@@ -5,6 +5,7 @@
 from __future__ import annotations
 from typing import Any
 
+from app.schemas import HistoryPoint
 from app.services.interfaces import Quote, IndicatorSnapshot
 
 
@@ -124,17 +125,21 @@ def compute_snapshot(quotes: list[Quote]) -> IndicatorSnapshot:
 
 
 def history_series(quotes: list[Quote], window: int = 120) -> list[dict[str, Any]]:
-    """返回用于前端画 K 线 + 均线的历史序列。"""
+    """返回用于前端画 K 线 + 均线的历史序列。
+
+    经过 HistoryPoint 契约模型导出：漏字段会在构造时报错，
+    不会像裸 dict 那样静默缺字段（v97 曾因此漏掉 pre_close 致 K 线全绿）。
+    """
     out = []
     closes = [q.close for q in quotes]
     for i, q in enumerate(quotes):
         # pre_close 在 data_fetcher 四个分支(腾讯/东财/akshare/演示)都已填上；含它才能让前端 K 线按「红涨绿跌」正确配色
-        out.append({
-            "date": q.date, "open": q.open, "high": q.high, "low": q.low, "close": q.close,
-            "pre_close": q.pre_close,
-            "volume": q.volume, "turnover": q.turnover,
-            "ma5": round(_sma(closes[: i + 1], 5), 3) if i + 1 >= 5 else None,
-            "ma10": round(_sma(closes[: i + 1], 10), 3) if i + 1 >= 10 else None,
-            "ma20": round(_sma(closes[: i + 1], 20), 3) if i + 1 >= 20 else None,
-        })
-    return out[-window:]
+        out.append(HistoryPoint(
+            date=q.date, open=q.open, high=q.high, low=q.low, close=q.close,
+            pre_close=q.pre_close,
+            volume=q.volume, turnover=q.turnover,
+            ma5=round(_sma(closes[: i + 1], 5), 3) if i + 1 >= 5 else None,
+            ma10=round(_sma(closes[: i + 1], 10), 3) if i + 1 >= 10 else None,
+            ma20=round(_sma(closes[: i + 1], 20), 3) if i + 1 >= 20 else None,
+        ))
+    return [p.model_dump() for p in out[-window:]]

@@ -211,3 +211,24 @@ class NotifyConfigOut(BaseModel):
     enabled: bool
     config: dict
     daily_review_cron: str
+
+
+class HistoryPoint(BaseModel):
+    """K 线历史序列的单点契约。
+
+    前后端数据契约：history_series() 必须构造本模型再导出 dict，
+    这样一旦漏字段（如 v97 漏了 pre_close 导致前端 K 线全绿）
+    会在**构造时**立刻报错，而不是静默返回缺字段的裸 dict。
+    均线在前 n 根不足时为 None，前端需自行跳过。
+    """
+    date: str
+    open: float
+    high: float
+    low: float
+    close: float
+    pre_close: float
+    volume: float
+    turnover: float
+    ma5: Optional[float] = None
+    ma10: Optional[float] = None
+    ma20: Optional[float] = None

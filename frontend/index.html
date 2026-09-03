@@ -501,7 +501,7 @@
     <header>
       <h1>🧋 加油赚奶茶钱</h1>
       <span class="sub">个人学习用 · 先控风险再谈收益</span>
-      <span class="version" id="appVersion">v20260903098</span>
+      <span class="version" id="appVersion">v20260903099</span>
       <button class="ghost auto-refresh-btn" :class="{active:autoRefresh}" @click="toggleAutoRefresh" :title="autoRefresh?'自动刷新开启中，每5秒更新当前页面数据':'点击开启每5秒自动刷新'">
         {{autoRefresh?'⏸':'▶'}} 自动 5s
       </button>
@@ -2313,21 +2313,22 @@ const app = createApp({
       this.$nextTick(()=> this.drawChart());
     },
     fmtMa(period){
-      // 格式化当前最新一日的指定 MA（如 MA5），后端已返回 ma5/ma20，ma10 客户端即时算
-      const h = this.dailyHistory; if(!h.length) return '-';
-      const last = h[h.length-1];
-      if(period===5) return last.ma5!=null ? (+last.ma5).toFixed(2) : '-';
-      if(period===20) return last.ma20!=null ? (+last.ma20).toFixed(2) : '-';
-      if(period===10){
-        const closes = h.map(k=>k.close);
-        const v = this._sma(closes, 10, closes.length-1);
-        return v!=null ? v.toFixed(2) : '-';
-      }
-      return '-';
+      // 格式化最新一日的指定 MA（如 MA5）；后端已返回 ma5/ma10/ma20
+      const h = this.dailySeriesWithPreClose; if(!h.length) return '-';
+      const v = this.maAt(h[h.length-1], h.length-1, period);
+      return v!=null ? v.toFixed(2) : '-';
+    },
+    maAt(d, i, period){
+      // 均线唯一取值入口：优先用后端算好的 ma5/ma10/ma20（前后端单一权威，避免两份实现漂移）；
+      // 后端未返回（老缓存/接口异常）时才回退客户端即时计算，保证老数据也能画出线。
+      const key = 'ma'+period;
+      const v = d ? d[key] : null;
+      if(v!=null && isFinite(+v)) return +v;
+      return this._sma(this.dailySeriesWithPreClose.map(x=>x.close), period, i);
     },
     _sma(arr, n, idx){
       // 简单移动平均:arr 前 idx+1 项里取末 n 个求平均;数据不足 n 个返 null
-      if(idx+1<n) return null;
+      if(!arr || idx==null || idx+1<n) return null;
       let s=0; for(let i=idx-n+1;i<=idx;i++) s+=arr[i];
       return s/n;
     },
@@ -2343,15 +2344,11 @@ const app = createApp({
       const priceTop = padT, priceBot = padT + priceH;
       const volTop = priceBot + gap, volBot = volTop + volH;
       // 计算价格 y 轴范围：纳入当前勾选 MA 的所有数据点 + 日内 low/high
-      const closes = h.map(k=>k.close);
       const maVals = [];  // {idx, val, color}
       h.forEach((k,i)=>{
-        if(this.chartMa.ma5 && k.ma5!=null)  maVals.push({i, v:k.ma5, c:'#ff9800'});
-        if(this.chartMa.ma20 && k.ma20!=null) maVals.push({i, v:k.ma20, c:'#9c27b0'});
-        if(this.chartMa.ma10){
-          const v = this._sma(closes, 10, i);
-          if(v!=null) maVals.push({i, v, c:'#2196f3'});
-        }
+        if(this.chartMa.ma5){  const v=this.maAt(k,i,5);  if(v!=null) maVals.push({i, v, c:'#ff9800'}); }
+        if(this.chartMa.ma20){ const v=this.maAt(k,i,20); if(v!=null) maVals.push({i, v, c:'#9c27b0'}); }
+        if(this.chartMa.ma10){ const v=this.maAt(k,i,10); if(v!=null) maVals.push({i, v, c:'#2196f3'}); }
       });
       const lowMin = Math.min(...h.map(k=>k.low));
       const highMax = Math.max(...h.map(k=>k.high));
@@ -2409,9 +2406,9 @@ const app = createApp({
         let started = false;
         for(let i=0;i<N;i++){
           let v = null;
-          if(period===5)  v = h[i].ma5;
-          else if(period===20) v = h[i].ma20;
-          else if(period===10) v = this._sma(closes, 10, i);
+          if(period===5)  v = this.maAt(h[i], i, 5);
+          else if(period===20) v = this.maAt(h[i], i, 20);
+          else if(period===10) v = this.maAt(h[i], i, 10);
           if(v==null){ started = false; continue; }
           const x = px(i), y = py(v);
           if(!started){ ctx.moveTo(x,y); started = true; } else ctx.lineTo(x,y);
@@ -2509,9 +2506,9 @@ const app = createApp({
         const padT=18; const priceH = (cv.height - padT - 24 - 2) * 0.73;
         const lowMin=Math.min(...h.map(k=>k.low)); const highMax=Math.max(...h.map(k=>k.high));
         const maVals=[]; h.forEach((k,j)=>{
-          if(this.chartMa.ma5&&k.ma5!=null) maVals.push(k.ma5);
-          if(this.chartMa.ma20&&k.ma20!=null) maVals.push(k.ma20);
-          if(this.chartMa.ma10){const v=this._sma(h.map(x=>x.close),10,j); if(v!=null) maVals.push(v);}
+          if(this.chartMa.ma5){ const v=this.maAt(k,j,5);  if(v!=null) maVals.push(v); }
+          if(this.chartMa.ma20){const v=this.maAt(k,j,20); if(v!=null) maVals.push(v); }
+          if(this.chartMa.ma10){const v=this.maAt(k,j,10); if(v!=null) maVals.push(v); }
         });
         let lo=Math.min(lowMin, maVals.length?Math.min(...maVals):Infinity);
         let hi=Math.max(highMax, maVals.length?Math.max(...maVals):-Infinity);
@@ -2530,9 +2527,9 @@ const app = createApp({
                  <div>收 <b class="${cls}">${(+d.close).toFixed(2)}</b> 低 <b class="down">${(+d.low).toFixed(2)}</b></div>
                  <div>量 <b>${this.fmtVol(d.volume)}</b> 万手${d.turnover?' 换手 <b>'+(+d.turnover).toFixed(2)+'%</b>':''}</div>
                  ${(this.chartMa.ma5||this.chartMa.ma10||this.chartMa.ma20)?`<div style="opacity:.85;margin-top:3px">
-                   ${this.chartMa.ma5?`<span style="color:#ff9800">MA5</span> <b>${d.ma5!=null?(+d.ma5).toFixed(2):'-'}</b> `:''}
-                   ${this.chartMa.ma10?(()=>{ const v=this._sma(h.map(x=>x.close),10,i); return `<span style="color:#2196f3">MA10</span> <b>${v!=null?v.toFixed(2):'-'}</b> `; })():''}
-                   ${this.chartMa.ma20?`<span style="color:#9c27b0">MA20</span> <b>${d.ma20!=null?(+d.ma20).toFixed(2):'-'}</b>`:''}
+                   ${this.chartMa.ma5?(()=>{ const v=this.maAt(d,i,5); return `<span style="color:#ff9800">MA5</span> <b>${v!=null?v.toFixed(2):'-'}</b> `; })():''}
+                   ${this.chartMa.ma10?(()=>{ const v=this.maAt(d,i,10); return `<span style="color:#2196f3">MA10</span> <b>${v!=null?v.toFixed(2):'-'}</b> `; })():''}
+                   ${this.chartMa.ma20?(()=>{ const v=this.maAt(d,i,20); return `<span style="color:#9c27b0">MA20</span> <b>${v!=null?v.toFixed(2):'-'}</b>`; })():''}
                  </div>`:''}`
         };
       }else{
