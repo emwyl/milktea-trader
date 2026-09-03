@@ -218,3 +218,18 @@ class StockTConfig(Base):
     custom_pressure: Mapped[float | None] = mapped_column(Float, nullable=True)  # 自定义压力位
     risk_note: Mapped[str] = mapped_column(Text, default="")  # 标的特殊风控备注（如：年底清仓禁加仓）
     updated_at: Mapped[str] = mapped_column(String(32), default=_now)
+
+
+
+class AccessLog(Base):
+    """网站访问日志：记录进入网站/登录事件，含游客（is_guest=True）。"""
+    __tablename__ = "access_logs"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    ts: Mapped[str] = mapped_column(String(32), default=_now, nullable=False, index=True)
+    ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    ua: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    path: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    method: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    username: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    is_guest: Mapped[bool] = mapped_column(Boolean, default=False)
+    event_type: Mapped[str | None] = mapped_column(String(32), nullable=True)  # page/login/guest/register

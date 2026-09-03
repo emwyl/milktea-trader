@@ -240,6 +240,8 @@
   .fixfoot{position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid var(--line);padding:9px 16px;font-size:12px;color:var(--danger);text-align:center;z-index:50}
   .g4 .kv{display:block;border-bottom:0} .g4 .kv span{color:#6b7280;font-size:12px}
   .seg{display:flex;gap:8px;flex-wrap:wrap}
+  .seg button{padding:5px 14px;border:1px solid #d1d5db;background:#fff;color:#374151;border-radius:6px;cursor:pointer;font-size:13px;line-height:1.5}
+  .seg button.active{background:var(--tea);color:#fff;border-color:var(--tea)}
   /* A股配色：涨红跌绿 */
   .up{color:#ef4444;font-weight:600}
   .down{color:#10b981;font-weight:600}
@@ -512,7 +514,7 @@
     <header>
       <h1>🧋 加油赚奶茶钱</h1>
       <span class="sub">个人学习用 · 先控风险再谈收益</span>
-      <span class="version" id="appVersion">v20260903113</span>
+      <span class="version" id="appVersion">v20260903115</span>
       <button class="ghost auto-refresh-btn" :class="{active:autoRefresh}" @click="toggleAutoRefresh" :title="autoRefresh?'自动刷新开启中，每5秒更新当前页面数据':'点击开启每5秒自动刷新'">
         {{autoRefresh?'⏸':'▶'}} 自动 5s
       </button>
@@ -1439,9 +1441,15 @@
         <div class="card" v-if="me.role==='admin'" style="border-left:4px solid var(--danger)">
           <div class="row" style="justify-content:space-between;align-items:center">
             <h3 style="margin-top:0">账号管理（admin）</h3>
-            <button class="ghost btn-sm" @click="openColumnSetting('adminUsers','账号管理列设置')">列设置</button>
+            <div class="row" style="gap:8px;align-items:center">
+              <div class="seg" style="margin:0">
+                <button :class="{active:adminTab==='users'}" @click="adminTab='users'">账户列表</button>
+                <button :class="{active:adminTab==='access'}" @click="switchAdminTab('access')">访问记录</button>
+              </div>
+              <button class="ghost btn-sm" @click="openColumnSetting('adminUsers','账号管理列设置')">列设置</button>
+            </div>
           </div>
-          <table class="tracktbl admin-user-tbl">
+          <table class="tracktbl admin-user-tbl" v-if="adminTab==='users'">
             <thead><tr>
               <th v-for="col in visibleAdminColumns" :key="col.key" :style="thStyle(adminColMetrics, col)">{{col.label}}</th>
             </tr></thead>
@@ -1468,7 +1476,7 @@
             </tbody>
           </table>
           <!-- 窄屏专用：账号管理卡片列表（桌面端 CSS 强制隐藏） -->
-          <div class="admin-user-cards">
+          <div class="admin-user-cards" v-if="adminTab==='users'">
             <div v-for="u in users" :key="'ucard-'+u.id" class="user-card">
               <div class="user-card-head">
                 <div>
@@ -1494,7 +1502,38 @@
             </div>
             <p v-if="!users.length" class="muted" style="text-align:center;padding:20px 0">暂无账号</p>
           </div>
-          <p class="muted">删除账号会同步删除该账号的短线可投池、规则、信号、偏好等个人数据，且不可恢复。</p>
+          <p class="muted" v-if="adminTab==='users'">删除账号会同步删除该账号的短线可投池、规则、信号、偏好等个人数据，且不可恢复。</p>
+          <!-- 访问记录（含游客/未登录访客） -->
+          <div v-if="adminTab==='access'">
+            <div class="row" style="justify-content:space-between;align-items:center;margin:6px 0 10px">
+              <span class="muted">共 {{accessTotal}} 条访问记录（含游客/未登录访客，按时间倒序）</span>
+              <button class="ghost btn-sm" @click="fetchAccessLogs">刷新</button>
+            </div>
+            <table class="tracktbl access-log-tbl">
+              <thead><tr>
+                <th style="width:160px">访问时间</th>
+                <th style="width:150px">用户</th>
+                <th style="width:90px">类型</th>
+                <th style="width:130px">IP</th>
+                <th>UA（浏览器/设备）</th>
+                <th style="width:190px">路径</th>
+              </tr></thead>
+              <tbody>
+                <tr v-for="a in accessLogs" :key="a.id">
+                  <td>{{fmtDateTimeCN(a.ts)}}</td>
+                  <td>
+                    <span v-if="a.is_guest" class="pill risk">{{a.username||'游客'}}</span>
+                    <span v-else class="pill ok">{{a.username||'-'}}</span>
+                  </td>
+                  <td>{{a.event_type}}</td>
+                  <td>{{a.ip||'-'}}</td>
+                  <td style="max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" :title="a.ua">{{a.ua||'-'}}</td>
+                  <td>{{a.path}}</td>
+                </tr>
+              </tbody>
+            </table>
+            <p v-if="!accessLogs.length" class="muted" style="text-align:center;padding:20px 0">暂无访问记录</p>
+          </div>
         </div>
         <div class="card" v-if="me.role==='admin'" style="border-left:4px solid var(--tea)">
           <h3 style="margin-top:0">自动备份（admin）</h3>
@@ -1871,7 +1910,7 @@ const API = (p,opt={}) => fetch('/api'+p, Object.assign({headers:{'Content-Type'
 const app = createApp({
   data(){return{
     token:localStorage.getItem('tk')||'', me:{username:'',role:'',is_guest:false}, view:'dash', err:'',
-    authMode:'login', reg:{u:'',p:'',p2:''}, users:[],
+    authMode:'login', reg:{u:'',p:'',p2:''}, users:[], adminTab:'users', accessLogs:[], accessPage:1, accessTotal:0, accessLoading:false,
     login:{u:'',p:''}, dash:{market_env:{}, recent_signals:[]}, dashMsg:'',
     ui:{ // 格式化/样式工具(避免与个股分析状态 t 冲突)
       fmt(v){ return (v===undefined||v===null)?'-':(+v).toFixed(3); },
@@ -2422,6 +2461,19 @@ const app = createApp({
     logout(){ localStorage.removeItem('tk'); this.token=''; this.me={username:'',role:'',is_guest:false}; },
     async loadMe(){ const r=await API('/auth/me'); this.me=r; },
     async loadUsers(){ const r=await API('/auth/users'); if(Array.isArray(r)) this.users=r; },
+    switchAdminTab(tab){
+      this.adminTab = tab;
+      if(tab==='access' && !this.accessLogs.length) this.fetchAccessLogs();
+    },
+    async fetchAccessLogs(){
+      this.accessLoading = true;
+      try{
+        const d = await API('/auth/access-logs?page=1&page_size=100');
+        this.accessLogs = d.items || [];
+        this.accessTotal = d.total || 0;
+      }catch(e){ this.accessLogs = []; this.accessTotal = 0; }
+      finally{ this.accessLoading = false; }
+    },
     async toggleUser(id){ const r=await API('/auth/users/'+id+'/toggle',{method:'PUT'}); if(r.ok) this.loadUsers(); },
     async deleteUser(id){ this.showConfirm('确定删除该账号？其个人数据将一并清理且不可恢复。', async ()=>{ const r=await API('/auth/users/'+id,{method:'DELETE'}); if(r.ok) this.loadUsers(); }); },
     changeUserPw(id){

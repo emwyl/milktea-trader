@@ -6,7 +6,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from app.db import SessionLocal
-from app.models import User
+from app.models import User, AccessLog, _now
 from app.schemas import LoginIn, LoginOut, PasswordChange, PasswordResetIn
 from app.security import verify_password, make_token, hash_password
 from app.deps import get_current_user
@@ -42,6 +42,9 @@ def login(request: Request, body: LoginIn):
             raise HTTPException(status_code=403, detail="账号已被禁用")
         user.last_login_at = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(timespec="seconds")
         user.last_ip = _client_ip(request)
+        db.add(AccessLog(ts=_now(), ip=_client_ip(request), ua=request.headers.get("User-Agent", ""),
+                        path=request.url.path, method="POST", username=user.username,
+                        is_guest=user.is_guest, event_type="login"))
         db.commit()
         token = make_token(user.username)
         return LoginOut(token=token, user={"username": user.username, "role": user.role,
@@ -64,6 +67,9 @@ def register(request: Request, body: LoginIn):
         user = User(username=body.username, password_hash=h, salt=s, role="user", is_guest=False,
                     last_ip=_client_ip(request))
         db.add(user)
+        db.add(AccessLog(ts=_now(), ip=_client_ip(request), ua=request.headers.get("User-Agent", ""),
+                        path=request.url.path, method="POST", username=user.username,
+                        is_guest=user.is_guest, event_type="register"))
         db.commit()
         db.refresh(user)
         token = make_token(user.username)
@@ -83,11 +89,40 @@ def guest_login(request: Request):
         user = User(username=username, password_hash=h, salt=s, role="user", is_guest=True,
                     last_ip=_client_ip(request))
         db.add(user)
+        db.add(AccessLog(ts=_now(), ip=_client_ip(request), ua=request.headers.get("User-Agent", ""),
+                        path=request.url.path, method="POST", username=user.username,
+                        is_guest=True, event_type="guest"))
         db.commit()
         db.refresh(user)
         token = make_token(user.username)
         return LoginOut(token=token, user={"username": user.username, "role": user.role,
                                            "is_guest": True, "last_login_at": user.last_login_at})
+    finally:
+        db.close()
+
+
+@router.get("/access-logs")
+def list_access_logs(page: int = 1, page_size: int = 50, user: User = Depends(get_current_user)):
+    """访问记录（含游客），仅管理员可见。按时间倒序分页。"""
+    _require_admin(user)
+    db = SessionLocal()
+    try:
+        page = max(1, int(page))
+        page_size = min(max(1, int(page_size)), 200)
+        q = db.query(AccessLog)
+        total = q.count()
+        items = (q.order_by(AccessLog.ts.desc())
+                   .offset((page - 1) * page_size).limit(page_size).all())
+        return {
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "items": [{
+                "id": a.id, "ts": a.ts, "ip": a.ip, "ua": a.ua, "path": a.path,
+                "method": a.method, "username": a.username,
+                "is_guest": a.is_guest, "event_type": a.event_type,
+            } for a in items],
+        }
     finally:
         db.close()
 
