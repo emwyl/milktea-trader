@@ -501,7 +501,7 @@
     <header>
       <h1>🧋 加油赚奶茶钱</h1>
       <span class="sub">个人学习用 · 先控风险再谈收益</span>
-      <span class="version" id="appVersion">v20260903103</span>
+      <span class="version" id="appVersion">v20260903104</span>
       <button class="ghost auto-refresh-btn" :class="{active:autoRefresh}" @click="toggleAutoRefresh" :title="autoRefresh?'自动刷新开启中，每5秒更新当前页面数据':'点击开启每5秒自动刷新'">
         {{autoRefresh?'⏸':'▶'}} 自动 5s
       </button>
@@ -824,10 +824,18 @@
                       :title="(p.track.intra_amplitude_source || '取自日线') + (p.track.intra_amplitude!=null ? ' · '+p.track.intra_amplitude+'%' : '') + ' · (最高-最低)/昨收'">{{p.track.intra_amplitude!=null ? p.track.intra_amplitude+'%' : '-'}}</span>
               </template>
               <template v-else-if="col.key==='ma5'">
-                <span :class="p.track.above_ma5===true?'up':(p.track.above_ma5===false?'down':'')">{{ui.fmt(p.track.ma5)}}<span v-if="p.track.above_ma5===true" style="margin-left:2px">⬆</span><span v-else-if="p.track.above_ma5===false" style="margin-left:2px">⬇</span></span>
+                <span>
+                  <span :class="{'up': p.track.above_ma5===true}">{{ui.fmt(p.track.ma5)}}</span>
+                  <span v-if="p.track.above_ma5===true" class="up" style="margin-left:2px">⬆</span>
+                  <span v-else-if="p.track.above_ma5===false" class="down" style="margin-left:2px">⬇</span>
+                </span>
               </template>
               <template v-else-if="col.key==='ma20'">
-                <span :class="p.track.above_ma20===true?'up':(p.track.above_ma20===false?'down':'')">{{ui.fmt(p.track.ma20)}}<span v-if="p.track.above_ma20===true" style="margin-left:2px">⬆</span><span v-else-if="p.track.above_ma20===false" style="margin-left:2px">⬇</span></span>
+                <span>
+                  <span :class="{'up': p.track.above_ma20===true}">{{ui.fmt(p.track.ma20)}}</span>
+                  <span v-if="p.track.above_ma20===true" class="up" style="margin-left:2px">⬆</span>
+                  <span v-else-if="p.track.above_ma20===false" class="down" style="margin-left:2px">⬇</span>
+                </span>
               </template>
               <template v-else-if="col.key==='box_pos'">
                 <div v-if="p.track.box_pos!==undefined" class="boxbar" :title="'箱体位置 '+Math.round(p.track.box_pos*100)+'%：'+(p.track.box_pos<=0.15?'贴近下沿支撑（相对低位），等企稳低吸':(p.track.box_pos>=0.85?'贴近上沿压力（相对高位），可观察高抛':'箱体中间，方向不明，观望'))">
