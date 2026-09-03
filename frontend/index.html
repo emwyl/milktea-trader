@@ -81,6 +81,7 @@
     .pool-card-list{display:none !important}
     .pool-tbl-wrap{display:block !important}
   }
+  @media(max-width:768px){
     .pool-card{
       background:#fff;border:1px solid var(--line);border-radius:12px;
       padding:12px;margin-bottom:10px;box-shadow:0 2px 6px rgba(30,64,175,.05);
@@ -446,7 +447,7 @@
     <header>
       <h1>🧋 加油赚奶茶钱</h1>
       <span class="sub">个人学习用 · 先控风险再谈收益</span>
-      <span class="version" id="appVersion">v20260902081</span>
+      <span class="version" id="appVersion">v20260902082</span>
       <button class="ghost auto-refresh-btn" :class="{active:autoRefresh}" @click="toggleAutoRefresh" :title="autoRefresh?'自动刷新开启中，每5秒更新当前页面数据':'点击开启每5秒自动刷新'">
         {{autoRefresh?'⏸':'▶'}} 自动 5s
       </button>
