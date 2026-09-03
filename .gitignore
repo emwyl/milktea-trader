@@ -14,6 +14,8 @@ backend/data/*.db
 backend/data/*.db-journal
 backend/data/*.log
 backend/data/backups/
+# 修复过程中曾尝试的项目级共享库（已回退 config，不再使用；避免 89MB 误入库）
+/data/
 # 腾讯云 COS 密钥配置（含 SecretId/SecretKey，严禁入库；模板见 cos.example.json）
 backend/data/cos.json
 *.log
@@ -35,6 +37,7 @@ _dl_test.json
 /_*.html
 /_*.txt
 /_*.json
+/_*.py
 /_chk_*.js
 /_chk_*.mjs
 /_chk_*.py

@@ -3,8 +3,10 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-BASE_DIR = Path(__file__).resolve().parent.parent  # backend/
+BASE_DIR = Path(__file__).resolve().parent.parent  # backend/ 或 publish/backend/
 # 数据目录可经环境变量覆盖（部署到 Render 等平台时挂载持久盘用）
+# 注意：保持默认 BASE_DIR/data，确保本地(backend/data)与云端部署(publish/backend/data)
+# 各自使用其目录下的库文件，避免改动路径导致云端实例数据库被重置。
 DATA_DIR = Path(os.getenv("STOCK_ADVISOR_DATA_DIR", str(BASE_DIR / "data")))
 try:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
