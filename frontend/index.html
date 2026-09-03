@@ -491,7 +491,7 @@
     <header>
       <h1>🧋 加油赚奶茶钱</h1>
       <span class="sub">个人学习用 · 先控风险再谈收益</span>
-      <span class="version" id="appVersion">v20260903096</span>
+      <span class="version" id="appVersion">v20260903097</span>
       <button class="ghost auto-refresh-btn" :class="{active:autoRefresh}" @click="toggleAutoRefresh" :title="autoRefresh?'自动刷新开启中，每5秒更新当前页面数据':'点击开启每5秒自动刷新'">
         {{autoRefresh?'⏸':'▶'}} 自动 5s
       </button>
@@ -1955,8 +1955,9 @@ const app = createApp({
       return h.length ? h[h.length-1] : null;
     },
     dailyChangePct(){
-      const d = this.lastDay; if(!d||!d.pre_close) return 0;
-      return (d.close - d.pre_close) / d.pre_close * 100;
+      const d = this.lastDay; if(!d) return 0;
+      const pre = d.pre_close && d.pre_close > 0 ? d.pre_close : (this.dailyHistory.length>1 ? this.dailyHistory[this.dailyHistory.length-2].close : d.close);
+      return (d.close - pre) / pre * 100;
     },
     dailyChangeClass(){
       const v = this.dailyChangePct;
@@ -1965,6 +1966,17 @@ const app = createApp({
     intraLastPrice(){
       const p = this.intra.prices || [];
       return p.length ? +p[p.length-1] : 0;
+    },
+    dailySeriesWithPreClose(){  // 为日K 准备 pre_close（首日 fallback 用前一日 close，避免 K 线全绿）
+      const h = this.dailyHistory;
+      if(!h.length) return [];
+      const out = h.slice();
+      for(let i=0;i<out.length;i++){
+        if(out[i].pre_close==null || out[i].pre_close===0){
+          out[i] = {...out[i], pre_close: i>0 ? out[i-1].close : out[i].close};
+        }
+      }
+      return out;
     },
   },
   mounted(){ if(this.token){ this.loadMe(); this.loadDash(); }
@@ -2311,7 +2323,7 @@ const app = createApp({
     },
     _drawDailyKline(ctx, W, H){
       // 日K线：红涨绿跌（A 股配色）+ 成交量柱 + 可选 MA 叠加
-      const h = this.dailyHistory; if(!h.length) return;
+      const h = this.dailySeriesWithPreClose; if(!h.length) return;
       // 布局: 顶部价格区 70%, 底部成交量区 25% (中间留 2px 分隔)
       const padL = 8, padR = 56, padT = 18, padB = 24;
       const volRatio = 0.27;  // 成交量区占比(挤掉少量价格区)
@@ -2474,7 +2486,7 @@ const app = createApp({
       const scale = cv.width / rect.width;  // 适配不同容器宽度
       const cvX = mouseX * scale;
       if(this.chartView==='daily'){
-        const h = this.dailyHistory; if(!h.length) return;
+        const h = this.dailySeriesWithPreClose; if(!h.length) return;
         const padL=8, padR=56, slot = (cv.width-padL-padR)/h.length;
         const i = Math.max(0, Math.min(h.length-1, Math.round((cvX - padL - slot/2)/slot)));
         const d = h[i]; if(!d) return;
