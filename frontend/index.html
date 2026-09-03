@@ -80,6 +80,12 @@
   @media(min-width:769px){
     .pool-card-list{display:none !important}
     .pool-tbl-wrap{display:block !important}
+    /* 桌面端：筛选行自适应伸展（不动 batchbar，按钮组保留 flex:0 0 auto） */
+    .pool-toolbar > .row{flex:1 1 auto;min-width:0}
+    .pool-toolbar > .row input{flex:2 1 220px;min-width:160px;max-width:none}
+    .pool-toolbar > .row select{flex:1 1 150px;min-width:130px;max-width:none}
+    .pool-toolbar > .row button{flex:0 0 auto}
+    .pool-toolbar{flex-wrap:wrap}                /* 让 batchbar 始终换到第二行：操作区在筛选条件下面 */
   }
   @media(max-width:768px){
     .pool-card{
@@ -278,7 +284,7 @@
   /* 可投池单元格：保留左右内边距，避免列与列之间内容黏在一起 */
   .tracktbl.pool-tbl thead th{padding:8px 5px 6px}
   .tracktbl.pool-tbl tbody td{padding:6px 5px}
-  /* 冻结列：左侧仅冻结 code/名称、现价/涨跌幅，右侧操作列固定 */
+  /* 冻结列：左侧冻结 代码/名称、现价、涨跌幅，右侧操作列固定 */
   .tracktbl.pool-tbl thead th.frozen,
   .tracktbl.pool-tbl tbody td.frozen{position:sticky;z-index:3}
   .tracktbl.pool-tbl thead th.frozen{z-index:5;background:#f9fafb}
@@ -447,7 +453,7 @@
     <header>
       <h1>🧋 加油赚奶茶钱</h1>
       <span class="sub">个人学习用 · 先控风险再谈收益</span>
-      <span class="version" id="appVersion">v20260902082</span>
+      <span class="version" id="appVersion">v20260903087</span>
       <button class="ghost auto-refresh-btn" :class="{active:autoRefresh}" @click="toggleAutoRefresh" :title="autoRefresh?'自动刷新开启中，每5秒更新当前页面数据':'点击开启每5秒自动刷新'">
         {{autoRefresh?'⏸':'▶'}} 自动 5s
       </button>
@@ -684,14 +690,16 @@
           <!-- 筛选与批量操作工具条 -->
           <!-- 工具栏：筛选 + 批量操作（窄屏专列、横滑 + 网格） -->
           <div :class="['filter-toolbar', 'pool-toolbar']" style="display:flex;align-items:flex-start;gap:10px;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid #e5e7eb">
-            <div class="row" style="gap:8px;margin:0;flex-wrap:wrap;align-items:center">
-              <input v-model="poolFilter.q" placeholder="代码/名称" style="max-width:150px;flex:1 1 140px" />
-              <select v-model="poolFilter.tag" style="max-width:130px;flex:1 1 130px">
+            <div class="row" style="gap:8px;margin:0;flex:1 1 auto;flex-wrap:wrap;align-items:center;min-width:0">
+              <input v-model="poolFilter.q" placeholder="代码/名称" style="min-width:160px" />
+              <select v-model="poolFilter.tag" style="min-width:130px">
                 <option value="">全部标签</option>
                 <option v-for="t in poolTags" :key="t.id" :value="t.id">{{t.name}}</option>
               </select>
-              <button @click="searchPool" style="flex:0 0 auto">查询</button>
-              <button class="ghost" @click="resetPoolFilter" style="flex:0 0 auto">重置</button>
+              <span class="qry-btns" style="display:inline-flex;gap:8px;flex:0 0 auto">
+                <button @click="searchPool">查询</button>
+                <button class="ghost" @click="resetPoolFilter">重置</button>
+              </span>
             </div>
             <div class="batchbar" style="margin:0;padding-bottom:0;border-bottom:0;display:flex;gap:6px;flex-wrap:wrap">
               <button @click="openAddPoolModal">新增</button>
@@ -735,21 +743,26 @@
                 <span v-if="p.status==='archive'" class="pill" style="background:#f3f4f6;color:#6b7280;margin-left:3px" title="已从可投池移除(数据保留),点「恢复」可重新启用">已归档</span>
                 <div style="font-size:11px;color:#2563eb;text-decoration:underline;cursor:pointer" @click.stop="openAnalysis(p.code)">{{p.code}}</div>
               </template>
-              <template v-else-if="col.key==='price_change'">
+              <template v-else-if="col.key==='price'">
                 <div><b>{{ui.fmt(p.track.price)}}</b></div>
-                <div :class="ui.classOf(p.track.change_pct)" style="font-size:11px">{{ui.fmtPct(p.track.change_pct)}}</div>
                 <div v-if="p.track.price_note" style="margin-top:2px">
                   <span class="pill" style="background:#fee2e2;color:#b91c1c;font-size:10px" :title="p.track.price_note">实时fallback</span>
                 </div>
               </template>
-              <template v-else-if="col.key==='realtime_amount'">
-                <span :class="{'up':p.track.realtime_amount != null && p.track.realtime_amount > (p.track.yesterday_amount_at_time || 0) && p.track.realtime_amount > (p.track.avg_amount_20 || 0)}">{{p.track.realtime_amount!=null ? Math.round(p.track.realtime_amount/1e4) : '-'}}</span>
+              <template v-else-if="col.key==='change_pct'">
+                <div :class="ui.classOf(p.track.change_pct)"><b>{{ui.fmtPct(p.track.change_pct)}}</b></div>
               </template>
-              <template v-else-if="col.key==='yesterday_amount'">
-                <span class="muted">{{p.track.yesterday_amount_at_time!=null ? Math.round(p.track.yesterday_amount_at_time/1e4) : '-'}}</span>
+              <template v-else-if="col.key==='realtime_volume'">
+                <span :class="{'up':p.track.realtime_volume != null && p.track.realtime_volume > (p.track.yesterday_volume_at_time || 0) && p.track.realtime_volume > (p.track.avg_volume_20 || 0)}">{{p.track.realtime_volume!=null ? p.track.realtime_volume : '-'}}</span>
               </template>
-              <template v-else-if="col.key==='avg_amount_20'">
-                <span class="muted">{{p.track.avg_amount_20!=null ? Math.round(p.track.avg_amount_20/1e4) : '-'}}</span>
+              <template v-else-if="col.key==='yesterday_volume_at_time'">
+                <span class="muted">{{p.track.yesterday_volume_at_time!=null ? p.track.yesterday_volume_at_time : '-'}}</span>
+              </template>
+              <template v-else-if="col.key==='avg_volume_20'">
+                <span class="muted">{{p.track.avg_volume_20!=null ? p.track.avg_volume_20 : '-'}}</span>
+              </template>
+              <template v-else-if="col.key==='yesterday_volume_total'">
+                <span class="muted">{{p.track.yesterday_volume_total!=null ? p.track.yesterday_volume_total : '-'}}</span>
               </template>
               <template v-else-if="col.key==='vol_ratio'">
                 <span :class="ui.volClass(p.track.vol_ratio)">{{p.track.vol_ratio||'-'}}</span>
@@ -758,7 +771,8 @@
                 <span :class="(p.track.turnover!=null && p.track.turnover>=3 && p.track.turnover<=8)?'up':''">{{p.track.turnover!=null ? p.track.turnover+'%' : '-'}}</span>
               </template>
               <template v-else-if="col.key==='intra_amplitude'">
-                <span :class="(p.track.intra_amplitude!=null && p.track.intra_amplitude>=3 && p.track.intra_amplitude<=7)?'up':''">{{p.track.intra_amplitude!=null ? p.track.intra_amplitude+'%' : '-'}}</span>
+                <span :class="(p.track.intra_amplitude!=null && p.track.intra_amplitude>=3 && p.track.intra_amplitude<=7)?'up':''"
+                      :title="(p.track.intra_amplitude_source || '取自日线') + (p.track.intra_amplitude!=null ? ' · '+p.track.intra_amplitude+'%' : '') + ' · (最高-最低)/昨收'">{{p.track.intra_amplitude!=null ? p.track.intra_amplitude+'%' : '-'}}</span>
               </template>
               <template v-else-if="col.key==='ma5'">
                 <span :class="p.track.above_ma5===true?'up':(p.track.above_ma5===false?'down':'')">{{ui.fmt(p.track.ma5)}}<span v-if="p.track.above_ma5===true" style="margin-left:2px">⬆</span><span v-else-if="p.track.above_ma5===false" style="margin-left:2px">⬇</span></span>
@@ -857,11 +871,13 @@
               </div>
               <div v-if="p.track.price_note" style="margin:-2px 0 4px"><span class="pill" style="background:#fee2e2;color:#b91c1c;font-size:10px">实时fallback</span></div>
               <div class="pool-card-grids">
-                <div><div class="k">当天成交额</div><div :class="['v', p.track.realtime_amount != null && p.track.realtime_amount > (p.track.yesterday_amount_at_time||0) && p.track.realtime_amount > (p.track.avg_amount_20||0) ? 'up':'']">{{p.track.realtime_amount!=null?Math.round(p.track.realtime_amount/1e4)+'万':'-'}}</div></div>
-                <div><div class="k">T-1同期成交额</div><div class="v">{{p.track.yesterday_amount_at_time!=null?Math.round(p.track.yesterday_amount_at_time/1e4)+'万':'-'}}</div></div>
-                <div><div class="k">20日均成交额</div><div class="v">{{p.track.avg_amount_20!=null?Math.round(p.track.avg_amount_20/1e4)+'万':'-'}}</div></div>
+                <div><div class="k">当天成交量</div><div :class="['v', p.track.realtime_volume != null && p.track.realtime_volume > (p.track.yesterday_volume_at_time||0) && p.track.realtime_volume > (p.track.avg_volume_20||0) ? 'up':'']">{{p.track.realtime_volume!=null?p.track.realtime_volume:'-'}}</div></div>
+                <div><div class="k">T-1同期成交量</div><div class="v">{{p.track.yesterday_volume_at_time!=null?p.track.yesterday_volume_at_time:'-'}}</div></div>
+                <div><div class="k">T-1全天成交量</div><div class="v">{{p.track.yesterday_volume_total!=null?p.track.yesterday_volume_total:'-'}}</div></div>
+                <div><div class="k">20日均成交量</div><div class="v">{{p.track.avg_volume_20!=null?p.track.avg_volume_20:'-'}}</div></div>
                 <div><div class="k">量比 / 换手</div><div class="v"><span :class="ui.volClass(p.track.vol_ratio)">{{p.track.vol_ratio||'-'}}</span> / <span :class="(p.track.turnover!=null && p.track.turnover>=3 && p.track.turnover<=8)?'up':''">{{p.track.turnover!=null ? p.track.turnover+'%' : '-'}}</span></div></div>
-                <div><div class="k">日内振幅</div><div class="v"><span :class="(p.track.intra_amplitude!=null && p.track.intra_amplitude>=3 && p.track.intra_amplitude<=7)?'up':''">{{p.track.intra_amplitude!=null ? p.track.intra_amplitude+'%' : '-'}}</span></div></div>
+                <div><div class="k">日内振幅</div><div class="v"><span :class="(p.track.intra_amplitude!=null && p.track.intra_amplitude>=3 && p.track.intra_amplitude<=7)?'up':''"
+                       :title="(p.track.intra_amplitude_source || '取自日线') + (p.track.intra_amplitude!=null ? ' · '+p.track.intra_amplitude+'%' : '') + ' · (最高-最低)/昨收'">{{p.track.intra_amplitude!=null ? p.track.intra_amplitude+'%' : '-'}}</span></div></div>
                 <div><div class="k">MA5 / MA20</div><div class="v"><span :class="p.track.above_ma5===true?'up':(p.track.above_ma5===false?'down':'')">{{ui.fmt(p.track.ma5)}}</span>{{p.track.above_ma5===true?'⬆':(p.track.above_ma5===false?'⬇':'—')}} / <span :class="p.track.above_ma20===true?'up':(p.track.above_ma20===false?'down':'')">{{ui.fmt(p.track.ma20)}}</span>{{p.track.above_ma20===true?'⬆':(p.track.above_ma20===false?'⬇':'—')}}</div></div>
                 <div><div class="k">箱体位置</div><div class="v">{{p.track.box_pos!==undefined ? Math.round(p.track.box_pos*100)+'%' : '-'}}</div></div>
                 <div><div class="k">操作建议</div><div class="v"><button v-if="p.track.operation_advice" class="chip pool-card-advice" :class="{alert:p.track.operation_advice.key==='reduce', add:p.track.operation_advice.key==='buy'||p.track.operation_advice.key==='t', reduce:p.track.operation_advice.key==='sell', danger:p.track.operation_advice.key==='wait'}" @click.stop="openAdviceModal(p)" :title="p.track.operation_advice.summary">{{p.track.operation_advice.title}}</button><span v-else class="muted">-</span></div></div>
@@ -1851,10 +1867,13 @@ const app = createApp({
         return [
           {key:'select', label:'', width:60, visible:true, frozen:false, sortable:false, hideable:false},
           {key:'code_name', label:'代码/名称', width:144, visible:true, frozen:true},
-          {key:'price_change', label:'现价/涨跌幅', width:123, visible:true, frozen:true},
-          {key:'realtime_amount', label:'当天实时\n成交额（万）', width:117, visible:true, frozen:false, help:'当天截至当前时点的累计成交额，单位：万元。同时大于 T-1 日同期 与 20日平均成交额 时标红'},
-          {key:'yesterday_amount', label:'T-1日同期\n成交额（万）', width:117, visible:true, frozen:false, help:'前一个交易日同时点的累计成交额，单位：万元'},
-          {key:'avg_amount_20', label:'20日平均\n成交额（万）', width:117, visible:true, frozen:false, help:'近20个交易日收盘后日均成交额，单位：万元'},
+          {key:'price', label:'现价', width:75, visible:true, frozen:true},
+          {key:'change_pct', label:'涨跌幅', width:75, visible:true, frozen:true},
+          {key:'realtime_volume', label:'当天实时\n成交量（万手）', width:117, visible:true, frozen:false, help:'当天截至当前时点的累计成交量,单位:万手(1手=100股)。同时大于 T-1 日同期 与 20日平均成交量 时标红'},
+          {key:'yesterday_volume_at_time', label:'T-1日同期\n成交量（万手）', width:117, visible:true, frozen:false, help:'前一个交易日同时点的累计成交量,单位:万手。按 30 分钟向下取整 + 盘前强制 09:30 / 盘后强制 15:00'},
+          {key:'avg_volume_20', label:'20日平均\n成交量（万手）', width:117, visible:true, frozen:false, help:'近20个交易日收盘后日均成交量,单位:万手'},
+          {key:'yesterday_volume_total', label:'T-1日全天\n成交量（万手）', width:117, visible:true, frozen:false, help:'前一交易日收盘后全天累计成交量,单位:万手。'+
+              '来源:新浪 quotes.sina.cn K 线取 T-1 15:00 那根累计。'},
           {key:'vol_ratio', label:'量比', width:81, visible:true, frozen:false, help:'当前成交量/近5日均量。1.5-3温和放量，可观测买入；3-5明显放量；>5警惕利好兑现；<0.8缩量观望'},
           {key:'turnover', label:'换手%', width:93, visible:true, frozen:false, help:'流通筹码交换比例。3%-8%活跃可控，可观测；8%-15%高度活跃短线机会；>20%过热风险；<1%冷清'},
           {key:'intra_amplitude', label:'日内振幅', width:105, visible:true, frozen:false, help:'(最高-最低)/昨收。3%-7%有操作空间，可观测；>10%波动剧烈风险高；<2%太沉闷'},

@@ -376,11 +376,13 @@ def _fetch_spot_tencent(code: str) -> dict | None:
         turnover = _as_float(f[38]) if len(f) > 38 else 0.0
         vol_ratio = _as_float(f[49]) if len(f) > 49 else 0.0
         avg_price = _as_float(f[51]) if len(f) > 51 else price
-        volume = _as_float(f[36]) if len(f) > 36 else _as_float(f[6])
+        volume = _as_float(f[36]) if len(f) > 36 else _as_float(f[6])    # 单位: 股
+        volume_wan = volume / 1e6 if volume else 0.0                          # 万手 (1手=100股)
         return {
             "name": f[1], "price": price, "pre_close": pre_close, "open": open0,
             "change": change, "change_pct": change_pct, "high": high, "low": low,
-            "volume": volume, "amount": amount_wan * 1e4, "turnover": turnover,
+            "volume": volume, "volume_wan": volume_wan, "amount": amount_wan * 1e4,
+            "turnover": turnover,
             "vol_ratio": vol_ratio, "avg_price": avg_price,
             "ts": f[30] if len(f) > 30 else "",
             "src": "tencent",
@@ -402,6 +404,7 @@ def _fetch_spot_eastmoney(code: str) -> dict | None:
         if not d:
             return None
         price = _as_float(d.get("f43")) / 100
+        vol_raw = _as_float(d.get("f47"))                          # 单位: 手(东财成交量的字段约定: 手)
         return {
             "name": d.get("f58", ""), "price": price,
             "pre_close": _as_float(d.get("f60")) / 100,
@@ -410,7 +413,7 @@ def _fetch_spot_eastmoney(code: str) -> dict | None:
             "change_pct": _as_float(d.get("f171")) / 100,
             "high": _as_float(d.get("f44")) / 100,
             "low": _as_float(d.get("f45")) / 100,
-            "volume": _as_float(d.get("f47")),
+            "volume": vol_raw, "volume_wan": vol_raw / 1e4 if vol_raw else 0.0,
             "amount": _as_float(d.get("f48")),
             "turnover": _as_float(d.get("f168")) / 100,
             "vol_ratio": _as_float(d.get("f50")) / 100,
@@ -435,11 +438,13 @@ def _fetch_spot_sina(code: str) -> dict | None:
         name = f[0]
         open0 = _as_float(f[1]); pre_close = _as_float(f[2]); price = _as_float(f[3])
         high = _as_float(f[4]); low = _as_float(f[5]); volume = _as_float(f[8]); amount = _as_float(f[9])
+        volume_wan = volume / 1e4 if volume else 0.0  # 新浪 hq 也是「股」单位, /1e4 → 万手
         return {
             "name": name, "price": price, "pre_close": pre_close, "open": open0,
             "change": round(price - pre_close, 2),
             "change_pct": round((price - pre_close) / pre_close * 100, 2) if pre_close else 0,
-            "high": high, "low": low, "volume": volume, "amount": amount,
+            "high": high, "low": low, "volume": volume, "volume_wan": volume_wan,
+            "amount": amount,
             "turnover": 0.0, "vol_ratio": 0.0, "avg_price": price,
             "ts": f[30] if len(f) > 30 else "", "src": "sina",
         }
@@ -541,70 +546,199 @@ def _fetch_intraday_cached(code: str, ndays: int = 2) -> tuple | None:
     return res
 
 
-def _fetch_tencent_minute_date(code: str, date_str: str) -> list | None:
-    """腾讯指定日期的分时(分钟)数据。返回 [(hm_int, cum_amount), ...] 或 None。
+def _fetch_sina_minute_range(code: str, days_back: int = 10) -> list[tuple[str, int, float]] | None:
+    """新浪分钟级 K 线。返回 [(date_str, hm_int, cum_amount_yuan), ...] 或 None。
 
-    接口: web.ifzq.gtimg.cn/appstock/app/minute/query?code={mkt}{code}&date={date_str}
-    环境说明: 当前部署环境无法访问东财 push2his(整站被掐断), 腾讯该接口稳定可用,
-    故 T-1 同期数据改走腾讯。每行格式 "HHMM price vol(手) cum_amount(元)"。
+    说明(2026-09-03):
+      旧实现用腾讯 web.ifzq.gtimg.cn/appstock/app/minute/query?date=YYYY-MM-DD 取「T-1 同期累计成交额」，
+      但经实测验证: 该接口完全不识别 date 参数, 无论传哪天都返回当天实时分时,
+      导致 _yesterday_amount_at_time 拿到的就是「今天的实时累计」, 与前一天应拿到的完全不同,
+      表现就是用户在屏幕上看到的「T-1 同期成交额 == 当天实时成交额」。
+
+    改用新浪 quotes.sina.cn 的 K 线接口:
+      - scale=1 (1 分钟线), datalen 足够取 N 天。
+      - 数据格式: [{day: "YYYY-MM-DD HH:MM:00", amount: "该分钟成交额(元)"...}, ...]
+      - 单根 amount 是「该分钟成交额」而非累计, 本函数内部把它累加成 cum_amount_yuan。
+      - day 字段带日期, 可以按日期切分到具体某天。
+
+    缓存：_INTRADAY_CACHE（30s, 同其它分钟接口, 避免连续刷新打爆新浪）。
     """
-    mkt = _market_of(code)
-    url = f"https://web.ifzq.gtimg.cn/appstock/app/minute/query?code={mkt}{code}&date={date_str}"
-    txt = _http_get(url, headers={"Referer": "https://gu.qq.com/"})
+    mkt = _market_of(code)  # sh/sz/bj, 新浪也是同样前缀
+    sym = f"{mkt}{code}"
+    datalen = max(days_back * 240 + 30, 800)
+    url = (
+        f"https://quotes.sina.cn/cn/api/jsonp_v2.php/="
+        f"/CN_MarketDataService.getKLineData?symbol={sym}&scale=1&datalen={datalen}"
+    )
+    txt = _http_get(url, headers={"Referer": "https://quotes.sina.cn/"})
     if not txt:
         return None
     try:
-        import json
-        node = json.loads(txt)["data"][f"{mkt}{code}"]["data"]["data"]
-        out = []
-        for line in node:
-            parts = line.split()
-            if len(parts) >= 4:
-                try:
-                    hm = int(parts[0])
-                    cum = _as_float(parts[3])  # 累计成交额(元)
-                except ValueError:
-                    continue
-                out.append((hm, cum))
+        import json as _json, re as _re
+        # 去掉 jsonp 包装 =(...); 或 =([...]);
+        s = txt.strip()
+        # =(...) 格式
+        if s.startswith("=("):
+            body = s[2:-2] if s.endswith(");") else s[2:]
+        else:
+            m = _re.search(r'=\(\[', s)
+            body = s[m.end() - 1:-2] if m else s
+        arr = _json.loads(body)
+        if not isinstance(arr, list) or not arr:
+            return None
+        out: list[tuple[str, int, float, float]] = []  # (date, hm, cum_amount_yuan, cum_volume_hand)
+        cum_amt = 0.0
+        cum_vol = 0.0
+        for a in arr:
+            date_str = str(a.get("day", ""))  # "2026-09-02 09:45:00"
+            if not date_str or len(date_str) < 16:
+                continue
+            amt = _as_float(a.get("amount", 0))
+            vol = _as_float(a.get("volume", 0))  # 手(单根)
+            cum_amt += amt
+            cum_vol += vol
+            # hm_int: HHMM 整数, 例 09:45 -> 945
+            hm = int(date_str[11:13]) * 100 + int(date_str[14:16])
+            out.append((date_str[:10], hm, cum_amt, cum_vol))
         return out if out else None
     except Exception:
         return None
 
 
 def _yesterday_amount_at_time(code: str) -> float | None:
-    """取前一交易日「同样 30 分钟整数点」的累计成交额（元）。
+    """[兼容保留] 取前一交易日「同样 30 分钟整数点」的累计成交额（元）。
 
-    口径（按产品要求）：
-    - 目标时点 = 当前时间往前取整到 30 分钟，例如 13:12→13:00、13:31→13:30。
-    - 取「前一交易日」该时点附近的累计成交额（腾讯分时最后一列=累计成交额）。
-    - 「前一交易日」自动回退：从昨天起向前尝试，跳过周末；若某天无数据(长假)继续往前。
-    - 若目标时点恰逢午休空档（如 13:00 无数据），取时间上最接近的分时点（如 13:01）。
+    新版逻辑改到 _yesterday_day_metrics()，统一缓存 + 一次拉新浪数据返回 4 项指标
+    （amount_at_time / volume_at_time / amount_total / volume_total）。本函数委托之。
+    """
+    m = _yesterday_day_metrics(code)
+    return m.get("amount_at_time") if m else None
 
-    数据源：腾讯 web.ifzq.gtimg.cn（东财 push2his 在当前部署环境不可达）。
-    失败时返回 None，前端显示为 '-'。
+
+def _yesterday_volume_at_time(code: str) -> float | None:
+    """[新增] 前一交易日同时点的累计成交量（手）。"""
+    m = _yesterday_day_metrics(code)
+    return m.get("volume_at_time") if m else None
+
+
+def _yesterday_volume_total(code: str) -> float | None:
+    """[新增] 前一交易日全天累计成交量（手）= 15:00 收盘那一刻的累计成交量。
+
+    口径：
+      - 数据源 = 新浪分时 minute 接口（与 _yesterday_amount_at_time 共享缓存）
+      - 取 T-1 日所有 1 分钟点中最后一根（理论上就是 15:00）的累计 volume
+      - 若 T-1 当天没有数据（极端长假） -> 返回 None
+    """
+    m = _yesterday_day_metrics(code)
+    return m.get("volume_total") if m else None
+
+
+def _yesterday_day_metrics(code: str) -> dict | None:
+    """取前一交易日的 4 项分钟级指标（统一一次新浪请求 + 缓存复用）。
+
+    返回（无数据时 None）：
+      {
+        'date':                'YYYY-MM-DD',
+        'amount_at_time':  float,   # 元，target_hm 时刻的累计成交额
+        'volume_at_time':  float,   # 手，target_hm 时刻的累计成交量
+        'amount_total':    float,   # 元，T-1 收盘后的累计成交额
+        'volume_total':    float,   # 手，T-1 收盘后的累计成交量
+        'target_hm':       int,     # HHMM，按 30 分钟向下取整的"目标时点"
+        'market_phase':    'pre' | 'live' | 'post',  # 用于排查/前端展示
+      }
+
+    口径（2026-09-03 调整 + 2026-09-03 重构）:
+      - 目标时点 = 当前时间按 30 分钟向下取整, 但下限 09:30（开盘整点）、上限 15:00。
+        - 当前 < 09:30（盘前）  → target 强制 09:30
+        - 当前 09:30 ~ 15:00   → target = (cur // 30) * 30
+        - 当前 >= 15:00（盘后） → target 强制 15:00
+      - "前一交易日" = 日期最大的 date < today 且 date 不在周末
+        （新浪分时 day 字段带日期, 直接按字符串字典序比较即可, 跳过周末）
+      - amount_at_time = T-1 日 ≤ target_hm 最近的 1 个点的累计成交额
+      - volume_at_time = 上面这个点的累计成交量（手）
+      - amount_total / volume_total = T-1 日最后一根（理论上 15:00）的累计值
+        若 T-1 在 1 分钟粒度下最后一根不是 15:00（如停牌），就取 day_pairs[-1]
+
+    数据源：新浪 quotes.sina.cn K 线（内部已把单根 amount/volume 累加成累计）。
+    缓存：_INTRADAY_CACHE (30s)。
     """
     now = dt.datetime.now()
     cur_min = now.hour * 60 + now.minute
-    target_min = (cur_min // 30) * 30  # 往前取整到 30 分钟整数点
+    target_min = (cur_min // 30) * 30
+    market_open_min = 9 * 60 + 30    # 570
+    market_close_min = 15 * 60       # 900
+    phase = "live"
+    # 边界修正: 15:00 整点算 post(不能 < close 严格大于, 而是 >= close)
+    if cur_min < market_open_min:
+        target_min = market_open_min
+        phase = "pre"
+    elif cur_min >= market_close_min:
+        target_min = market_close_min
+        phase = "post"
+    target_hm = (target_min // 60) * 100 + (target_min % 60)
 
-    # 从昨天起向前找最近一个有分时数据的交易日
-    for offset in range(1, 12):
-        d = now - dt.timedelta(days=offset)
-        if d.weekday() >= 5:  # 跳过周六/日
+    # 一次性拉最近 10 天的分钟线，新接口返回 4-tuple
+    cache_key = ("sina_min_yest", code)
+    cached = _INTRADAY_CACHE.get(cache_key)
+    if cached and (now.timestamp() - cached[0]) < _INTRADAY_CACHE_TTL:
+        triples = cached[1]
+    else:
+        triples = _fetch_sina_minute_range(code, days_back=10)
+        if triples:
+            _INTRADAY_CACHE[cache_key] = (now.timestamp(), triples)
+
+    if not triples:
+        return None
+
+    today = now.date().isoformat()
+    # 按日期分组，存 (hm, cum_amount, cum_volume)
+    by_date: dict[str, list[tuple[int, float, float]]] = {}
+    for date_str, hm, cum_amt, cum_vol in triples:
+        if date_str >= today:
+            continue  # 跳过今天及以后的数据
+        by_date.setdefault(date_str, []).append((hm, cum_amt, cum_vol))
+
+    candidates = [
+        d for d in sorted(by_date.keys(), reverse=True)
+        if d < today and dt.datetime.strptime(d, "%Y-%m-%d").weekday() < 5
+    ]
+    if not candidates:
+        return None
+    target_date = candidates[0]
+    day_pairs = by_date[target_date]
+    if not day_pairs:
+        return None
+
+    # 1) at_time：≤ target_hm 最近的一个点的累计值
+    best_amt: float | None = None
+    best_vol: float | None = None
+    best_diff: int | None = None
+    for hm, cum_amt, cum_vol in day_pairs:
+        point_min = (hm // 100) * 60 + (hm % 100)
+        if point_min > target_min:
             continue
-        pairs = _fetch_tencent_minute_date(code, d.strftime("%Y-%m-%d"))
-        if not pairs:
-            continue
-        best = None
-        best_diff = None
-        for hm, cum in pairs:
-            point_min = (hm // 100) * 60 + (hm % 100)
-            diff = abs(point_min - target_min)
-            if best_diff is None or diff < best_diff:
-                best_diff = diff
-                best = cum
-        return best
-    return None
+        diff = target_min - point_min
+        if best_diff is None or diff < best_diff:
+            best_diff = diff
+            best_amt = cum_amt
+            best_vol = cum_vol
+    if best_amt is None:  # 兜底：取当日首点（开盘瞬间）
+        best_amt = day_pairs[0][1]
+        best_vol = day_pairs[0][2]
+
+    # 2) total：最后一根的累计值
+    total_amt = day_pairs[-1][1]
+    total_vol = day_pairs[-1][2]
+
+    return {
+        "date": target_date,
+        "amount_at_time": best_amt,
+        "volume_at_time": best_vol,
+        "amount_total": total_amt,
+        "volume_total": total_vol,
+        "target_hm": target_hm,
+        "market_phase": phase,
+    }
 
 
 def _fetch_intraday(code: str):
@@ -880,6 +1014,61 @@ def _amplitude_history(quotes: list[Quote]) -> list[float]:
     return out
 
 
+def _pick_intra_amplitude(spot: dict | None, daily_quotes: list[Quote]) -> tuple[float, str]:
+    """按当前交易时段选择最准的「日内振幅」数据源。
+    返回 (amplitude_pct, source_label)。
+
+    取数策略(对齐用户意图,2026-09-03 调整):
+      盘中(09:30 ~ 15:00):优先用腾讯实时盘口的 high/low/pre_close(分钟级跳动,与现价/量比同源)。
+        若 spot 拉取失败,回退到日线最新一根 K 线(盘中也会刷新但有分钟级延迟)。
+      盘前(<09:30):用日线最新一根(此时腾讯接口通常还没推"今天"的 K,落到的就是 T-1),
+        也就是 T-1 日的真实振幅,语义上等于"昨天"。
+      盘后(>=15:00 且次日 0:00 前):用实时盘口已定格 high/low(若可达),否则日线最新一根。
+      非交易日(周末/节假日)按盘前处理,整天取 T-1 日的振幅。
+
+    source_label 取值(供前端 tooltip 展示):
+      "盘中·实时" / "盘中·日线" / "盘前·昨" / "盘后·定格" / "盘后·日线" / "无数据"
+    """
+    from datetime import time as _t
+
+    def _amp(high: float, low: float, pre_close: float) -> float:
+        if not pre_close:
+            return 0.0
+        return round((high - low) / pre_close * 100, 2)
+
+    now_t = dt.datetime.now().time()
+    in_session = _t(9, 30) <= now_t < _t(15, 0)
+
+    last = daily_quotes[-1] if daily_quotes else None
+
+    if in_session:
+        # 盘中:优先用 spot 的 high/low/pre_close,失败回退日线
+        if spot:
+            pre_close = spot.get("pre_close", 0) or 0
+            high = spot.get("high", 0) or 0
+            low = spot.get("low", 0) or 0
+            # 盘前那一刻 spot 的 high==low==pre_close(还没开盘),也不要误判为"实时"
+            if high > 0 and low > 0 and pre_close and not (high == pre_close and low == pre_close):
+                return _amp(high, low, pre_close), "盘中·实时"
+        if last and last.pre_close:
+            return _amp(last.high, last.low, last.pre_close), "盘中·日线"
+        return 0.0, "无数据"
+
+    # 盘前或盘后(非盘中):用日线最后一根;若接口还没推当天 K 线,等于 T-1 真实振幅
+    if last and last.pre_close:
+        if now_t < _t(9, 30):
+            return _amp(last.high, last.low, last.pre_close), "盘前·昨"
+        # 盘后:有 spot 用 spot(已定格),否则日线
+        if spot:
+            pre_close = spot.get("pre_close", 0) or 0
+            high = spot.get("high", 0) or 0
+            low = spot.get("low", 0) or 0
+            if high > 0 and low > 0 and pre_close:
+                return _amp(high, low, pre_close), "盘后·定格"
+        return _amp(last.high, last.low, last.pre_close), "盘后·日线"
+    return 0.0, "无数据"
+
+
 def _calc_pass_scores(code: str, out: dict, quotes: list[Quote], spot: dict | None, db) -> None:
     """按用户截图规则计算短线可投池 AI 评分(总分 100 分)与等级 A/B/C/D。
 
@@ -899,7 +1088,7 @@ def _calc_pass_scores(code: str, out: dict, quotes: list[Quote], spot: dict | No
         return
 
     last_q = quotes[-1]
-    volumes = [q.volume for q in quotes if q.volume]
+    volumes = [q.volume for q in quotes if q.volume]            # 单位: 手(1手=100股)
     amounts = [q.amount for q in quotes if q.amount]
     # 若日线无成交额(如腾讯 kline 不含成交额),用 成交量*收盘价*100 估算。
     # 腾讯/东财日线成交量单位是「手」(1手=100股),因此必须乘100才能到「股×元=元」。
@@ -910,9 +1099,18 @@ def _calc_pass_scores(code: str, out: dict, quotes: list[Quote], spot: dict | No
     price = out.get("price") or closes[-1]
 
     # ---- 基础指标 ----
-    avg_amount_20 = (sum(amounts[-20:]) / min(20, len(amounts))) if amounts else 0.0
-    out["avg_amount_20"] = round(avg_amount_20, 2)
-    out["intra_amplitude"] = round((last_q.high - last_q.low) / last_q.pre_close * 100, 2) if last_q.pre_close else 0.0
+    # avg_volume_20: 近20个交易日日均成交量, 单位「万手」。前端列名"20日平均 成交量(万)"
+    avg_volume_20 = (sum(volumes[-20:]) / min(20, len(volumes))) / 1e4 if volumes else 0.0
+    out["avg_volume_20"] = round(avg_volume_20, 2)
+    # 同步估算 avg_amount_20 (元) 用于流动性阈值判断(保留"日均成交额<2亿"原业务语义,
+    # 但底层 source 已从 amount 转为 volume), 估算式 = 万手→手→股 × 均价(元/股) = 元
+    avg_close_20 = (sum(closes[-20:]) / min(20, len(closes))) if closes else 0.0
+    avg_amount_20 = avg_volume_20 * 1e4 * avg_close_20 * 100  # 单位: 元
+    # 日内振幅:按当前交易时段选择最准的数据源(盘中用实时盘口,盘前/盘后回退日线),
+    # 并把 source 标签一起带上,前端可悬停展示"取自 xxx"。
+    intra_amp, intra_src = _pick_intra_amplitude(spot, quotes)
+    out["intra_amplitude"] = intra_amp
+    out["intra_amplitude_source"] = intra_src
     vol_ratios = _vol_ratio_history(volumes)
     amplitudes = _amplitude_history(quotes)
     avg_amplitude_5 = (sum(amplitudes[-5:]) / min(5, len(amplitudes))) if amplitudes else 0.0
@@ -1316,10 +1514,10 @@ def _operation_advice_for_pool(track: dict, position: dict | None = None) -> dic
         f"量比 {vol_ratio:.2f}({'成交清淡' if vol_ratio < 1 else '正常/放量'}), "
         f"换手率 {turnover:.2f}%({'流动性合适, 适合做T' if 3 <= turnover <= 10 else '流动性偏弱/偏高'})。"
     )
-    if track.get("realtime_amount") is not None and track.get("yesterday_amount_at_time") is not None:
+    if track.get("realtime_volume") is not None and track.get("yesterday_volume_at_time") is not None:
         vol_text += (
-            f" 当天实时成交 {track['realtime_amount']:.0f}万, "
-            f"T-1 同期 {track['yesterday_amount_at_time']:.0f}万"
+            f" 当天实时成交 {track['realtime_volume']:.0f}万手, "
+            f"T-1 同期 {track['yesterday_volume_at_time']:.0f}万手"
         )
     vol_text += " 当前量能不支持追涨, 更适合高抛或观望。"
     points.append({"dim": "量能信号", "text": vol_text})
@@ -1405,12 +1603,18 @@ def get_pool_track(code: str, db, position: dict | None = None) -> dict:
             # 实时指标(日内活跃度,与除权无关)
             out["vol_ratio"] = round(spot.get("vol_ratio", 0), 2)
             out["turnover"] = round(spot.get("turnover", 0), 2)
-            out["realtime_amount"] = round(spot.get("amount", 0), 2)
+            # 当天实时成交量(万手) - volume_wan 已在 _fetch_spot_xxx 三个函数内部归一化好
+            out["realtime_volume"] = round(spot.get("volume_wan", 0), 2)
             out["src"] = spot.get("src", "")
-        # 昨日同时点成交额(与 spot 是否成功无关,独立来源)
-        yest_amount = _yesterday_amount_at_time(code)
-        if yest_amount:
-            out["yesterday_amount_at_time"] = round(yest_amount, 2)
+        # 昨日同时点 + 全天累计(成交量/万手), 由 _yesterday_day_metrics 统一提供(共享新浪拉数 + 缓存)
+        yest_metrics = _yesterday_day_metrics(code)
+        if yest_metrics:
+            if yest_metrics.get("volume_at_time") is not None:
+                # T-1 同期累计成交量(万手) - /1e4 把手 → 万手
+                out["yesterday_volume_at_time"] = round(yest_metrics["volume_at_time"] / 1e4, 2)
+            if yest_metrics.get("volume_total") is not None:
+                # T-1 全天累计成交量(万手) - 新增字段,口径在 _yesterday_volume_total docstring
+                out["yesterday_volume_total"] = round(yest_metrics["volume_total"] / 1e4, 2)
 
         # 日线只取近 30 天足够(算 MA20/箱体)
         quotes = ensure_quotes(code, days=60)
