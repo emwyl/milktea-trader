@@ -55,7 +55,10 @@ def _http_get(url: str, headers: dict | None = None, retries: int = 2) -> str | 
 
 
 def _market_of(code: str) -> str:
-    """判断市场前缀：6/9 开头→沪 sh，0/3 开头→深 sz，4/8 开头→北 bj。"""
+    """判断市场前缀：920/4/8 开头→北 bj，6/9 开头→沪 sh，0/3 开头→深 sz。
+    注意: 920xxx 是北交所新股代码(2021 年起), 不能用「9→沪」笼统覆盖, 否则会被当成 sh920xxx 去拉行情而取不到数。"""
+    if code.startswith("920"):
+        return "bj"
     if code.startswith(("6", "9")):
         return "sh"
     if code.startswith(("0", "3")):
@@ -64,7 +67,9 @@ def _market_of(code: str) -> str:
 
 
 def _secid(code: str) -> str:
-    """东财 secid：沪 1.xxxxxx，深 0.xxxxxx。"""
+    """东财 secid：沪 1.xxxxxx，深/北 0.xxxxxx。北交所(920/8/4 开头)用 0. 前缀。"""
+    if code.startswith("920"):
+        return "0." + code
     return ("1." if code.startswith(("6", "9")) else "0.") + code
 
 
