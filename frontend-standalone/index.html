@@ -501,7 +501,7 @@
     <header>
       <h1>🧋 加油赚奶茶钱</h1>
       <span class="sub">个人学习用 · 先控风险再谈收益</span>
-      <span class="version" id="appVersion">v20260903104</span>
+      <span class="version" id="appVersion">v20260903105</span>
       <button class="ghost auto-refresh-btn" :class="{active:autoRefresh}" @click="toggleAutoRefresh" :title="autoRefresh?'自动刷新开启中，每5秒更新当前页面数据':'点击开启每5秒自动刷新'">
         {{autoRefresh?'⏸':'▶'}} 自动 5s
       </button>
@@ -2054,7 +2054,7 @@ const app = createApp({
           {key:'note', label:'备注', width:138, visible:true, frozen:false},
           {key:'tags', label:'标签', width:180, visible:true, frozen:false},
           {key:'scheme_type', label:'方案', width:111, visible:true, frozen:false},
-          {key:'ops', label:'操作', width:225, visible:true, frozen:false, sortable:false, hideable:false}
+          {key:'ops', label:'操作', width:110, visible:true, frozen:false, sortable:false, hideable:false}
         ];
       }
       if(key==='adminUsers'){
