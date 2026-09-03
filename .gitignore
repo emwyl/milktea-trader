@@ -34,6 +34,7 @@ _dl_test.json
 /_*.js
 /_*.html
 /_*.txt
+/_*.json
 /_chk_*.js
 /_chk_*.mjs
 /_chk_*.py
