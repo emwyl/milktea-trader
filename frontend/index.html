@@ -312,6 +312,11 @@
   .tracktbl.pool-tbl thead th.sorted.frozen{background:#e0e7ff}
   .tracktbl.pool-tbl thead th .sort-arrow{display:inline-block;margin-left:3px;font-size:10px;line-height:1;width:8px;text-align:center;color:#9ca3af;vertical-align:middle}
   .tracktbl.pool-tbl thead th.sorted .sort-arrow{color:#1d4ed8}
+  /* 可投池表头列宽拖拽把手 */
+  .tracktbl.pool-tbl thead th .resize-handle{position:absolute;right:0;top:0;bottom:0;width:6px;cursor:col-resize;z-index:10;background:transparent;transition:background .15s}
+  .tracktbl.pool-tbl thead th .resize-handle:hover{background:rgba(59,130,246,.25)}
+  .tracktbl.pool-tbl thead th .resize-handle.active{background:rgba(59,130,246,.45)}
+  @media(max-width:768px){ .tracktbl.pool-tbl thead th .resize-handle{display:none} }
   .tracktbl .pill{padding:1px 6px;font-size:11px}
   /* 自定义列设置弹窗内的表格 */
   .col-setting-tbl{width:100%;border-collapse:separate;border-spacing:0}
@@ -502,7 +507,7 @@
     <header>
       <h1>🧋 加油赚奶茶钱</h1>
       <span class="sub">个人学习用 · 先控风险再谈收益</span>
-      <span class="version" id="appVersion">v20260903109</span>
+      <span class="version" id="appVersion">v20260903110</span>
       <button class="ghost auto-refresh-btn" :class="{active:autoRefresh}" @click="toggleAutoRefresh" :title="autoRefresh?'自动刷新开启中，每5秒更新当前页面数据':'点击开启每5秒自动刷新'">
         {{autoRefresh?'⏸':'▶'}} 自动 5s
       </button>
@@ -766,7 +771,7 @@
             <p class="scroll-hint">左右滑动查看全部字段 ↔</p>
             <div class="tracktbl-wrap">
           <table class="tracktbl pool-tbl"><thead><tr>
-            <th v-for="col in visiblePoolColumns" :key="col.key" :class="{frozen: col.frozen, sortable: col.sortable===true, sorted: col.sortable===true && poolSort.key===col.key}" :style="thStyle(poolColMetrics, col)" @click="col.sortable===true && sortPool(col)">
+            <th v-for="col in visiblePoolColumns" :key="col.key" :class="{frozen: col.frozen, sortable: col.sortable===true, sorted: col.sortable===true && poolSort.key===col.key, resizing: resizeState && resizeState.key===col.key}" :style="thStyle(poolColMetrics, col)" @click="col.sortable===true && sortPool(col)">
               <template v-if="col.key==='select'"><input v-if="pool.length" type="checkbox" :checked="poolSelected.length===pool.length && pool.length>0" @change="selectAllPool" title="全选/取消全选" /></template>
               <template v-else>
                 <span class="th-label" :title="col.label">
@@ -774,9 +779,10 @@
                     <template v-if="i > 0"><br></template>{{ ln }}
                   </template>
                   <i v-if="col.help" class="info" :title="col.help">?</i>
-                  <span v-if="col.sortable!==false" class="sort-arrow">{{ poolSort.key===col.key ? (poolSort.dir==='asc' ? '▲' : '▼') : '⇅' }}</span>
+                  <span v-if="col.sortable===true" class="sort-arrow">{{ poolSort.key===col.key ? (poolSort.dir==='asc' ? '▲' : '▼') : '⇅' }}</span>
                 </span>
               </template>
+              <span class="resize-handle" :class="{active: resizeState && resizeState.key===col.key}" @click.stop.prevent @mousedown.stop.prevent="startResize($event, col)"></span>
             </th>
           </tr></thead>
           <tbody><tr v-for="p in sortedPool" :key="p.id" :class="{'selected-row':poolSelected.includes(p.code)}">
@@ -1818,6 +1824,8 @@ const app = createApp({
     poolTab:'manual',  // 可投池页 tab: manual|recommend
     poolSelected:[],  // 可投池表格当前勾选中的 code
     poolSort:{key:null, dir:null},  // 可投池表格列排序状态：{key, dir} dir=asc|desc；null=按后端原序
+    resizedWidths: JSON.parse(localStorage.getItem('poolColWidths')||'{}'),  // 用户拖拽调整后的可投池列宽 {key:px}
+    resizeState:null,  // 当前正在拖拽调整列宽的状态 {key,startX,startWidth}
     poolCardOpen:{},  // 可投池卡片展开态 {code:true},默认全部收起只看摘要
     chartView:'daily',  // 走势分析视图: daily(默认·更稳定)|intraday
     chartMa:{ma5:true, ma10:false, ma20:true},  // 日K 均线开关（默认开 MA5/MA20，MA10 关）
@@ -1901,8 +1909,9 @@ const app = createApp({
       const metrics = {};
       const frozen = [];
       for(const c of cols){
-        metrics[c.key] = {width:c.width, left:c.frozen?left:null, frozen:c.frozen};
-        if(c.frozen){ left += c.width; frozen.push(c.key); }
+        const width = this.resizedWidths[c.key] || c.width;
+        metrics[c.key] = {width, left:c.frozen?left:null, frozen:c.frozen};
+        if(c.frozen){ left += width; frozen.push(c.key); }
       }
       if(frozen.length){ metrics[frozen[frozen.length-1]].lastFrozen = true; }
       return metrics;
@@ -2155,7 +2164,7 @@ const app = createApp({
     },
     // 切换某列排序方向：null → asc → desc → null（清空恢复后端原序）
     sortPool(col){
-      if(!col || col.sortable===false) return;
+      if(!col || col.sortable!==true) return;
       const cur = this.poolSort || {};
       if(cur.key !== col.key){
         this.poolSort = {key:col.key, dir:'asc'};
@@ -2166,6 +2175,43 @@ const app = createApp({
       } else {
         this.poolSort = {key:col.key, dir:'asc'};
       }
+    },
+    // 可投池表头列宽拖拽：开始
+    startResize(e, col){
+      e.preventDefault();
+      e.stopPropagation();
+      this.resizeState = {
+        key: col.key,
+        startX: e.clientX,
+        startWidth: this.resizedWidths[col.key] || col.width
+      };
+      this._resizeMove = (ev)=>this.onResizeMove(ev);
+      this._resizeUp = (ev)=>this.onResizeUp(ev);
+      window.addEventListener('mousemove', this._resizeMove);
+      window.addEventListener('mouseup', this._resizeUp);
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+    },
+    // 可投池表头列宽拖拽：移动
+    onResizeMove(e){
+      if(!this.resizeState) return;
+      const delta = e.clientX - this.resizeState.startX;
+      let newWidth = this.resizeState.startWidth + delta;
+      if(newWidth < 50) newWidth = 50;
+      if(newWidth > 600) newWidth = 600;
+      this.resizedWidths = {...this.resizedWidths, [this.resizeState.key]: newWidth};
+    },
+    // 可投池表头列宽拖拽：结束
+    onResizeUp(){
+      if(!this.resizeState) return;
+      localStorage.setItem('poolColWidths', JSON.stringify(this.resizedWidths));
+      this.resizeState = null;
+      window.removeEventListener('mousemove', this._resizeMove);
+      window.removeEventListener('mouseup', this._resizeUp);
+      this._resizeMove = null;
+      this._resizeUp = null;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
     },
     openColumnSetting(key, title){
       const cols = this.getColumns(key).filter(c=>c.hideable!==false && c.key!=='select' && c.key!=='ops');
