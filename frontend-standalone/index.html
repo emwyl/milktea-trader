@@ -297,6 +297,13 @@
   .tracktbl tbody td:last-child{background:#fff}
   .tracktbl tbody tr:hover td:last-child{background:#f8fafc}
   .tracktbl tbody tr.selected-row td:last-child{background:#eff6ff}
+  /* 可投池表头：可排序列交互（hover 提示、激活列高亮、箭头方向） */
+  .tracktbl.pool-tbl thead th.sortable{cursor:pointer;user-select:none;transition:background .15s}
+  .tracktbl.pool-tbl thead th.sortable:hover{background:#f3f4f6}
+  .tracktbl.pool-tbl thead th.sorted{background:#e0e7ff;color:#1d4ed8}
+  .tracktbl.pool-tbl thead th.sorted.frozen{background:#e0e7ff}
+  .tracktbl.pool-tbl thead th .sort-arrow{display:inline-block;margin-left:3px;font-size:10px;line-height:1;width:8px;text-align:center;color:#9ca3af;vertical-align:middle}
+  .tracktbl.pool-tbl thead th.sorted .sort-arrow{color:#1d4ed8}
   .tracktbl .pill{padding:1px 6px;font-size:11px}
   /* 自定义列设置弹窗内的表格 */
   .col-setting-tbl{width:100%;border-collapse:separate;border-spacing:0}
@@ -453,7 +460,7 @@
     <header>
       <h1>🧋 加油赚奶茶钱</h1>
       <span class="sub">个人学习用 · 先控风险再谈收益</span>
-      <span class="version" id="appVersion">v20260903091</span>
+      <span class="version" id="appVersion">v20260903092</span>
       <button class="ghost auto-refresh-btn" :class="{active:autoRefresh}" @click="toggleAutoRefresh" :title="autoRefresh?'自动刷新开启中，每5秒更新当前页面数据':'点击开启每5秒自动刷新'">
         {{autoRefresh?'⏸':'▶'}} 自动 5s
       </button>
@@ -717,7 +724,7 @@
             <p class="scroll-hint">左右滑动查看全部字段 ↔</p>
             <div class="tracktbl-wrap">
           <table class="tracktbl pool-tbl"><thead><tr>
-            <th v-for="col in visiblePoolColumns" :key="col.key" :class="{frozen: col.frozen}" :style="thStyle(poolColMetrics, col)">
+            <th v-for="col in visiblePoolColumns" :key="col.key" :class="{frozen: col.frozen, sortable: col.sortable!==false, sorted: col.sortable!==false && poolSort.key===col.key}" :style="thStyle(poolColMetrics, col)" @click="col.sortable!==false && sortPool(col)">
               <template v-if="col.key==='select'"><input v-if="pool.length" type="checkbox" :checked="poolSelected.length===pool.length && pool.length>0" @change="selectAllPool" title="全选/取消全选" /></template>
               <template v-else>
                 <span class="th-label" :title="col.label">
@@ -725,11 +732,12 @@
                     <template v-if="i > 0"><br></template>{{ ln }}
                   </template>
                   <i v-if="col.help" class="info" :title="col.help">?</i>
+                  <span v-if="col.sortable!==false" class="sort-arrow">{{ poolSort.key===col.key ? (poolSort.dir==='asc' ? '▲' : '▼') : '⇅' }}</span>
                 </span>
               </template>
             </th>
           </tr></thead>
-          <tbody><tr v-for="p in pool" :key="p.id" :class="{'selected-row':poolSelected.includes(p.code)}">
+          <tbody><tr v-for="p in sortedPool" :key="p.id" :class="{'selected-row':poolSelected.includes(p.code)}">
             <td v-for="col in visiblePoolColumns" :key="col.key" :class="{frozen: col.frozen}" :style="tdStyle(poolColMetrics, col)">
               <template v-if="col.key==='select'"><input type="checkbox" :checked="poolSelected.includes(p.code)" @change.stop="togglePoolSelect(p.code)" /></template>
               <template v-else-if="col.key==='tags'">
@@ -1730,6 +1738,7 @@ const app = createApp({
     pool:[], poolFilter:{q:'',tag:''}, poolPage:1, poolPageSize:15, poolTotal:0, rules:[], nr:{name:'',scope:'all',action:'reduce',conditions:'{"logic":"AND","conditions":[{"type":"below_ma","ma":20,"days":3}]}'},
     poolTab:'manual',  // 可投池页 tab: manual|recommend
     poolSelected:[],  // 可投池表格当前勾选中的 code
+    poolSort:{key:null, dir:null},  // 可投池表格列排序状态：{key, dir} dir=asc|desc；null=按后端原序
     poolCardOpen:{},  // 可投池卡片展开态 {code:true},默认全部收起只看摘要
     poolTags:[],  // 当前用户的可投池自定义标签列表
     showRulesModal:false,  // 加减仓规则弹窗显隐
@@ -1815,6 +1824,29 @@ const app = createApp({
       }
       if(frozen.length){ metrics[frozen[frozen.length-1]].lastFrozen = true; }
       return metrics;
+    },
+    // 可投池按当前排序列/方向排序后的列表（不影响后端原序，切换列/方向即重算）
+    sortedPool(){
+      const {key, dir} = this.poolSort || {};
+      if(!key || !dir) return this.pool;  // 未排序：保持后端返回顺序
+      const get = (p)=> this.getPoolSortValue(p, key);
+      const arr = (this.pool||[]).slice();
+      arr.sort((a,b)=>{
+        const va = get(a), vb = get(b);
+        // null/undefined 始终置底（不参与升/降序），便于一眼看到"没数据"行
+        const aN = (va===null||va===undefined||va===''), bN = (vb===null||vb===undefined||vb==='');
+        if(aN && bN) return 0;
+        if(aN) return 1;
+        if(bN) return -1;
+        if(typeof va==='number' && typeof vb==='number'){
+          return dir==='asc' ? (va-vb) : (vb-va);
+        }
+        const sa = String(va), sb = String(vb);
+        // 中文按 localeCompare 排序，更符合直觉
+        const cmp = sa.localeCompare(sb, 'zh-Hans-CN', {numeric:true});
+        return dir==='asc' ? cmp : -cmp;
+      });
+      return arr;
     },
 
     // 账号管理当前生效的列配置
@@ -1944,6 +1976,69 @@ const app = createApp({
       }
       if(m.lastFrozen) s.borderRight='2px solid #d1d5db';
       return s;
+    },
+    // ===== 可投池表格排序 =====
+    // 提取可投池行在指定列上的可比较值；返回 null 表示"无数据"（始终置底）
+    getPoolSortValue(p, key){
+      const t = p && p.track || {};
+      switch(key){
+        case 'select':      return null;  // 复选列不参与排序
+        case 'code_name':   return p.name || p.code || '';  // 按名称升序
+        case 'price':       return (t.price!=null ? +t.price : null);
+        case 'change_pct':  return (t.change_pct!=null ? +t.change_pct : null);
+        case 'realtime_volume':       return (t.realtime_volume!=null ? +t.realtime_volume : null);
+        case 'yesterday_volume_at_time': return (t.yesterday_volume_at_time!=null ? +t.yesterday_volume_at_time : null);
+        case 'avg_volume_20':         return (t.avg_volume_20!=null ? +t.avg_volume_20 : null);
+        case 'yesterday_volume_total':return (t.yesterday_volume_total!=null ? +t.yesterday_volume_total : null);
+        case 'vol_ratio':   return (t.vol_ratio!=null ? +t.vol_ratio : null);
+        case 'turnover':    return (t.turnover!=null ? +t.turnover : null);
+        case 'intra_amplitude': return (t.intra_amplitude!=null ? +t.intra_amplitude : null);
+        case 'ma5':         return (t.ma5!=null ? +t.ma5 : null);
+        case 'ma20':        return (t.ma20!=null ? +t.ma20 : null);
+        case 'box_pos':     return (t.box_pos!=null ? +t.box_pos : null);
+        // 操作建议 chip：按 action key 排序（buy/t > wait > reduce/sell）
+        case 'operation_advice': {
+          const k = t.operation_advice && t.operation_advice.key;
+          if(!k) return null;
+          const order = {buy:1, t:1, wait:2, reduce:3, sell:3, alert:3};
+          return order[k] != null ? order[k] : (k||'');
+        }
+        // 三维技术信号：按"看多"数降序更有用，但用户点 asc 即升序、desc 即降序
+        case 'tech_signals': {
+          if(!t.tech_signals) return null;
+          const map = v => (v==='看多'?2:(v==='看空'?0:1));
+          return map(t.tech_signals.macd) + map(t.tech_signals.kdj) + map(t.tech_signals.boll);
+        }
+        case 'must_pass':   return (t.must_pass_score!=null ? +t.must_pass_score : null);
+        case 'key_pass':    return (t.key_pass_score!=null ? +t.key_pass_score : null);
+        case 'aux_pass':    return (t.aux_pass_score!=null ? +t.aux_pass_score : null);
+        // AI 等级：A>B>C>D，空值=0（最低）
+        case 'ai_grade': {
+          const m = {A:4, B:3, C:2, D:1};
+          return t.ai_grade && m[t.ai_grade] != null ? m[t.ai_grade] : 0;
+        }
+        case 'position_qty': return (p.position_qty!=null ? +p.position_qty : null);
+        case 'cost_price':  return (p.cost_price!=null ? +p.cost_price : null);
+        case 'note':        return p.note || '';
+        case 'tags':        return (p.tags && p.tags.length) ? p.tags.map(t=>t.name).join(',') : '';
+        case 'scheme_type': return p.scheme_type || '';
+        case 'ops':         return null;  // 操作列不参与排序
+        default: return null;
+      }
+    },
+    // 切换某列排序方向：null → asc → desc → null（清空恢复后端原序）
+    sortPool(col){
+      if(!col || col.sortable===false) return;
+      const cur = this.poolSort || {};
+      if(cur.key !== col.key){
+        this.poolSort = {key:col.key, dir:'asc'};
+      } else if(cur.dir === 'asc'){
+        this.poolSort = {key:col.key, dir:'desc'};
+      } else if(cur.dir === 'desc'){
+        this.poolSort = {key:null, dir:null};  // 再次点击恢复原序
+      } else {
+        this.poolSort = {key:col.key, dir:'asc'};
+      }
     },
     openColumnSetting(key, title){
       const cols = this.getColumns(key).filter(c=>c.hideable!==false && c.key!=='select' && c.key!=='ops');
