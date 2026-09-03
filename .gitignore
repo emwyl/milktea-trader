@@ -5,6 +5,10 @@ __pycache__/
 venv/
 .env
 
+# ===== 临时校验/响应文件（本地调试，不入库） =====
+_pool_resp.json
+_chk_*.json
+
 # ===== 数据库与日志（本地数据，不入库；运行时自动创建） =====
 backend/data/*.db
 backend/data/*.db-journal
