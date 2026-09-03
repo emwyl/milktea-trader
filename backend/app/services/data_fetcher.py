@@ -11,6 +11,7 @@ import datetime as dt
 import hashlib
 import random
 import time
+from collections import OrderedDict
 
 import httpx
 
@@ -146,6 +147,31 @@ def generate_demo_quotes(code: str, days: int = 180) -> list[Quote]:
 
 
 # ============ 日线：腾讯 fqkline 优先 ============
+# 东财熔断（2026-09-03）：东财不可达时，避免"每只票每次都白等一次连接超时"。
+# 连续失败 3 次 → 熔断 5 分钟，期间直接跳过东财请求（amount 用 volume×close×100 估算兜底）。
+_EM_CIRCUIT: dict[str, float] = {"until": 0.0, "fails": 0}
+_EM_CIRCUIT_FAILS = 3
+_EM_CIRCUIT_TTL = 300.0
+
+
+def _em_available() -> bool:
+    """东财当前是否可用（熔断中则 False）。"""
+    if time.time() < _EM_CIRCUIT["until"]:
+        return False
+    return True
+
+
+def _em_note_fail() -> None:
+    _EM_CIRCUIT["fails"] += 1
+    if _EM_CIRCUIT["fails"] >= _EM_CIRCUIT_FAILS:
+        _EM_CIRCUIT["until"] = time.time() + _EM_CIRCUIT_TTL
+
+
+def _em_note_ok() -> None:
+    _EM_CIRCUIT["fails"] = 0
+    _EM_CIRCUIT["until"] = 0.0
+
+
 def _fetch_daily_tencent(code: str, days: int) -> list[Quote] | None:
     """腾讯日线（前复权）。返回 [{date, open, close, high, low, volume}] 升序。
     注意:必须用 ifzq.gtimg.cn(无 web 前缀)——web.ifzq.gtimg.cn 会被腾讯 WAF 501 拦截。"""
@@ -176,19 +202,29 @@ def _fetch_daily_tencent(code: str, days: int) -> list[Quote] | None:
 
 
 def _fetch_daily_eastmoney(code: str, days: int) -> list[Quote] | None:
-    """东财日线（前复权），腾讯失败时兜底。"""
+    """东财日线（前复权），腾讯失败时兜底。
+
+    带熔断(2026-09-03)：腾讯日线本身不含成交额(amount 恒为 0)，所以 ensure_quotes 每次
+    都会再试一次东财去补 amount。一旦东财在本机不可达（代理/网络被掐），就会变成
+    「每只票每次都白等一次连接超时」——单只约 0.5~1s，一页 15 只累计很可观。
+    连续失败 3 次后熔断 5 分钟不再请求（此时 amount 用 volume×close×100 估算，不影响指标）。
+    """
+    if not _em_available():
+        return None
     url = (f"https://push2his.eastmoney.com/api/qt/stock/kline/get"
            f"?secid={_secid(code)}&fields1=f1,f2,f3,f4,f5,f6"
            f"&fields2=f51,f52,f53,f54,f55,f56,f57,f58"
            f"&klt=101&fqt=1&end=20500101&lmt={days}")
     txt = _http_get(url)
     if not txt:
+        _em_note_fail()
         return None
     try:
         import json
         data = json.loads(txt).get("data")
         klines = (data or {}).get("klines") or []
         if not klines:
+            _em_note_fail()
             return None
         out: list[Quote] = []
         prev_close = None
@@ -201,8 +237,10 @@ def _fetch_daily_eastmoney(code: str, days: int) -> list[Quote] | None:
                              volume=v, amount=amt, turnover=0.0,
                              pre_close=prev_close if prev_close is not None else c))
             prev_close = c
+        _em_note_ok()
         return out[-days:]
     except Exception:
+        _em_note_fail()
         return None
 
 
@@ -233,8 +271,19 @@ def _fetch_akshare(code: str, days: int) -> list[Quote] | None:
 
 
 def ensure_quotes(code: str, days: int = 180) -> list[Quote]:
-    """取日线：HTTP 直连（腾讯→东财）优先 → DB 缓存 → akshare → 演示数据。
-    直连成功会写回缓存（覆盖旧演示数据）；直连失败才回退缓存/演示。"""
+    """取日线：新鲜度缓存 → HTTP 直连（腾讯→东财）→ DB 缓存 → akshare → 演示数据。
+    直连成功会写回缓存（覆盖旧演示数据）；直连失败才回退缓存/演示。
+
+    性能说明(2026-09-03)：第 0 步的新鲜度缓存是关键。原实现每只票每次都走 HTTP +
+    DELETE/INSERT 整表，单只约 2.4s；可投池 138 只票、一页 15 只，冷启动要 7 秒左右，
+    而纯 DB 读只要 0.018s。日线只服务于 MA/箱体/20日均量这类慢变量，盘中 60s
+    新鲜度完全够用（现价走实时盘口，不受本缓存影响）。
+    """
+    # 0. 新鲜度短路（演示数据不进缓存，见 _daily_fresh_put 注释）
+    fresh = _daily_fresh_get(code, days)
+    if fresh is not None:
+        return fresh
+
     db = SessionLocal()
     try:
         # 1. HTTP 直连真实日线（盘间保证最新，且覆盖演示缓存）
@@ -254,15 +303,18 @@ def ensure_quotes(code: str, days: int = 180) -> list[Quote]:
                                   close=q.close, volume=q.volume, amount=q.amount,
                                   turnover=q.turnover, pre_close=q.pre_close))
             db.commit()
+            _daily_fresh_put(code, days, quotes)
             return quotes[-days:]
 
         # 2. 直连失败 → DB 缓存（可能是历史真实数据）
         rows = (db.query(DailyQuote).filter(DailyQuote.code == code)
                 .order_by(DailyQuote.date).all())
         if rows and len(rows) >= max(20, days // 2):
-            return [Quote(code=r.code, date=r.date, open=r.open, high=r.high, low=r.low,
-                          close=r.close, volume=r.volume, amount=r.amount,
-                          turnover=r.turnover, pre_close=r.pre_close) for r in rows[-days:]]
+            cached = [Quote(code=r.code, date=r.date, open=r.open, high=r.high, low=r.low,
+                            close=r.close, volume=r.volume, amount=r.amount,
+                            turnover=r.turnover, pre_close=r.pre_close) for r in rows[-days:]]
+            _daily_fresh_put(code, days, cached)
+            return cached
 
         # 3. akshare 兜底
         quotes = _fetch_akshare(code, days)
@@ -273,9 +325,11 @@ def ensure_quotes(code: str, days: int = 180) -> list[Quote]:
                                   close=q.close, volume=q.volume, amount=q.amount,
                                   turnover=q.turnover, pre_close=q.pre_close))
             db.commit()
+            _daily_fresh_put(code, days, quotes)
             return quotes[-days:]
 
         # 4. 演示数据（所有真实源都不可用）
+        #    不写 _DAILY_FRESH：源只是短暂抖动时，别把假数据钉住一个刷新周期。
         quotes = generate_demo_quotes(code, days)
         db.query(DailyQuote).filter(DailyQuote.code == code).delete()
         for q in quotes:
@@ -538,6 +592,45 @@ def _fetch_intraday_eastmoney(code: str, ndays: int = 1):
 _INTRADAY_CACHE: dict[str, tuple[float, tuple]] = {}
 _INTRADAY_CACHE_TTL = 30  # 秒
 
+# 日线新鲜度缓存（2026-09-03 新增，性能）：
+# ensure_quotes() 原本「先 HTTP 直连、失败才回 DB」，等于每次调用都要拉一次日线 +
+# DELETE/INSERT 180 行。可投池 138 只票、一页 15 只，冷启动串行起来要 7 秒左右，
+# 而纯 DB 读只要 0.018s。日线用于 MA5/MA20/箱体/20日均量，盘中不需要秒级新鲜度，
+# 故加一层「新鲜度短路」：60s 内（收盘后 30min）直接复用上次结果。
+# key = f"{code}:{days}"，LRU 上限 300 条，防止 screener 遍历全市场时撑爆内存。
+_DAILY_FRESH: "OrderedDict[str, tuple[float, list]]" = OrderedDict()
+_DAILY_FRESH_MAX = 300
+_DAILY_TTL_LIVE = 60.0      # 盘中：60 秒
+_DAILY_TTL_CLOSED = 1800.0  # 收盘/周末：30 分钟（日线已定格）
+
+
+def _daily_ttl() -> float:
+    """日线新鲜度窗口：收盘后/周末放宽到 30 分钟，其余按 60 秒。"""
+    n = dt.datetime.now()
+    if n.weekday() >= 5:
+        return _DAILY_TTL_CLOSED
+    return _DAILY_TTL_CLOSED if n.hour * 60 + n.minute >= 15 * 60 else _DAILY_TTL_LIVE
+
+
+def _daily_fresh_get(code: str, days: int) -> list | None:
+    """命中新鲜缓存则返回副本（浅拷贝 list，避免调用方改动内部缓存）。"""
+    hit = _DAILY_FRESH.get(f"{code}:{days}")
+    if not hit:
+        return None
+    if (time.time() - hit[0]) >= _daily_ttl():
+        return None
+    _DAILY_FRESH.move_to_end(f"{code}:{days}")
+    return list(hit[1])
+
+
+def _daily_fresh_put(code: str, days: int, quotes: list) -> None:
+    """写入新鲜缓存。注意：演示数据不要调用，避免把假数据钉住一个刷新周期。"""
+    key = f"{code}:{days}"
+    _DAILY_FRESH[key] = (time.time(), list(quotes))
+    _DAILY_FRESH.move_to_end(key)
+    while len(_DAILY_FRESH) > _DAILY_FRESH_MAX:
+        _DAILY_FRESH.popitem(last=False)
+
 
 def _fetch_intraday_cached(code: str, ndays: int = 2) -> tuple | None:
     """带短缓存的东财分时获取，减少批量调用时的请求频率。"""
@@ -552,36 +645,10 @@ def _fetch_intraday_cached(code: str, ndays: int = 2) -> tuple | None:
     return res
 
 
-def _fetch_sina_minute_range(code: str, days_back: int = 10) -> list[tuple[str, int, float, float]] | None:
-    """新浪分钟级 K 线。返回 [(date_str, hm_int, cum_amount_yuan, cum_volume_hand), ...] 或 None。
-
-    说明(2026-09-03):
-      旧实现用腾讯 web.ifzq.gtimg.cn/appstock/app/minute/query?date=YYYY-MM-DD 取「T-1 同期累计成交额」，
-      但经实测验证: 该接口完全不识别 date 参数, 无论传哪天都返回当天实时分时,
-      导致 _yesterday_amount_at_time 拿到的就是「今天的实时累计」, 与前一天应拿到的完全不同,
-      表现就是用户在屏幕上看到的「T-1 同期成交额 == 当天实时成交额」。
-
-    改用新浪 quotes.sina.cn 的 K 线接口:
-      - scale=1 (1 分钟线), datalen 足够取 N 天。
-      - 数据格式: [{day: "YYYY-MM-DD HH:MM:00", amount: "该分钟成交额(元)"...}, ...]
-      - 单根 amount 是「该分钟成交额」而非累计, 本函数内部把它累加成 cum_amount_yuan。
-      - day 字段带日期, 可以按日期切分到具体某天。
-
-    两个已踩过的坑(2026-09-03 修复):
-      1) datalen 有硬上限: 实测 1800 正常、>=2000 直接返回 "=(null);" (57 字节),
-         而 days_back=10 会算出 2430 -> 整条链路静默返回 None。已钳制到 1800
-         (= 7.5 个交易日, 覆盖 10 自然日的需求, 遇超长假期才可能取不到 T-1)。
-      2) 累计量必须「按日重置」: 单根 amount/volume 是当分钟的增量,
-         跨天后若不归零, cum 会变成「自窗口起点以来的总量」,
-         导致 T-1 全天成交量被放大若干倍(且随 datalen 增大而变)。
-         cum_* 的语义固定为「当日累计」。
-
-    缓存：_INTRADAY_CACHE（30s, 同其它分钟接口, 避免连续刷新打爆新浪）。
-    """
+def _fetch_sina_minute_range_once(code: str, datalen: int) -> list[tuple[str, int, float, float]] | None:
+    """拉一次新浪分钟 K 线（datalen 由调用方给定，上限 1800）。"""
     mkt = _market_of(code)  # sh/sz/bj, 新浪也是同样前缀
     sym = f"{mkt}{code}"
-    # 上限 1800：新浪 >=2000 返回 null（见 docstring 坑 1）
-    datalen = min(max(days_back * 240 + 30, 800), 1800)
     url = (
         f"https://quotes.sina.cn/cn/api/jsonp_v2.php/="
         f"/CN_MarketDataService.getKLineData?symbol={sym}&scale=1&datalen={datalen}"
@@ -632,6 +699,49 @@ def _fetch_sina_minute_range(code: str, days_back: int = 10) -> list[tuple[str, 
         return out if out else None
     except Exception:
         return None
+
+
+def _fetch_sina_minute_range(code: str, days_back: int = 10) -> list[tuple[str, int, float, float]] | None:
+    """新浪分钟级 K 线。返回 [(date_str, hm_int, cum_amount_yuan, cum_volume_hand), ...] 或 None。
+
+    说明(2026-09-03):
+      旧实现用腾讯 web.ifzq.gtimg.cn/appstock/app/minute/query?date=YYYY-MM-DD 取「T-1 同期累计成交额」，
+      但经实测验证: 该接口完全不识别 date 参数, 无论传哪天都返回当天实时分时,
+      导致 _yesterday_amount_at_time 拿到的就是「今天的实时累计」, 与前一天应拿到的完全不同,
+      表现就是用户在屏幕上看到的「T-1 同期成交额 == 当天实时成交额」。
+
+    改用新浪 quotes.sina.cn 的 K 线接口:
+      - scale=1 (1 分钟线), datalen 足够取 N 天。
+      - 数据格式: [{day: "YYYY-MM-DD HH:MM:00", amount: "该分钟成交额(元)"...}, ...]
+      - 单根 amount 是「该分钟成交额」而非累计, 本函数内部把它累加成 cum_amount_yuan。
+      - day 字段带日期, 可以按日期切分到具体某天。
+
+    三个已踩过的坑(2026-09-03 修复):
+      1) datalen 有硬上限: 实测 1800 正常、>=2000 直接返回 "=(null);" (57 字节),
+         而 days_back=10 会算出 2430 -> 整条链路静默返回 None。上限钳到 1800。
+      2) 累计量必须「按日重置」: 单根 amount/volume 是当分钟的增量,
+         跨天后若不归零, cum 会变成「自窗口起点以来的总量」,
+         导致 T-1 全天成交量被放大若干倍(且随 datalen 增大而变)。
+         cum_* 的语义固定为「当日累计」。
+      3) 单根 volume 单位是「股」不是「手」, 已在 _once() 内折算成手统一口径。
+
+    取数策略(性能):
+      要 T-1 只需 2 个交易日, 但周末/假期要往前跳, 所以「小窗口优先、不够再扩」:
+      先用 800 根(≈3.3 个交易日, 覆盖周末) 拉, 若已含 >=2 个不同日期就直接返回;
+      只有遇到长假(窗口里凑不出 2 个交易日)才回退到 1800 根重试。
+      实测 1800 根响应体约 400KB、单只 3.4s; 800 根约 210KB, 一页 15 只的首次加载明显更快。
+
+    缓存：_INTRADAY_CACHE（30s, 同其它分钟接口, 避免连续刷新打爆新浪）。
+    """
+    small = min(max(days_back * 240 + 30, 800), 1800)
+    for datalen in ((800,) if small <= 800 else (800, 1800)):
+        rows = _fetch_sina_minute_range_once(code, datalen)
+        if not rows:
+            continue
+        # 够用判定：窗口里至少要有 2 个不同交易日，否则说明被假期掏空，扩窗重试
+        if len({d for d, _, _, _ in rows}) >= 2 or datalen == 1800:
+            return rows
+    return None
 
 
 def _yesterday_amount_at_time(code: str) -> float | None:
