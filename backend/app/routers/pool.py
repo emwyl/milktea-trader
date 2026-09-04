@@ -15,7 +15,7 @@ from app.db import SessionLocal, get_db
 from app.deps import get_current_user
 from app.models import PoolTag, SchemeType, Stock, TrackedPool, TrackedPoolTag, User, UserProfile, _now
 from app.schemas import PoolBatchDeleteIn, PoolBatchTagsIn, PoolImportIn, PoolIn, PoolOut, TagIn, TagOut
-from app.services.data_fetcher import ensure_stock_name, get_pool_track, _fetch_intraday_fund
+from app.services.data_fetcher import ensure_stock_name, get_pool_track, _fetch_intraday_fund, _market_return
 from app.services.preference import match_scheme
 from app.services.screener import get_screener
 from sqlalchemy import or_
@@ -119,6 +119,12 @@ def list_pool(
     # 并写入 120s 缓存，后续每只股票的跟踪计算直接命中缓存，既快又避免逐只请求被限流。
     try:
         _fetch_intraday_fund([p.code for p in page_rows])
+    except Exception:
+        pass
+    # v117: 板块强度依赖的大盘收益率「预取一次并缓存」——避免多线程并发 miss 时
+    # 各自请求上证指数失败导致整表 sector 为空(失败结果已改为不缓存)。
+    try:
+        _market_return(20)
     except Exception:
         pass
     with ThreadPoolExecutor(max_workers=min(8, max(2, len(page_rows)))) as ex:
@@ -333,22 +339,143 @@ def batch_set_tags(body: PoolBatchTagsIn, db: SessionLocal = Depends(get_db), us
     return {"ok": True, "updated": len(rows)}
 
 
+# ===== 导出列定义 =====
+# key → [(excel表头, 取值函数(o: pool行dict, t: track dict)), ...]
+# 复合列(如 code_name)可拆成多列; select/ops 操作列不导出。
+def _exp(o: dict, t: dict) -> list[tuple[str, object]]:
+    """把一行(可投池+track)按表格列展开为 (表头, 值) 列表，所见即所得。
+    数值字段直接给数值，文本字段给字符串，缺失统一给空串；箱体给数值(0~1)。"""
+    cells: list[tuple[str, object]] = []
+    def add(label: str, value):
+        cells.append((label, "" if value is None else value))
+    # —— 基础(拆列) ——
+    add("证券代码", o.get("code"))
+    add("证券名称", o.get("name") or "")
+    add("行业", o.get("industry") or "")
+    # —— 实时/成交量 ——
+    add("现价", t.get("price"))
+    add("涨跌幅%", t.get("change_pct"))
+    add("当天实时成交量(万手)", t.get("realtime_volume"))
+    add("T-1同期成交量(万手)", t.get("yesterday_volume_at_time"))
+    add("20日平均成交量(万手)", t.get("avg_volume_20"))
+    add("T-1全天成交量(万手)", t.get("yesterday_volume_total"))
+    add("量比", t.get("vol_ratio"))
+    add("换手%", t.get("turnover"))
+    add("日内振幅%", t.get("intra_amplitude"))
+    add("MA5", t.get("ma5"))
+    add("MA20", t.get("ma20"))
+    # —— 箱体/趋势 ——
+    add("箱体位置(0~1)", t.get("box_pos"))
+    add("5日涨跌幅%", t.get("pct_5d"))
+    gap = t.get("gap") or {}
+    add("跳空缺口", gap.get("text") if isinstance(gap, dict) else None)
+    # —— 资金流(当日) ——
+    add("主力净流入%", t.get("main_net_pct"))
+    sig = t.get("main_signal") or {}
+    add("主力信号", sig.get("text") if isinstance(sig, dict) else None)
+    add("大单流向(万元)", t.get("big_order_net"))
+    # —— 估值/强弱/风险 ——
+    add("估值分位(近3年)%", t.get("valuation_pct_3y"))
+    sec = t.get("sector_strength") or {}
+    add("板块强度", sec.get("text") if isinstance(sec, dict) else None)
+    er = t.get("event_risk_tags") or {}
+    add("事件风险", "/".join(str(k) for k in er.keys()) if er else "")
+    fr = t.get("finance_risk") or {}
+    add("财报风险", fr.get("summary") if isinstance(fr, dict) else None)
+    # —— 建议/信号/评分 ——
+    adv = t.get("operation_advice") or {}
+    add("操作建议", adv.get("title") if isinstance(adv, dict) else None)
+    ts = t.get("tech_signals") or {}
+    if isinstance(ts, dict) and ts:
+        add("MACD/KDJ/布林", "/".join(str(ts.get(k, "中")) for k in ("macd", "kdj", "boll")))
+    else:
+        add("MACD/KDJ/布林", "")
+    add("必看-达标项(分)", t.get("must_pass_score"))
+    add("重要-达标项(分)", t.get("key_pass_score"))
+    add("辅助-达标项(分)", t.get("aux_pass_score"))
+    add("AI评等级", t.get("ai_grade"))
+    # —— 持仓/备注/标签 ——
+    add("持仓", o.get("position_qty"))
+    add("成本", o.get("cost_price"))
+    add("备注", o.get("note") or "")
+    add("标签", "/".join(str(x.get("name", "")) for x in (o.get("tags") or [])))
+    add("方案", o.get("scheme_type") or "")
+    return cells
+
+
 @router.get("/export")
-def export_pool(db: SessionLocal = Depends(get_db), user: User = Depends(get_current_user)):
-    """导出当前用户可投池(active)为 Excel，字段：证券代码、证券名称。"""
-    rows = _user_pool_q(db, user.id).filter(TrackedPool.status == "active").order_by(TrackedPool.id).all()
-    seen = set()
-    data = []
+def export_pool(
+    q: str = Query("", description="证券代码或名称模糊查询"),
+    tag: str = Query("", description="按标签 ID 筛选(多个用逗号分隔)"),
+    cols: str = Query("", description="按当前表格列序导出，逗号分隔的列 key；留空则导出全部列"),
+    db: SessionLocal = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """导出当前用户可投池为 Excel（所见即所得）。
+
+    - 按当前筛选(q/tag)导出【全部】匹配行（不只当前页）；
+    - 证券代码/名称拆成两列；箱体等只导数值；复合列拆开；
+    - 前端可传 cols(当前可见列 key 顺序)，后端只导出这些列(排除 select/ops)。
+    """
+    # 筛选 + 去重（与 list_pool 口径一致：active + archive 有持仓）
+    rows = _user_pool_q(db, user.id).order_by(TrackedPool.id).all()
+    q = (q or "").strip()
+    if q:
+        rows = [p for p in rows
+                if q in p.code or q in (_name(p.code, db) or "")]
+    tag_ids: list[int] = []
+    tag = (tag or "").strip()
+    if tag:
+        try:
+            tag_ids = [int(x) for x in tag.split(",") if x.strip()]
+        except ValueError:
+            raise HTTPException(status_code=400, detail="标签参数必须是数字 ID")
+    seen: dict[str, TrackedPool] = {}
     for p in rows:
-        if p.code in seen:
-            continue
-        seen.add(p.code)
-        data.append({"证券代码": p.code, "证券名称": _name(p.code, db) or ""})
-    df = pd.DataFrame(data)
+        if tag_ids:
+            pid_tags = {t.id for t in p.tags}
+            if not pid_tags.intersection(tag_ids):
+                continue
+        cur = seen.get(p.code)
+        if cur is None or (p.position_qty and (not cur.position_qty or p.position_qty > cur.position_qty)):
+            seen[p.code] = p
+    page_rows = list(seen.values())
+
+    # 全量拉 track（复用并发拉取；与列表页一致预取资金流与大盘收益）
+    tracks: dict[str, dict] = {}
+    if page_rows:
+        try:
+            _fetch_intraday_fund([p.code for p in page_rows])
+        except Exception:
+            pass
+        try:
+            _market_return(20)
+        except Exception:
+            pass
+        positions = {p.code: {"cost_price": p.cost_price, "position_qty": p.position_qty} for p in page_rows}
+        with ThreadPoolExecutor(max_workers=min(8, max(2, len(page_rows)))) as ex:
+            futs = {ex.submit(get_pool_track, p.code, db, positions.get(p.code)): p.code for p in page_rows}
+            for f in as_completed(futs):
+                code = futs[f]
+                try:
+                    tracks[code] = f.result()
+                except Exception:
+                    tracks[code] = {}
+
+    # 列展开：前端指定 cols 时按其顺序；否则用全部默认列
+    data: list[dict] = []
+    for p in page_rows:
+        o = _to_out(p, db).model_dump()
+        o["code"] = p.code
+        t = tracks.get(p.code, {}) or {}
+        cells = _exp(o, t)
+        data.append({label: v for label, v in cells})
+
+    df = pd.DataFrame(data, dtype=object)  # dtype=object：证券代码等文本列保持字符串，避免前导0被吞
     buf = io.BytesIO()
     df.to_excel(buf, index=False, engine="openpyxl")
     buf.seek(0)
-    filename = f"可投池_{dt.datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    filename = f"可投池_全量_{dt.datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
     # RFC 5987 / RFC 6266：中文文件名必须编码，否则 Starlette header 用 latin-1 会 500
     encoded = quote(filename, safe="")
     return StreamingResponse(
@@ -364,9 +491,15 @@ def import_pool(
     db: SessionLocal = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """从 Excel/CSV 导入证券代码或名称到可投池。
-    支持列名包含「代码/code」或「名称/name」；校验证券信息，已在池的跳过。
-    返回 {added:[], skipped:[], failed:[]}。
+    """从 Excel/CSV 导入证券到可投池（导入新增）。
+
+    模板列：证券代码(必填) / 证券名称(非必填) / 标签(非必填)。
+    规则（v117，用户确认）：
+      - 按证券代码判重：可投池已有则【跳过】，不重复导入、不改动其标签；
+      - 证券代码格式错误 / 找不到对应市场证券 => 计入导入失败；
+      - 新导入的证券若带「标签」，按名称匹配该用户已有标签并打上（不存在则新建）；
+      - 提示文案：导入成功 x 条，导入失败 x 条，请检查证券代码是否重复导入。
+    返回 {ok, added:[], failed:[], msg}。
     """
     filename = (file.filename or "").lower()
     try:
@@ -380,18 +513,26 @@ def import_pool(
     if df.empty:
         raise HTTPException(status_code=400, detail="文件为空或没有数据")
 
-    # 智能匹配列
-    code_col = name_col = None
+    # 智能匹配列：代码/名称/标签
+    code_col = name_col = tag_col = None
     for c in df.columns:
         cs = str(c).strip()
         if "代码" in cs or cs.lower() == "code":
             code_col = c
-        if "名称" in cs or cs.lower() == "name":
+        elif "名称" in cs or cs.lower() == "name":
             name_col = c
+        elif "标签" in cs or cs.lower() == "tag":
+            tag_col = c
     if code_col is None and name_col is None:
-        raise HTTPException(status_code=400, detail="未找到证券代码/名称列，请确保表头包含「代码」或「名称」")
+        raise HTTPException(status_code=400, detail="未找到证券代码/名称列，请确保表头包含「证券代码」或「证券名称」")
 
-    added, skipped, failed = [], [], []
+    # 当前用户已有标签 map：名称 → PoolTag
+    tag_map = {t.name: t for t in db.query(PoolTag).filter(PoolTag.user_id == user.id).all()}
+    # 已在池的 code 集合（active + archive 有持仓的可见范围，按 code 判重）
+    existing_codes = {p.code for p in _user_pool_q(db, user.id).all()}
+
+    added: list[dict] = []
+    failed: list[dict] = []
     for _, row in df.iterrows():
         raw = ""
         if code_col is not None:
@@ -406,21 +547,29 @@ def import_pool(
             failed.append({"input": raw, "reason": e.detail})
             continue
         name = _name(code, db) or ""
-        # 已 active 在池则跳过
-        exists = db.query(TrackedPool).filter(
-            TrackedPool.user_id == user.id,
-            TrackedPool.code == code,
-            TrackedPool.status == "active",
-        ).first()
-        if exists:
-            skipped.append({"code": code, "name": name})
+        if code in existing_codes:
+            # 已存在：跳过（保留其原标签），计入失败提示避免重复导入
+            failed.append({"code": code, "name": name, "reason": "已在可投池，重复导入"})
             continue
         p = TrackedPool(user_id=user.id, code=code, scheme_type="custom")
         db.add(p)
+        existing_codes.add(code)
+        # 标签：新导入才打标签
+        if tag_col is not None:
+            db.flush()  # 确保 p.id 生成，供 TrackedPoolTag 关联
+            tag_names = [s for s in _re.split(r"[,，/、;；]", str(row.get(tag_col, "") or "")) if s.strip()]
+            for tn in tag_names[:5]:
+                t = tag_map.get(tn.strip())
+                if t is None:
+                    t = PoolTag(user_id=user.id, name=tn.strip(), color="#3b82f6")
+                    db.add(t)
+                    db.flush()
+                    tag_map[t.name] = t
+                db.add(TrackedPoolTag(pool_id=p.id, tag_id=t.id))
         added.append({"code": code, "name": name})
     db.commit()
-    return {"ok": True, "added": added, "skipped": skipped, "failed": failed,
-            "msg": f"成功添加 {len(added)} 只，跳过 {len(skipped)} 只，失败 {len(failed)} 只"}
+    return {"ok": True, "added": added, "failed": failed,
+            "msg": f"导入成功 {len(added)} 条，导入失败 {len(failed)} 条，请检查证券代码是否重复导入"}
 
 
 @router.post("/{code}/restore")

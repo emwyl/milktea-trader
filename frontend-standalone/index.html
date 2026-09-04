@@ -325,6 +325,8 @@
   .pill.ok{background:#dcfce7;color:#15803d;border-color:#86efac}
   .finance-risk .pill{cursor:pointer}
   .finance-risk .pill:hover{filter:brightness(.96)}
+  .clickable-risk{cursor:pointer;transition:filter .15s,box-shadow .15s}
+  .clickable-risk:hover{filter:brightness(.94);box-shadow:0 1px 4px rgba(185,28,28,.25)}
   /* 自定义列设置弹窗内的表格 */
   .col-setting-tbl{width:100%;border-collapse:separate;border-spacing:0}
   .col-setting-tbl th,.col-setting-tbl td{padding:8px 6px;border-bottom:1px solid #e5e7eb;text-align:center}
@@ -514,7 +516,7 @@
     <header>
       <h1>🧋 加油赚奶茶钱</h1>
       <span class="sub">个人学习用 · 先控风险再谈收益</span>
-      <span class="version" id="appVersion">v20260904116</span>
+      <span class="version" id="appVersion">v20260904117</span>
       <button class="ghost auto-refresh-btn" :class="{active:autoRefresh}" @click="toggleAutoRefresh" :title="autoRefresh?'自动刷新开启中，每5秒更新当前页面数据':'点击开启每5秒自动刷新'">
         {{autoRefresh?'⏸':'▶'}} 自动 5s
       </button>
@@ -764,10 +766,10 @@
             </div>
             <div class="batchbar" style="margin:0;padding-bottom:0;border-bottom:0;display:flex;gap:6px;flex-wrap:wrap">
               <button @click="openAddPoolModal">新增</button>
-              <button class="ghost" :disabled="!poolSelected.length" @click="batchDeletePool" style="color:var(--danger);border-color:var(--danger)">删除</button>
-              <button class="ghost" @click="exportPool">导出Excel</button>
-              <button class="ghost" @click="triggerImportPool">导入Excel</button>
+              <button class="ghost" @click="openImportGuide">导入新增</button>
               <input type="file" ref="poolImportFile" style="display:none" accept=".xlsx,.xls,.csv" @change="onImportPoolFile" />
+              <button class="ghost" :disabled="!poolSelected.length" @click="batchDeletePool" style="color:var(--danger);border-color:var(--danger)">删除</button>
+              <button class="ghost" @click="exportPool">导出</button>
               <button class="ghost" :disabled="!poolSelected.length" @click="openBatchTagModal">打标签</button>
               <button class="ghost" @click="openTagManager">标签配置</button>
               <button class="ghost" @click="openColumnSetting('pool','可投池列设置')">列设置</button>
@@ -875,10 +877,6 @@
               <template v-else-if="col.key==='big_order_net'">
                 <span :class="ui.classOf(p.track.big_order_net)" :title="p.track.big_order_net!=null?'大单流向(万元)：超大单+大单净额，正数净买入/负数净卖出':'当日资金流数据尚未产生，留空'">{{p.track.big_order_net!=null ? p.track.big_order_net : '-'}}</span>
               </template>
-              <template v-else-if="col.key==='northbound'">
-                <span v-if="p.track.northbound" :class="p.track.northbound.dir==='in'?'up':'down'" :title="p.track.northbound.dir==='in'?'北向(沪深股通)当日净买入':'北向(沪深股通)当日净卖出'">{{p.track.northbound.dir==='in'?'净买':'净卖'}} {{p.track.northbound.pct!=null ? p.track.northbound.pct+'%' : ''}}</span>
-                <span v-else class="muted" title="仅交易时段有北向数据">-</span>
-              </template>
               <template v-else-if="col.key==='valuation_pct_3y'">
                 <span v-if="p.track.valuation_pct_3y!=null" :class="p.track.valuation_pct_3y<30?'up':(p.track.valuation_pct_3y>70?'down':'')" :title="'近3年分位 '+(p.track.valuation_basis==='price'?'（价格分位近似，PE历史接口暂不可用）':'（PE历史分位）')+(p.track.valuation_pe?(' · PE '+p.track.valuation_pe):'')+(p.track.valuation_pb?(' · PB '+p.track.valuation_pb):'')">{{p.track.valuation_pct_3y}}%</span>
                 <span v-else class="muted">-</span>
@@ -889,7 +887,7 @@
               </template>
               <template v-else-if="col.key==='event_risk_tags'">
                 <span v-if="p.track.event_risk_tags && Object.keys(p.track.event_risk_tags).length" class="tag-list">
-                  <span v-for="(v,k) in p.track.event_risk_tags" :key="k" class="pill risk" :title="k">{{k}}</span>
+                  <span v-for="(v,k) in p.track.event_risk_tags" :key="k" class="pill risk clickable-risk" :title="'点击查看「'+k+'」详情'" @click.stop="openEvtRisk(p, k)">{{k}}</span>
                 </span>
                 <span v-else class="muted">无</span>
               </template>
@@ -1251,25 +1249,26 @@
         </div>
       </div>
 
-      <!-- 可投池导入模板说明弹窗 -->
+      <!-- 可投池导入新增弹窗 -->
       <div v-if="importGuideModal.show" class="modal" @click.self="closeImportGuide">
-        <div class="modal-box" style="max-width:520px">
+        <div class="modal-box" style="max-width:560px">
           <div class="modal-head">
-            <h3>导入可投池</h3>
+            <h3>导入新增<span class="dtag">批量加入可投池</span></h3>
             <button type="button" class="close-x" @click="closeImportGuide" aria-label="关闭">×</button>
           </div>
           <div class="modal-body">
-            <p>支持导入 <strong>Excel（.xlsx / .xls）</strong> 或 <strong>CSV（.csv）</strong> 文件。系统会自动识别表头中的「证券代码 / code」和「证券名称 / name」列，并校验证券信息后添加到可投池。</p>
+            <p>支持导入 <strong>Excel（.xlsx / .xls）</strong> 或 <strong>CSV（.csv）</strong> 文件。表头需包含：<b>证券代码（必填）</b>、证券名称（非必填）、标签（非必填）。</p>
             <div style="background:#f3f4f6;border-radius:8px;padding:12px 14px;margin:14px 0">
               <p style="margin:0 0 8px;font-weight:600">导入要求：</p>
               <ul style="margin:0;padding-left:18px;font-size:13px;line-height:1.8;color:#4b5563">
-                <li>至少包含一列证券代码或证券名称；</li>
-                <li>代码列支持 6 位数字（如 300377），名称列支持中文简称；</li>
-                <li>已在可投池中的证券会自动跳过，不会重复添加；</li>
-                <li>无法识别的代码/名称会单独列出失败原因。</li>
+                <li>证券代码：6 位数字，必填（如 300377）；</li>
+                <li>证券名称：非必填，填了会校验是否与代码匹配；</li>
+                <li>标签：非必填，多个标签用「/」或「,」分隔；</li>
+                <li>已在可投池中的证券会自动跳过、不重复导入，也不改动其原有标签；</li>
+                <li>找不到对应市场的代码 / 格式错误会记为导入失败。</li>
               </ul>
             </div>
-            <p class="muted" style="font-size:13px">不确定格式？可先下载模板，按模板填写后导入。</p>
+            <p class="muted" style="font-size:13px">不确定格式？点「下载模板」，填写证券代码后导入即可。</p>
           </div>
           <div class="modal-foot">
             <button type="button" class="ghost" @click="closeImportGuide">取消</button>
@@ -1357,6 +1356,31 @@
           </div>
           <div class="modal-foot">
             <button type="button" class="ghost" @click="closeFinanceRiskModal">关闭</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 可投池事件风险标签详情弹窗 -->
+      <div v-if="evtRiskModal.show" class="modal" @click.self="closeEvtRiskModal">
+        <div class="modal-box" style="max-width:640px">
+          <div class="modal-head">
+            <h3>事件风险详情<span class="dtag">触发依据/公告</span></h3>
+            <button type="button" class="close-x" @click="closeEvtRiskModal" aria-label="关闭">×</button>
+          </div>
+          <div class="modal-body">
+            <div class="kv" style="margin-top:0">
+              <span>{{evtRiskModal.name}} {{evtRiskModal.code}}</span>
+              <b><span class="pill risk">{{evtRiskModal.tag}}</span></b>
+            </div>
+            <div style="margin-top:14px; font-weight:600; color:#374151; margin-bottom:8px">详情 / 触发依据：</div>
+            <div v-for="(item, idx) in evtRiskModal.details" :key="idx" style="display:flex; gap:10px; margin:8px 0; line-height:1.55; align-items:flex-start">
+              <span v-if="item.sentiment" :class="item.sentiment==='bull'?'up':(item.sentiment==='bear'?'down':'muted')" style="flex:0 0 auto; font-weight:700; min-width:32px">{{item.sentiment==='bull'?'利好':(item.sentiment==='bear'?'利空':'中性')}}</span>
+              <span style="color:#374151">{{item.text}} <small v-if="item.time" class="muted" style="margin-left:4px">（{{item.time}}）</small></span>
+            </div>
+            <div v-if="!evtRiskModal.details || !evtRiskModal.details.length" class="muted" style="margin-top:8px">暂无更详细的触发依据</div>
+          </div>
+          <div class="modal-foot">
+            <button type="button" class="ghost" @click="closeEvtRiskModal">关闭</button>
           </div>
         </div>
       </div>
@@ -1961,8 +1985,9 @@ const app = createApp({
     columnSettingModal:{show:false, tableKey:'', title:'', columns:[]},  // 通用自定义列设置弹窗
     adviceModal:{show:false, code:'', name:'', title:'', summary:'', points:[], text:''},  // 可投池操作建议详情弹窗
     financeRiskModal:{show:false, code:'', name:'', summary:'', report_date:'', news:[]},  // 可投池财报风险弹窗(近5日大事/新闻)
+    evtRiskModal:{show:false, code:'', name:'', tag:'', details:[]},  // 可投池事件风险标签详情弹窗(v117)
     columnSettings: (()=>{
-      const currentVer = '20260902-02';
+      const currentVer = '20260904-01';  // v117: 删除北向资金列 → 重置列配置缓存
       const savedVer = localStorage.getItem('columnSettingsVersion');
       if(savedVer !== currentVer){ localStorage.removeItem('columnSettings'); localStorage.setItem('columnSettingsVersion', currentVer); return {}; }
       return JSON.parse(localStorage.getItem('columnSettings')||'{}');
@@ -2164,7 +2189,6 @@ const app = createApp({
           {key:'main_net_pct', label:'主力\n净流入%', width:108, visible:true, frozen:false, sortable:true, help:'主力资金【当日】净流入占成交额比例(%)。正数偏利好(红)，负数偏利空(绿)；当日数据未产生时留空显示-'},
           {key:'main_signal', label:'主力\n信号', width:108, visible:true, frozen:false, sortable:true, help:'基于主力净流入占比与资金流向的简易信号（仅用当日数据）'},
           {key:'big_order_net', label:'大单流向\n(万元)', width:108, visible:true, frozen:false, sortable:true, help:'大单流向(万元)=超大单+大单净额，对齐同花顺「大单流向」口径；正数=净买入(红)，负数=净卖出(绿)。仅取当日数据，未产生时留空显示-'},
-          {key:'northbound', label:'北向\n资金', width:132, visible:true, frozen:false, sortable:true, help:'沪深股通当日净买入方向+占比(%)。仅交易时段有数据，收盘后显示-'},
           {key:'valuation_pct_3y', label:'估值分位\n(近3年)', width:108, visible:true, frozen:false, sortable:true, help:'近3年估值/价格分位(%)。越低越便宜(潜在机会)，越高越贵(注意回落)'},
           {key:'sector_strength', label:'板块\n强度', width:108, visible:true, frozen:false, sortable:true, help:'个股近20日收益相对大盘(上证)强弱：强于大盘/同步/弱于大盘'},
           {key:'event_risk_tags', label:'事件\n风险', width:156, visible:true, frozen:false, sortable:false, help:'近期事件风险标签(业绩亏损/大额减持/股东增持/股价异动公告/商誉高/解禁临近/预亏/ST风险/监管问询/股东质押高)'},
@@ -2399,6 +2423,13 @@ const app = createApp({
       };
     },
     closeFinanceRiskModal(){ this.financeRiskModal={show:false, code:'', name:'', summary:'', report_date:'', news:[]}; },
+    openEvtRisk(p, tagKey){
+      // v117: 事件风险标签点击 → 详情弹窗。value 为详情数组(触发依据/相关公告/新闻)
+      const tagMap = (p && p.track && p.track.event_risk_tags) || {};
+      const details = Array.isArray(tagMap[tagKey]) ? tagMap[tagKey].slice() : [];
+      this.evtRiskModal = {show:true, code:(p&&p.code)||'', name:(p&&p.name)||'', tag:tagKey||'', details};
+    },
+    closeEvtRiskModal(){ this.evtRiskModal={show:false, code:'', name:'', tag:'', details:[]}; },
     colSettingDrop(idx){
       const from = this._dragColIdx;
       if(from==null || from===idx) return;
@@ -3074,9 +3105,17 @@ const app = createApp({
     openBatchTagModal(){ this.batchTagModal={show:true, tag_ids:[], saving:false}; },
     closeBatchTagModal(){ this.batchTagModal={show:false, tag_ids:[], saving:false}; },
     exportPool(){
-      // 导出当前可投池 Excel（证券代码、证券名称）
+      // v117: 导出当前筛选条件下的【全部】数据(所见即所得)；证券代码/名称等复合列已拆开。
+      // 只导出当前可见列(去掉勾选/操作列)，列顺序与表格一致。
       const token = localStorage.getItem('tk') || '';
-      const url = '/api/pool/export';
+      const params = new URLSearchParams();
+      if(this.poolFilter && this.poolFilter.q) params.append('q', this.poolFilter.q.trim());
+      if(this.poolFilter && this.poolFilter.tag) params.append('tag', this.poolFilter.tag);
+      const cols = this.getColumns('pool')
+        .filter(c => c.visible && c.key!=='select' && c.key!=='ops')
+        .map(c => c.key);
+      params.append('cols', cols.join(','));
+      const url = '/api/pool/export?' + params.toString();
       fetch(url, {headers: token ? {Authorization: `Bearer ${token}`,'X-Auth-Token':token} : {}})
         .then(async r => {
           if(!r.ok){
@@ -3093,7 +3132,9 @@ const app = createApp({
         .then(blob => {
           const a = document.createElement('a');
           a.href = URL.createObjectURL(blob);
-          a.download = `可投池_${new Date().toISOString().slice(0,10).replace(/-/g,'')}.xlsx`;
+          const d = new Date();
+          const ds = `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
+          a.download = `可投池_${ds}.xlsx`;
           document.body.appendChild(a);
           a.click();
           setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
@@ -3103,9 +3144,9 @@ const app = createApp({
     openImportGuide(){ this.importGuideModal={show:true}; },
     closeImportGuide(){ this.importGuideModal={show:false}; },
     downloadImportTemplate(){
-      // 下载导入模板 CSV（UTF-8 BOM，Excel 可直接打开）
-      const rows = [['证券代码','证券名称'],['300377','赢时胜'],['002153','石基信息'],['603093','南华期货']];
-      const csv = '\uFEFF' + rows.map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
+      // 下载导入模板 CSV（UTF-8 BOM，Excel 可直接打开）：证券代码(必填)/证券名称/标签
+      const rows = [['证券代码','证券名称','标签'],['300377','赢时胜','短线'],['002153','石基信息',''],['603093','南华期货','短线/期货']];
+      const csv = '\uFEFF' + rows.map(r => r.map(c => `"${String(c==null?'':c).replace(/"/g,'""')}"`).join(',')).join('\n');
       const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
@@ -3128,7 +3169,7 @@ const app = createApp({
         });
         const r = await resp.json();
         if(resp.ok && r && r.ok){
-          this.poolMsg = r.msg || `成功添加 ${(r.added||[]).length} 只`;
+          this.poolMsg = r.msg || `导入成功 ${(r.added||[]).length} 条`;
           this.loadPool();
         } else {
           this.poolMsg = r.detail || '导入失败';
@@ -3136,7 +3177,7 @@ const app = createApp({
       }catch(err){
         this.poolMsg = err.message || '导入失败';
       }
-      setTimeout(()=>{ this.poolMsg=''; }, 4000);
+      setTimeout(()=>{ this.poolMsg=''; }, 5000);
       e.target.value = '';
     },
     toggleModalTag(modalKey, tid){
