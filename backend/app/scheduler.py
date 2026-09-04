@@ -10,7 +10,7 @@ from app.routers.data import run_auto_backup
 from app.services.runner import run_engine
 from app.services.notifier import get_notifier
 from app.services.data_fetcher import ensure_quotes
-from app.services.warmup import start_warmup
+from app.services.warmup import start_warmup, start_pool_page_warm
 
 
 def _notify_user(db, user: User):
@@ -72,5 +72,10 @@ def start_scheduler() -> BackgroundScheduler:
     # 每天 15:35（复盘任务之后）自动整库备份到 data/backups/，保留最近 14 份
     _sched.add_job(run_auto_backup, "cron", hour=15, minute=35, id="daily_backup",
                    misfire_grace_time=3600)
+    # v118: 进程启动即后台预热可投池首页 track 缓存(部署后首个用户打开页面不超时/不空白)
+    try:
+        start_pool_page_warm(delay=4.0)
+    except Exception:
+        pass
     _sched.start()
     return _sched

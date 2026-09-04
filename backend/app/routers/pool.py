@@ -3,7 +3,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 import re as _re
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed, wait
 import io
 from urllib.parse import quote
 
@@ -13,7 +13,7 @@ from fastapi.responses import StreamingResponse
 
 from app.db import SessionLocal, get_db
 from app.deps import get_current_user
-from app.models import PoolTag, SchemeType, Stock, TrackedPool, TrackedPoolTag, User, UserProfile, _now
+from app.models import DailyQuote, PoolTag, SchemeType, Stock, TrackedPool, TrackedPoolTag, User, UserProfile, _now
 from app.schemas import PoolBatchDeleteIn, PoolBatchTagsIn, PoolImportIn, PoolIn, PoolOut, TagIn, TagOut
 from app.services.data_fetcher import ensure_stock_name, get_pool_track, _fetch_intraday_fund, _market_return
 from app.services.preference import match_scheme
@@ -35,6 +35,45 @@ def _name(code: str, db) -> str | None:
 def _industry(code: str, db) -> str:
     s = db.query(Stock).filter(Stock.code == code).first()
     return (s.industry if s and s.industry else "") or "未知"
+
+
+def _seed_from_db(code: str, db) -> dict | None:
+    """v118: 纯 DB 日线秒级播种——冷启动首页绝不空白。
+
+    与 get_pool_track 的核心口径一致:现价/涨跌幅以「日线最新一根」前复权收盘为准
+    (与 MA/箱体同源同口径,避免复权差异),零网络请求。富化线程完成后会用全量
+    track 覆盖;未完成的行至少保留本播种(标 seed_src='db' 供前端辨认)。
+    """
+    try:
+        qs = (db.query(DailyQuote).filter(DailyQuote.code == code)
+              .order_by(DailyQuote.date.desc()).limit(60).all())
+        if not qs:
+            return None
+        qs = qs[::-1]  # 升序:旧→新
+        closes = [q.close for q in qs if q.close]
+        if not closes:
+            return None
+        last = qs[-1]
+        out: dict = {
+            "price": round(last.close, 3),
+            "change_pct": round((last.close - (last.pre_close or last.close)) / (last.pre_close or last.close) * 100, 2)
+                          if last.pre_close else 0.0,
+            "price_date": last.date,
+            "ma5": round(sum(closes[-5:]) / min(5, len(closes)), 3),
+            "ma20": round(sum(closes[-20:]) / min(20, len(closes)), 3),
+            "ts": int(dt.datetime.now().timestamp()),
+            "seed_src": "db",
+        }
+        recent = closes[-20:] if len(closes) >= 20 else closes
+        out["box_high"] = round(max(recent), 3)
+        out["box_low"] = round(min(recent), 3)
+        if out["box_high"] != out["box_low"]:
+            out["box_pos"] = round(max(0.0, min(1.0, (out["price"] - out["box_low"]) / (out["box_high"] - out["box_low"]))), 2)
+        out["above_ma5"] = out["price"] > out["ma5"]
+        out["above_ma20"] = out["price"] > out["ma20"]
+        return out
+    except Exception:
+        return None
 
 
 def _to_out(p: TrackedPool, db) -> PoolOut:
@@ -110,41 +149,61 @@ def list_pool(
     start = (page - 1) * page_size
     page_rows = rows[start:start + page_size]
 
-    # 名称补全 + 「每日跟踪数据」并发拉取:4 只股票同时拉实时+日线,1~2s 完成,
-    # 单只失败不阻塞其他。所有跟踪数据带 60s 内存缓存,重复刷新秒开。
+    # 名称补全 + 「每日跟踪数据」并发拉取:单只失败不阻塞其他。所有跟踪数据带 60s 内存缓存,重复刷新秒开。
     # 传入持仓/成本, 让操作建议能感知止盈/持仓状态。
     tracks: dict[str, dict] = {}
     positions = {p.code: {"cost_price": p.cost_price, "position_qty": p.position_qty} for p in page_rows}
-    # v116: 盘中资金流「一次批量预取」——先打 1 次 push2 拿到本页全部代码的当日资金流
-    # 并写入 120s 缓存，后续每只股票的跟踪计算直接命中缓存，既快又避免逐只请求被限流。
-    try:
-        _fetch_intraday_fund([p.code for p in page_rows])
-    except Exception:
-        pass
-    # v117: 板块强度依赖的大盘收益率「预取一次并缓存」——避免多线程并发 miss 时
-    # 各自请求上证指数失败导致整表 sector 为空(失败结果已改为不缓存)。
-    try:
-        _market_return(20)
-    except Exception:
-        pass
-    with ThreadPoolExecutor(max_workers=min(8, max(2, len(page_rows)))) as ex:
-        track_futs = {ex.submit(get_pool_track, p.code, db, positions.get(p.code)): p.code for p in page_rows}
-        name_futs = {}
-        for p in page_rows:
-            if not _name(p.code, db):
-                name_futs[ex.submit(ensure_stock_name, p.code, db)] = p.code
-        for f in as_completed(track_futs):
-            code = track_futs[f]
+    # v118: 先纯 DB 播种核心行情(现价/MA/箱体,零网络),保证首页绝不空白；
+    # 富化线程完成后逐只覆盖为全量 track。
+    for p in page_rows:
+        _sd = _seed_from_db(p.code, db)
+        if _sd:
+            tracks[p.code] = _sd
+    # v118: 冷启动性能(整页须稳定在网关 ~10s 内)——
+    #   1) 每行一个 worker,避免 15 只挤 10 worker 变成「两轮」导致全部超预算;
+    #   2) 盘中资金流批量预取 + 大盘收益预取也放进同一线程池(预算内),不再串行占用关键路径;
+    #   3) 单只 get_pool_track 传 deadline=7.6s:可选扩展阶段(资金流/估值/板块/标签/财报风险)
+    #      到点即放弃,核心字段(现价/MA/箱体/打分/建议)必回,整页稳定 ~9s 返回。
+    #   4) 块9/块10 的 financials+news 已改为调用内复用(见 data_fetcher.get_pool_track)。
+    if page_rows:
+        ex = ThreadPoolExecutor(max_workers=min(len(page_rows), 20))
+        try:
+            warm_futs: set = set()
             try:
-                tracks[code] = f.result()
-            except Exception:
-                tracks[code] = {}
-        # 名称补全的 future 只需要等结束,结果写到 db 不必回传
-        for f in as_completed(name_futs):
-            try:
-                f.result()
+                warm_futs.add(ex.submit(_fetch_intraday_fund, [p.code for p in page_rows]))
             except Exception:
                 pass
+            try:
+                warm_futs.add(ex.submit(_market_return, 20))
+            except Exception:
+                pass
+            track_futs = {ex.submit(get_pool_track, p.code, db, positions.get(p.code), 7.6): p.code for p in page_rows}
+            name_futs = {}
+            for p in page_rows:
+                if not _name(p.code, db):
+                    name_futs[ex.submit(ensure_stock_name, p.code, db)] = p.code
+            done, _pending = wait(set(track_futs) | set(name_futs) | warm_futs, timeout=8.6)
+            for f in done:
+                if f in track_futs:
+                    code = track_futs[f]
+                    try:
+                        tracks[code] = f.result()
+                    except Exception:
+                        tracks[code] = {}
+            # 未完成的任务：取不到就算了(留给缓存/下次刷新)，不阻塞响应
+            for f in track_futs:
+                if f not in done:
+                    code = track_futs[f]
+                    tracks.setdefault(code, {})
+            for f in name_futs:
+                if f in done:
+                    try:
+                        f.result()
+                    except Exception:
+                        pass
+        finally:
+            # 不等未完成任务：让慢请求在后台自行结束(结果进 60s 缓存，下次刷新秒回)
+            ex.shutdown(wait=False, cancel_futures=False)
 
     result = []
     for p in page_rows:

@@ -36,20 +36,39 @@ def _http_get(url: str, headers: dict | None = None, retries: int = 2) -> str | 
     对状态码非 200 / 连接或协议异常（含 RemoteProtocolError / ConnectError）
     均重试（默认 2 次），并重试前做阶梯退避，避免对免费源瞬间打爆；
     全部失败时返回 None（保留最后一次错误便于排查），不会抛异常。
+
+    v118 快速失败保护：连接被拒 / 域名被 WAF 拦截 / 对端秒断（单次 <1s 即失败）说明
+    源当前不可达，重试只会放大延迟（曾实测单只股票因 3×3 重试退避空转 7s+，拖垮整页）。
+    此类快速失败最多补 1 次即放弃，让调用方立即降级到 DB 缓存/留空；仅对「慢失败」
+    （超时、5xx 等瞬时抖动）保留完整重试。
     """
     h = {"User-Agent": _DEFAULT_UA}
     if headers:
         h.update(headers)
     last_err = None
+    fast_fails = 0
     for attempt in range(retries + 1):
+        _t0 = time.monotonic()
+        fast_fail = False
         try:
             with httpx.Client(headers=h, timeout=_TIMEOUT, follow_redirects=True) as client:
                 r = client.get(url)
                 if r.status_code == 200 and r.text:
                     return r.text
                 last_err = f"HTTP {r.status_code}"
+                # WAF/网关类拦截页(501 等)通常秒回,视同快速失败
+                if time.monotonic() - _t0 < 1.0:
+                    fast_fail = True
         except Exception as e:
             last_err = f"{type(e).__name__}: {e}"
+            if time.monotonic() - _t0 < 1.0:
+                fast_fail = True
+        # 快速失败：最多补 1 次(应对偶发瞬时断连)；慢失败：按阶梯完整重试
+        if fast_fail:
+            fast_fails += 1
+            if fast_fails >= 2:
+                break
+            continue
         # 重试前短暂退避（0.3s / 0.6s ...），降低免费源瞬时抖动导致的失败
         if attempt < retries:
             time.sleep(0.3 * (attempt + 1))
@@ -181,9 +200,10 @@ def _em_note_ok() -> None:
 
 def _fetch_daily_tencent(code: str, days: int) -> list[Quote] | None:
     """腾讯日线（前复权）。返回 [{date, open, close, high, low, volume}] 升序。
-    注意:必须用 ifzq.gtimg.cn(无 web 前缀)——web.ifzq.gtimg.cn 会被腾讯 WAF 501 拦截。"""
+    注意(2026-09-04 实测):必须带 web 前缀——ifzq.gtimg.cn(裸域名)会被腾讯 WAF 501 拦截，
+    web.ifzq.gtimg.cn 正常返回 200。与 _market_return 用同一域名。"""
     mkt = _market_of(code)
-    url = f"https://ifzq.gtimg.cn/appstock/app/fqkline/get?param={mkt}{code},day,,,{days},qfq"
+    url = f"https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param={mkt}{code},day,,,{days},qfq"
     txt = _http_get(url, headers={"Referer": "https://gu.qq.com/"})
     if not txt:
         return None
@@ -1840,11 +1860,10 @@ def _fetch_intraday_fund(codes: list[str]) -> dict[str, dict]:
         url = ("https://push2.eastmoney.com/api/qt/ulist.np/get?secids=" + secids
                + "&fields=f12,f62,f184,f66,f72&invt=2&fltt=2")
         j = None
-        for _ in range(3):
-            j = _em_json(url)
-            if j:
-                break
-            time.sleep(0.4)
+        # v118: push2 偶发「连接级拒绝」(RemoteDisconnected, 快速即断)时，旧逻辑外层 3 次重试
+        # × 内部 _em_json 的 3 次退避，单只最多空转 7s+。_http_get 内部已自带 3 次尝试+退避，
+        # 外层改为单次调用：成功即得，失败即放弃（源不可达时整块 ≤ ~2s，绝不拖慢列表页）。
+        j = _em_json(url)
         diff = (((j or {}).get("data") or {}).get("diff")) or []
         if isinstance(diff, dict):
             diff = list(diff.values())
@@ -2105,7 +2124,20 @@ def _stock_return(quotes: list, days: int = 20) -> float | None:
         return None
 
 
-def get_pool_track(code: str, db, position: dict | None = None) -> dict:
+# ===== get_pool_track 可选扩展阶段的 deadline 门控（v118） =====
+# 单只冷启动全量约 8s（沙箱外源每请求有 0.3~1s 地板成本），而列表页网关约 10s 超时。
+# 给「非核心」的扩展阶段(资金流/估值/板块/事件标签/财报风险)加 deadline：到点即抛内部
+# 异常终止，返回已算好的核心字段(现价/MA/箱体/打分/建议)，保证整页在预算内返回。
+class _DeadlineHit(Exception):
+    """内部信号：单只跟踪的可选阶段已超出 deadline，立即返回已聚合部分。"""
+
+
+def _over_deadline(deadline_ts: float | None) -> bool:
+    """是否已超过 deadline 时间戳（None=不设限）。"""
+    return deadline_ts is not None and time.monotonic() >= deadline_ts
+
+
+def get_pool_track(code: str, db, position: dict | None = None, deadline: float | None = None) -> dict:
     """单只标的的「每日跟踪」数据,供短线可投池表格使用。
 
     返回字段:
@@ -2116,6 +2148,10 @@ def get_pool_track(code: str, db, position: dict | None = None) -> dict:
       - src: 数据源标识(tencent/eastmoney/sina/demo),失败时为空
       - ts: 拉取时间戳(秒),供前端展示「X秒前」
 
+    deadline(v118): 可选秒数预算。超过后跳过剩余「可选扩展阶段」(资金流/估值百分位/
+    板块强度/事件风险标签/财报风险摘要)，只返回已算好的核心字段。列表页传 ~7s 让
+    整页稳定在网关 10s 内；详情/导出可不传(全量)。
+
     失败策略:任意一步失败就返回 {},不抛异常,保证 list_pool 不被单只拖死。
     """
     now = dt.datetime.now().timestamp()
@@ -2124,7 +2160,11 @@ def get_pool_track(code: str, db, position: dict | None = None) -> dict:
         return cached[1]
 
     out: dict = {}
+    # deadline 换算为单调时钟绝对时刻（None=不设限）
+    _dl = (time.monotonic() + deadline) if deadline else None
     try:
+        # ts 提前置位：deadline 中断跳过后端赋值时前端仍能显示「X秒前」
+        out["ts"] = int(now)
         # ===== 数据源口径说明 =====
         # 实时盘口(腾讯 qt.gtimg.cn):价格是「不复权」原始价
         # 日线接口(腾讯 ifzq.gtimg.cn):价格是「前复权」价
@@ -2234,6 +2274,7 @@ def get_pool_track(code: str, db, position: dict | None = None) -> dict:
         #    盘中取 push2 实时，收盘后取当日最后静态数据(优先 push2 定格值；
         #    push2 不可用时回落日级报表 RPT_DMSK_TS_STOCKNEW，且必须 trade_date==今日)。
         #    绝不回落到昨日数据——历史教训：昨日资金流 ÷ 今日成交额 = 方向完全反了。
+        if _over_deadline(_dl): raise _DeadlineHit
         try:
             from datetime import time as _tt
             _bj_now = dt.datetime.now(dt.timezone(dt.timedelta(hours=8)))
@@ -2275,25 +2316,29 @@ def get_pool_track(code: str, db, position: dict | None = None) -> dict:
         except Exception:
             pass
         # 6) 估值百分位（近3年）：优先真实 PE 历史分位；不可用时以近3年价格分位近似
+        if _over_deadline(_dl): raise _DeadlineHit
         try:
             val = _fetch_valuation(code)
-            quotes_long = ensure_quotes(code, days=750)
-            closes_long = [q.close for q in quotes_long if q.close]
-            price_pct = None
-            if len(closes_long) >= 20 and out.get("price"):
-                below = sum(1 for c in closes_long if c <= out["price"])
-                price_pct = round(below / len(closes_long) * 100, 1)
             if val and val.get("pe_pct_3y") is not None:
+                # v118: PE 历史可用时不拉 750 天日线（省 ~1s/只，长日线仅为价格分位兜底用）
                 out["valuation_pct_3y"] = val["pe_pct_3y"]
                 out["valuation_basis"] = "pe"
-            elif price_pct is not None:
-                out["valuation_pct_3y"] = price_pct
-                out["valuation_basis"] = "price"   # 价格分位近似（PE 历史接口暂不可用）
+            else:
+                quotes_long = ensure_quotes(code, days=750)
+                closes_long = [q.close for q in quotes_long if q.close]
+                price_pct = None
+                if len(closes_long) >= 20 and out.get("price"):
+                    below = sum(1 for c in closes_long if c <= out["price"])
+                    price_pct = round(below / len(closes_long) * 100, 1)
+                if price_pct is not None:
+                    out["valuation_pct_3y"] = price_pct
+                    out["valuation_basis"] = "price"   # 价格分位近似（PE 历史接口暂不可用）
             out["valuation_pe"] = (val or {}).get("pe_ttm")
             out["valuation_pb"] = (val or {}).get("pb")
         except Exception:
             pass
         # 7) 板块强度（个股20日收益 vs 大盘）
+        if _over_deadline(_dl): raise _DeadlineHit
         try:
             stock_ret = _stock_return(quotes, 20)
             mkt_ret = _market_return(20)
@@ -2311,9 +2356,29 @@ def get_pool_track(code: str, db, position: dict | None = None) -> dict:
         #    - 新闻命中的标签(大额减持/股东增持/股价异动公告/监管问询/股东质押高) => 匹配的新闻条目
         #    - 财务/解禁启发式标签(业绩亏损/预亏/商誉高/解禁临近/ST风险) => 一条 {text: 触发原因说明}
         #    前端点击标签可弹窗查看详情。
+        #    v118: 块9/块10 原本各自重复拉 financials+news,现改为调用内复用(省 ~0.5-0.9s/只)。
+        _memo_extra: dict = {}
+
+        def _fin1():
+            if "fin" not in _memo_extra:
+                try:
+                    _memo_extra["fin"] = _fetch_financials(code) or None
+                except Exception:
+                    _memo_extra["fin"] = None
+            return _memo_extra["fin"]
+
+        def _news1():
+            if "news" not in _memo_extra:
+                try:
+                    _memo_extra["news"] = _fetch_news(code, 5) or []
+                except Exception:
+                    _memo_extra["news"] = []
+            return _memo_extra["news"]
+
+        if _over_deadline(_dl): raise _DeadlineHit
         try:
             tags: dict = {}
-            fin = _fetch_financials(code)
+            fin = _fin1()
             if fin:
                 if fin.get("net_profit") is not None and fin["net_profit"] < 0:
                     tags["业绩亏损"] = [{"text": "最新报告期净利润为负", "time": (fin.get("report_date") or "")[:10]}]
@@ -2338,7 +2403,7 @@ def get_pool_track(code: str, db, position: dict | None = None) -> dict:
             if "ST" in name or "退" in name:
                 tags["ST风险"] = [{"text": f"证券名称含 {'ST' if 'ST' in name else '退'} 标记，注意退市风险"}]
             # 新闻关键词扫描：命中 tag 时带上触发的新闻详情
-            news = _fetch_news(code, 5) or []
+            news = _news1()
             def _news_detail(kws: list[str]) -> list[dict]:
                 hits = []
                 for n in news:
@@ -2370,8 +2435,9 @@ def get_pool_track(code: str, db, position: dict | None = None) -> dict:
         except Exception:
             pass
         # 10) 财报风险快速标记（3-6字摘要 + 近5日新闻）
+        if _over_deadline(_dl): raise _DeadlineHit
         try:
-            fin = _fetch_financials(code)
+            fin = _fin1()
             summary = "无明显风险"
             reasons = []
             if fin:
@@ -2386,7 +2452,7 @@ def get_pool_track(code: str, db, position: dict | None = None) -> dict:
                         reasons.append("商誉偏高")
             if reasons:
                 summary = "、".join(reasons)[:6]
-            news = _fetch_news(code, 5) or []
+            news = _news1()
             out["finance_risk"] = {
                 "summary": summary,
                 "report_date": (fin or {}).get("report_date"),

@@ -81,3 +81,49 @@ def start_warmup() -> dict:
 def warmup_status() -> dict:
     with _LOCK:
         return dict(_WARMUP_STATE)
+
+
+def start_pool_page_warm(delay: float = 4.0) -> dict:
+    """v118: 服务启动后后台预热「可投池首页 15 只」的 track 富化缓存。
+
+    背景:单只冷启动富化 ~7s(沙箱/云端外源每请求有 0.3~1s 地板成本),一页 15 只在
+    ~9s 网关预算内填不满,表现为部署后首个用户打开可投池页面超时/空白/字段缺失。
+    本函数在进程起来后立即于后台跑一轮 get_pool_track(deadline 放宽到 9s),把
+    _POOL_TRACK_CACHE 等模块级缓存预热,用户到达时页面 0.8s 秒回。
+    预热选「池子最大用户(通常 admin)」去重后的前 15 只(与 list_pool 首页口径一致)。
+    """
+    def _run() -> None:
+        import time as _t
+        _t.sleep(delay)  # 让 uvicorn 先完成启动对外服务,预热在后台跑
+        db = SessionLocal()
+        codes: list[str] = []
+        try:
+            from app.models import TrackedPool
+            users: dict[int, dict] = {}
+            for p in db.query(TrackedPool).filter(
+                    (TrackedPool.status == "active") |
+                    ((TrackedPool.status == "archive") & (TrackedPool.position_qty > 0))).all():
+                users.setdefault(p.user_id, {}).setdefault(p.code, p)
+            if users:
+                uid = max(users, key=lambda u: len(users[u]))  # 池子最大的用户
+                codes = [p.code for p in list(users[uid].values())[:15]]
+        finally:
+            db.close()
+        if not codes:
+            return
+        from app.services.data_fetcher import get_pool_track
+        db2 = SessionLocal()
+        try:
+            with ThreadPoolExecutor(max_workers=min(10, len(codes))) as ex:
+                futs = [ex.submit(get_pool_track, c, db2, None, 9.0) for c in codes]
+                for f in futs:
+                    try:
+                        f.result()
+                    except Exception:
+                        pass
+        finally:
+            db2.close()
+
+    threading.Thread(target=_run, daemon=True).start()
+    return {"ok": True, "msg": "可投池首页 track 预热已启动(后台)"}
+
