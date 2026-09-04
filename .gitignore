@@ -38,6 +38,12 @@ _dl_test.json
 /_*.txt
 /_*.json
 /_*.py
+# 一次性调试响应残留（如 /api/pool 冒烟输出）
+/pool_out.json
+/pool_*.json
+# 访问清单导出脚本与产物（一次性交付物，非应用代码）
+/gen_access_xlsx.py
+/网站访问清单.xlsx
 /_chk_*.js
 /_chk_*.mjs
 /_chk_*.py

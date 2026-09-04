@@ -15,7 +15,7 @@ from app.db import SessionLocal, get_db
 from app.deps import get_current_user
 from app.models import PoolTag, SchemeType, Stock, TrackedPool, TrackedPoolTag, User, UserProfile, _now
 from app.schemas import PoolBatchDeleteIn, PoolBatchTagsIn, PoolImportIn, PoolIn, PoolOut, TagIn, TagOut
-from app.services.data_fetcher import ensure_stock_name, get_pool_track
+from app.services.data_fetcher import ensure_stock_name, get_pool_track, _fetch_intraday_fund
 from app.services.preference import match_scheme
 from app.services.screener import get_screener
 from sqlalchemy import or_
@@ -115,6 +115,12 @@ def list_pool(
     # 传入持仓/成本, 让操作建议能感知止盈/持仓状态。
     tracks: dict[str, dict] = {}
     positions = {p.code: {"cost_price": p.cost_price, "position_qty": p.position_qty} for p in page_rows}
+    # v116: 盘中资金流「一次批量预取」——先打 1 次 push2 拿到本页全部代码的当日资金流
+    # 并写入 120s 缓存，后续每只股票的跟踪计算直接命中缓存，既快又避免逐只请求被限流。
+    try:
+        _fetch_intraday_fund([p.code for p in page_rows])
+    except Exception:
+        pass
     with ThreadPoolExecutor(max_workers=min(8, max(2, len(page_rows)))) as ex:
         track_futs = {ex.submit(get_pool_track, p.code, db, positions.get(p.code)): p.code for p in page_rows}
         name_futs = {}

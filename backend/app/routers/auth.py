@@ -6,10 +6,12 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from app.db import SessionLocal
-from app.models import User, AccessLog, _now
+from app.models import User, AccessLog, TrackedPool, _now
 from app.schemas import LoginIn, LoginOut, PasswordChange, PasswordResetIn
 from app.security import verify_password, make_token, hash_password
 from app.deps import get_current_user
+from pydantic import BaseModel
+from typing import Optional, List
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -238,5 +240,55 @@ def reset_password(uid: int, body: PasswordResetIn, user: User = Depends(get_cur
         u.must_change_pw = True
         db.commit()
         return {"ok": True}
+    finally:
+        db.close()
+
+
+class _PoolRestore(BaseModel):
+    code: str
+    added_at: Optional[str] = None
+    note: str = ""
+    cost_price: Optional[float] = None
+    position_qty: Optional[float] = None
+    position_pct: Optional[float] = None
+    scheme_type: str = "custom"
+    status: str = "active"
+
+
+class RestoreUserIn(BaseModel):
+    """从备份导出的单用户结构还原（精确恢复被删账号及其个人数据）。"""
+    username: str
+    role: str = "user"
+    is_guest: bool = False
+    password_hash: str
+    salt: str
+    is_active: bool = True
+    created_at: Optional[str] = None
+    last_login_at: Optional[str] = None
+    last_ip: Optional[str] = None
+    tracked_pool: List[_PoolRestore] = []
+
+
+@router.post("/admin-restore-user")
+def admin_restore_user(body: RestoreUserIn, user: User = Depends(get_current_user)):
+    """管理员专用：从备份结构精确恢复一个被硬删除的账号（含其可投池等个人数据）。"""
+    _require_admin(user)
+    db = SessionLocal()
+    try:
+        if db.query(User).filter(User.username == body.username).first():
+            raise HTTPException(status_code=400, detail="账号已存在，无需恢复")
+        u = User(username=body.username, password_hash=body.password_hash, salt=body.salt,
+                 role=body.role, is_guest=body.is_guest, is_active=body.is_active,
+                 created_at=body.created_at or _now(),
+                 last_login_at=body.last_login_at, last_ip=body.last_ip)
+        db.add(u)
+        db.flush()  # 取回自增 id
+        for p in body.tracked_pool:
+            db.add(TrackedPool(user_id=u.id, code=p.code, added_at=p.added_at or _now(),
+                               note=p.note, cost_price=p.cost_price, position_qty=p.position_qty,
+                               position_pct=p.position_pct, scheme_type=p.scheme_type, status=p.status))
+        db.commit()
+        db.refresh(u)
+        return {"ok": True, "id": u.id, "username": u.username, "restored_pool": len(body.tracked_pool)}
     finally:
         db.close()

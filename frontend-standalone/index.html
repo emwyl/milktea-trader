@@ -290,7 +290,7 @@
   .tracktbl tbody td{padding:6px 3px;border-bottom:1px solid #f3f4f6;vertical-align:middle;white-space:nowrap}
   .tracktbl tbody tr:hover{background:#f8fafc}
   .tracktbl tbody tr.editing-row{background:#eff6ff}
-  .tracktbl tbody tr.selected-row{background:#eff6ff}
+  .tracktbl tbody tr.selected-row{background:#dbeafe}
   /* 可投池单元格：保留左右内边距，避免列与列之间内容黏在一起 */
   .tracktbl.pool-tbl thead th{padding:8px 5px 6px}
   .tracktbl.pool-tbl tbody td{padding:6px 5px}
@@ -300,13 +300,13 @@
   .tracktbl.pool-tbl thead th.frozen{z-index:5;background:#f9fafb}
   .tracktbl.pool-tbl tbody td.frozen{background:#fff}
   .tracktbl.pool-tbl tbody tr:hover td.frozen{background:#f8fafc}
-  .tracktbl.pool-tbl tbody tr.selected-row td.frozen{background:#eff6ff}
+  .tracktbl.pool-tbl tbody tr.selected-row td.frozen{background:#dbeafe}
   .tracktbl thead th:last-child,
   .tracktbl tbody td:last-child{position:sticky;right:0;z-index:3;border-left:2px solid #d1d5db}
   .tracktbl thead th:last-child{z-index:5;background:#f9fafb}
   .tracktbl tbody td:last-child{background:#fff}
   .tracktbl tbody tr:hover td:last-child{background:#f8fafc}
-  .tracktbl tbody tr.selected-row td:last-child{background:#eff6ff}
+  .tracktbl tbody tr.selected-row td:last-child{background:#dbeafe}
   /* 可投池表头：可排序列交互（hover 提示、激活列高亮、箭头方向） */
   .tracktbl.pool-tbl thead th.sortable{cursor:pointer;user-select:none;transition:background .15s}
   .tracktbl.pool-tbl thead th.sortable:hover{background:#f3f4f6}
@@ -341,7 +341,7 @@
   .tracktbl.admin-user-tbl thead th:nth-child(-n+7){z-index:5;background:#f9fafb}
   .tracktbl.admin-user-tbl tbody td:nth-child(-n+7){background:#fff}
   .tracktbl.admin-user-tbl tbody tr:hover td:nth-child(-n+7){background:#f8fafc}
-  .tracktbl.admin-user-tbl tbody tr.selected-row td:nth-child(-n+7){background:#eff6ff}
+  .tracktbl.admin-user-tbl tbody tr.selected-row td:nth-child(-n+7){background:#dbeafe}
   .tracktbl.admin-user-tbl th:nth-child(1),.tracktbl.admin-user-tbl td:nth-child(1){left:0;width:50px;min-width:50px;max-width:50px}
   .tracktbl.admin-user-tbl th:nth-child(2),.tracktbl.admin-user-tbl td:nth-child(2){left:50px;width:120px;min-width:120px;max-width:120px}
   .tracktbl.admin-user-tbl th:nth-child(3),.tracktbl.admin-user-tbl td:nth-child(3){left:170px;width:80px;min-width:80px;max-width:80px}
@@ -514,7 +514,7 @@
     <header>
       <h1>🧋 加油赚奶茶钱</h1>
       <span class="sub">个人学习用 · 先控风险再谈收益</span>
-      <span class="version" id="appVersion">v20260903115</span>
+      <span class="version" id="appVersion">v20260904116</span>
       <button class="ghost auto-refresh-btn" :class="{active:autoRefresh}" @click="toggleAutoRefresh" :title="autoRefresh?'自动刷新开启中，每5秒更新当前页面数据':'点击开启每5秒自动刷新'">
         {{autoRefresh?'⏸':'▶'}} 自动 5s
       </button>
@@ -866,14 +866,14 @@
                 <span v-else class="muted">-</span>
               </template>
               <template v-else-if="col.key==='main_net_pct'">
-                <span :class="ui.classOf(p.track.main_net_pct)" :title="p.track.main_net_pct!=null?'主力资金当日净流入占比(%)':'仅交易时段有数据'">{{p.track.main_net_pct!=null ? p.track.main_net_pct+'%' : '-'}}</span>
+                <span :class="ui.classOf(p.track.main_net_pct)" :title="p.track.main_net_pct!=null?'主力资金当日净流入占比(%)':'当日资金流数据尚未产生，留空'">{{p.track.main_net_pct!=null ? p.track.main_net_pct+'%' : '-'}}</span>
               </template>
               <template v-else-if="col.key==='main_signal'">
                 <span v-if="p.track.main_signal" :class="(p.track.main_signal.level==='strong_bull'||p.track.main_signal.level==='bull')?'up':((p.track.main_signal.level==='strong_bear'||p.track.main_signal.level==='bear')?'down':'muted')">{{p.track.main_signal.text}}</span>
                 <span v-else class="muted">-</span>
               </template>
               <template v-else-if="col.key==='big_order_net'">
-                <span :class="ui.classOf(p.track.big_order_net)" :title="p.track.big_order_net!=null?'大单近流向(万元)，正数净买入/负数净卖出':'仅交易时段有数据'">{{p.track.big_order_net!=null ? p.track.big_order_net : '-'}}</span>
+                <span :class="ui.classOf(p.track.big_order_net)" :title="p.track.big_order_net!=null?'大单流向(万元)：超大单+大单净额，正数净买入/负数净卖出':'当日资金流数据尚未产生，留空'">{{p.track.big_order_net!=null ? p.track.big_order_net : '-'}}</span>
               </template>
               <template v-else-if="col.key==='northbound'">
                 <span v-if="p.track.northbound" :class="p.track.northbound.dir==='in'?'up':'down'" :title="p.track.northbound.dir==='in'?'北向(沪深股通)当日净买入':'北向(沪深股通)当日净卖出'">{{p.track.northbound.dir==='in'?'净买':'净卖'}} {{p.track.northbound.pct!=null ? p.track.northbound.pct+'%' : ''}}</span>
@@ -2161,9 +2161,9 @@ const app = createApp({
           {key:'box_pos', label:'箱体位置', width:117, visible:true, frozen:false, sortable:true, help:'当前价在近20日高低点区间位置。<25%接近下沿，超跌反弹机会；25%-75%震荡中枢；>75%接近上沿，注意回落'},
           {key:'pct_5d', label:'5日\n涨跌幅', width:96, visible:true, frozen:false, sortable:true, help:'近5个交易日累计涨跌幅(%)'},
           {key:'gap', label:'跳空\n缺口', width:132, visible:true, frozen:false, sortable:true, help:'今日开盘相对昨日高低点的跳空。向上缺口=强势信号；向下缺口=弱势/风险'},
-          {key:'main_net_pct', label:'主力\n净流入%', width:108, visible:true, frozen:false, sortable:true, help:'主力资金当日净流入占成交额比例(%)。正数偏利好(红)，负数偏利空(绿)'},
-          {key:'main_signal', label:'主力\n信号', width:108, visible:true, frozen:false, sortable:true, help:'基于主力净流入占比与大单流向的简易信号'},
-          {key:'big_order_net', label:'大单流向\n(万元)', width:108, visible:true, frozen:false, sortable:true, help:'大单近流向(万元)。正数=大单净买入(红)，负数=大单净卖出(绿)'},
+          {key:'main_net_pct', label:'主力\n净流入%', width:108, visible:true, frozen:false, sortable:true, help:'主力资金【当日】净流入占成交额比例(%)。正数偏利好(红)，负数偏利空(绿)；当日数据未产生时留空显示-'},
+          {key:'main_signal', label:'主力\n信号', width:108, visible:true, frozen:false, sortable:true, help:'基于主力净流入占比与资金流向的简易信号（仅用当日数据）'},
+          {key:'big_order_net', label:'大单流向\n(万元)', width:108, visible:true, frozen:false, sortable:true, help:'大单流向(万元)=超大单+大单净额，对齐同花顺「大单流向」口径；正数=净买入(红)，负数=净卖出(绿)。仅取当日数据，未产生时留空显示-'},
           {key:'northbound', label:'北向\n资金', width:132, visible:true, frozen:false, sortable:true, help:'沪深股通当日净买入方向+占比(%)。仅交易时段有数据，收盘后显示-'},
           {key:'valuation_pct_3y', label:'估值分位\n(近3年)', width:108, visible:true, frozen:false, sortable:true, help:'近3年估值/价格分位(%)。越低越便宜(潜在机会)，越高越贵(注意回落)'},
           {key:'sector_strength', label:'板块\n强度', width:108, visible:true, frozen:false, sortable:true, help:'个股近20日收益相对大盘(上证)强弱：强于大盘/同步/弱于大盘'},

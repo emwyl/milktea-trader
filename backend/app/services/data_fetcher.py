@@ -1774,14 +1774,15 @@ def _em_json(url: str):
 
 
 def _fetch_capital_flow(code: str) -> dict | None:
-    """主力/大单资金流（真实数据，东方财富数据中心日级资金流报表 RPT_DMSK_TS_STOCKNEW）。
+    """主力/大单资金流（东方财富数据中心【日级】资金流报表 RPT_DMSK_TS_STOCKNEW）。
 
-    之所以用 datacenter-web 而非 push2 实时接口：push2 在本机/部分部署环境被网络掐断
-    （RemoteDisconnected），而 datacenter-web 可达；该报表在交易时段与收盘后均可取，
-    返回个股当日主力净流入净额、超大单/大单流入流出等真实数据。
+    ⚠️ 重要口径（v116 修正）：该报表是「日级、收盘后落地」的，盘中查不到当日行——
+    实测 2026-09-04 盘中查询最新行仍为 2026-09-03。因此调用方必须用 trade_date
+    与「当日」比对后才能使用，否则会出现「昨天的资金流 ÷ 今天的成交额」的错值
+    （历史上曾因此把跌停股显示成"主力流入 8.59%"）。
 
-    返回字段(均为元): main_net=主力净流入净额, xl_net=超大单净流入净额, l_net=大单净流入净额。
-    主力净流入占比(%) 由调用方用 main_net / 当日成交额 计算（见 get_pool_track 区块 3）。"""
+    返回字段(均为元): main_net=主力净流入净额, xl_net=超大单净额, l_net=大单净额,
+    trade_date=该行所属交易日(YYYY-MM-DD)。"""
     url = ("https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_DMSK_TS_STOCKNEW"
            f"&columns=ALL&filter=(SECURITY_CODE%3D%22{code}%22)&pageSize=2"
            "&sortColumns=TRADE_DATE&sortTypes=-1")
@@ -1802,6 +1803,78 @@ def _fetch_capital_flow(code: str) -> dict | None:
         "l_net": b_in - b_out,                           # 大单净流入净额(元)
         "trade_date": (r.get("TRADE_DATE") or "")[:10],
     }
+
+
+# 盘中资金流缓存：code -> (ts, rec)，TTL 120s（避免刷新页面反复打 push2）
+_FUND_INTRADAY_TTL = 120.0
+_FUND_INTRADAY_CACHE: dict[str, tuple[float, dict]] = {}
+
+
+def _fetch_intraday_fund(codes: list[str]) -> dict[str, dict]:
+    """【当日盘中】资金流（东财 push2 ulist 批量接口，一次最多 40 只）。
+
+    字段口径（单位：元，带符号）：
+      f62  = 主力净流入净额 = 超大单 + 大单（对齐同花顺"大单流向"口径）
+      f184 = 主力净流入占当日成交额比例(%)，东财官方口径
+      f66  = 超大单净额      f72 = 大单净额（不含超大单）
+
+    push2 在部分网络环境会间歇性 RemoteDisconnected，故带 3 次重试；
+    仍失败则返回 {}（调用方据此留空，绝不回落到"昨日"数据）。
+    """
+    codes = [c for c in dict.fromkeys(codes or []) if c]
+    if not codes:
+        return {}
+    now = time.time()
+    out: dict[str, dict] = {}
+    todo: list[str] = []
+    for c in codes:
+        hit = _FUND_INTRADAY_CACHE.get(c)
+        if hit and (now - hit[0]) < _FUND_INTRADAY_TTL:
+            out[c] = hit[1]
+        else:
+            todo.append(c)
+    for i in range(0, len(todo), 40):
+        chunk = todo[i:i + 40]
+        secids = ",".join(_secid(c) for c in chunk)
+        url = ("https://push2.eastmoney.com/api/qt/ulist.np/get?secids=" + secids
+               + "&fields=f12,f62,f184,f66,f72&invt=2&fltt=2")
+        j = None
+        for _ in range(3):
+            j = _em_json(url)
+            if j:
+                break
+            time.sleep(0.4)
+        diff = (((j or {}).get("data") or {}).get("diff")) or []
+        if isinstance(diff, dict):
+            diff = list(diff.values())
+        for it in diff:
+            if not isinstance(it, dict):
+                continue
+            code = str(it.get("f12") or "")
+            main_net = _as_float(it.get("f62"))
+            if not code or main_net is None:
+                continue
+            rec = {
+                "main_net": main_net,                    # 主力(超大单+大单)净额
+                "main_pct": _as_float(it.get("f184")),   # 主力净流入占比(%)
+                "xl_net": _as_float(it.get("f66")),      # 超大单净额
+                "l_net": _as_float(it.get("f72")),       # 大单净额(不含超大单)
+            }
+            _FUND_INTRADAY_CACHE[code] = (now, rec)
+            out[code] = rec
+    return out
+
+
+def _pct_of_amount(net, quotes) -> float | None:
+    """净额(元) / 当日成交额 * 100。成交额取日线最新一根(即当日)，缺失时按量*价兜底。"""
+    if net is None or not quotes:
+        return None
+    amount = (quotes[-1].amount if quotes else 0) or 0.0
+    if amount <= 0:
+        amount = (quotes[-1].volume or 0) * 100 * (quotes[-1].close or 0)
+    if amount <= 0:
+        return None
+    return round(net / amount * 100, 2)
 
 
 def _fetch_northbound_map() -> dict:
@@ -2164,31 +2237,45 @@ def get_pool_track(code: str, db, position: dict | None = None) -> dict:
                         out["gap"] = {"dir": "flat", "amp": 0.0, "text": "无缺口"}
         except Exception:
             pass
-        # 3) 主力资金净流入占比(%) + 4) 主力资金简易信号 + 5) 大单近流向(万元)
+        # 3) 主力资金净流入占比(%) + 4) 主力资金简易信号 + 5) 大单流向(万元)
+        #    口径(v116)：【只取当日】——盘中用 push2 实时资金流；实时源不可用时回落
+        #    日级报表，且该报表行必须是当日(收盘后才有)。当日非交易日、或当日数据
+        #    尚未产生时，三列一律留空 None（前端显示 "-"，提示"仅交易时段有数据"）。
+        #    绝不回落到昨日数据——历史教训：昨日资金流 ÷ 今日成交额 = 方向完全反了。
         try:
-            cf = _fetch_capital_flow(code)
-            if cf and cf.get("main_net") is not None:
-                # 主力净流入占比 = 主力净流入净额 / 当日成交额；成交额取日线最新一根(amount)
-                amount = (quotes[-1].amount if quotes else 0) or 0.0
-                if amount <= 0 and quotes:
-                    # 兜底估算：成交量(手)*100*收盘价
-                    amount = (quotes[-1].volume or 0) * 100 * (quotes[-1].close or 0)
-                main_net_pct = round(cf["main_net"] / amount * 100, 2) if amount else None
-                out["main_net_pct"] = main_net_pct
-                l_net_wan = round(cf["l_net"] / 1e4, 1) if cf.get("l_net") is not None else None
-                out["big_order_net"] = l_net_wan  # 万元（带符号）
-                pct = main_net_pct or 0.0
-                l_net = cf.get("l_net") or 0.0
-                if pct > 3 and l_net > 0:
-                    out["main_signal"] = {"level": "strong_bull", "text": "主力大幅流入"}
-                elif pct > 0:
-                    out["main_signal"] = {"level": "bull", "text": "主力流入"}
-                elif pct < -3 and l_net < 0:
-                    out["main_signal"] = {"level": "strong_bear", "text": "主力大幅流出"}
-                elif pct < 0:
-                    out["main_signal"] = {"level": "bear", "text": "主力流出"}
+            _bj_now = dt.datetime.now(dt.timezone(dt.timedelta(hours=8)))
+            _today = _bj_now.strftime("%Y-%m-%d")
+            _last_date = str((quotes[-1].date if quotes else "") or "")[:10]
+            # 今天有日线 => 今天是交易日；日线缺失时退化为工作日判断
+            _is_trading_today = (_last_date == _today) if _last_date else (_bj_now.weekday() < 5)
+            if _is_trading_today:
+                _fund = _fetch_intraday_fund([code]).get(code)
+                _main_pct = _big_net = None
+                if _fund and _fund.get("main_net") is not None:
+                    _main_pct = _fund.get("main_pct")
+                    _big_net = _fund.get("main_net")   # 对齐同花顺"大单流向"：超大单+大单
+                    if _main_pct is None:
+                        _main_pct = _pct_of_amount(_fund.get("main_net"), quotes)
                 else:
-                    out["main_signal"] = {"level": "flat", "text": "主力均衡"}
+                    _cf = _fetch_capital_flow(code)
+                    if _cf and _cf.get("trade_date") == _today and _cf.get("main_net") is not None:
+                        _main_pct = _pct_of_amount(_cf.get("main_net"), quotes)
+                        _big_net = _cf.get("main_net")
+                if _main_pct is not None:
+                    out["main_net_pct"] = round(_main_pct, 2)
+                    out["big_order_net"] = round(_big_net / 1e4, 1) if _big_net is not None else None
+                    _pctv = out["main_net_pct"] or 0.0
+                    _bnv = _big_net or 0.0
+                    if _pctv > 3 and _bnv > 0:
+                        out["main_signal"] = {"level": "strong_bull", "text": "主力大幅流入"}
+                    elif _pctv > 0:
+                        out["main_signal"] = {"level": "bull", "text": "主力流入"}
+                    elif _pctv < -3 and _bnv < 0:
+                        out["main_signal"] = {"level": "strong_bear", "text": "主力大幅流出"}
+                    elif _pctv < 0:
+                        out["main_signal"] = {"level": "bear", "text": "主力流出"}
+                    else:
+                        out["main_signal"] = {"level": "flat", "text": "主力均衡"}
         except Exception:
             pass
         # 6) 估值百分位（近3年）：优先真实 PE 历史分位；不可用时以近3年价格分位近似
