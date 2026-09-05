@@ -516,7 +516,7 @@
     <header>
       <h1>🧋 加油赚奶茶钱</h1>
       <span class="sub">个人学习用 · 先控风险再谈收益</span>
-      <span class="version" id="appVersion">v20260904124</span>
+      <span class="version" id="appVersion">v20260904125</span>
       <button class="ghost auto-refresh-btn" :class="{active:autoRefresh}" @click="toggleAutoRefresh" :title="autoRefresh?'自动刷新开启中，每5秒更新当前页面数据':'点击开启每5秒自动刷新'">
         {{autoRefresh?'⏸':'▶'}} 自动 5s
       </button>
@@ -2133,7 +2133,18 @@ const app = createApp({
     // 可投池当前生效的列配置（已按 order 排序）
     activePoolColumns(){ return this.getColumns('pool'); },
     // 可投池实际可见列（避免 v-for 与 v-if 同元素导致 Vue3 渲染异常）
-    visiblePoolColumns(){ return (this.activePoolColumns||[]).filter(c=>c.visible); },
+    visiblePoolColumns(){
+      // #66 云端空值处理：pe_ttm/pb/pe_pct_3y/net_profit_yoy/revenue_yoy/report_date/goodwill/next_ratio/next_date
+      // 来自外部免费源(腾讯qt/东财datacenter)，云端白名单仅放行 kline 主机→取不到；
+      // 这些列配置为「有数才显示」，取不到时整列隐藏（不显示 -）。total_score 为本地算分，始终显示。
+      const conditional = {pe_ttm:1,pb:1,pe_pct_3y:1,net_profit_yoy:1,revenue_yoy:1,report_date:1,goodwill:1,next_ratio:1,next_date:1};
+      const pools = this.pool || [];
+      return (this.activePoolColumns||[]).filter(c=>{
+        if(!c.visible) return false;
+        if(!conditional[c.key]) return true;
+        return pools.some(p=>{ const v = p && p.track ? p.track[c.key] : null; return v!=null && v!=='' && v!=='-'; });
+      });
+    },
     // 可投池可见列的冻结 left 与宽度汇总
     poolColMetrics(){
       const cols = this.visiblePoolColumns;
@@ -3284,7 +3295,7 @@ const app = createApp({
       return parts.length ? parts.join('，') : '全部';
     },
     visiblePoolColCount(){
-      return this.getColumns('pool').filter(c => c.visible && c.key!=='select' && c.key!=='ops').length;
+      return this.visiblePoolColumns.filter(c => c.key!=='select' && c.key!=='ops').length;
     },
     doExportPool(){
       // v117: 导出当前筛选条件下的【全部】数据(所见即所得)；只导出当前可见列(去掉勾选/操作列)。

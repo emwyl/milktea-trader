@@ -2492,6 +2492,34 @@ def get_pool_track(code: str, db, position: dict | None = None, deadline: float 
         except Exception:
             pass
 
+        # 11) #66 估值/财报/解禁字段直挂 track（供可投池表格 10 列读取）
+        #     本地走腾讯 qt / 东财 datacenter 免费源；云端沙箱白名单仅放行 kline 主机，
+        #     外部源被拦截→字段为 None，前端对 conditional 列自动整列隐藏（不显示 -）。
+        try:
+            v = _fetch_valuation(code) or {}
+            if v.get("pe_ttm") is not None:
+                out["pe_ttm"] = v["pe_ttm"]
+            if v.get("pb") is not None:
+                out["pb"] = v["pb"]
+            if v.get("pe_pct_3y") is not None:
+                out["pe_pct_3y"] = v["pe_pct_3y"]
+            fin = _fetch_financials(code) or {}
+            if fin.get("net_profit_yoy") is not None:
+                out["net_profit_yoy"] = fin["net_profit_yoy"]
+            if fin.get("revenue_yoy") is not None:
+                out["revenue_yoy"] = fin["revenue_yoy"]
+            if fin.get("report_date"):
+                out["report_date"] = fin["report_date"]
+            if fin.get("goodwill") is not None:
+                out["goodwill"] = fin["goodwill"]
+            unl = _fetch_unlock(code) or {}
+            if unl.get("next_date"):
+                out["next_date"] = unl["next_date"]
+            if unl.get("next_ratio") is not None:
+                out["next_ratio"] = unl["next_ratio"]
+        except Exception:
+            pass
+
         out["ts"] = int(now)
     except Exception:
         # 任意异常都吞掉,返回当前已聚合的部分(可能为空)
