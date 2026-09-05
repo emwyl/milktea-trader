@@ -1898,24 +1898,51 @@ def _pct_of_amount(net, quotes) -> float | None:
 
 
 def _fetch_valuation(code: str) -> dict | None:
-    """近3年 PE/PB 历史百分位 + 当前 PE/PB（真实数据，东方财富估值分析页）。"""
+    """当前 PE(TTM)/PB + 近3年 PE 历史分位。
+
+    数据源兜底（v123, 2026-09-05）：云端部署沙箱仅能连通腾讯(qt.gtimg.cn /
+    web.ifzq.gtimg.cn / push2his)，东财 push2 / emweb / datacenter-web 均被拦截或
+    接口已废弃(reportName 全部返回「报表配置不存在」)。因此：
+      - pe_ttm: 优先腾讯 qt.gtimg.cn（云端可达），兜底东财 push2（仅本地可达）。
+      - pb:     腾讯 qt.gtimg.cn 当前响应不含市净率字段，仅东财 push2 兜底（本地可达）。
+      - pe_pct_3y: 东财 emweb 估值历史（仅本地可达，云端留空）。
+    """
     market = "SH" if _market_of(code) == "sh" else ("SZ" if _market_of(code) == "sz" else "BJ")
     secid = _secid(code)
     cached = _VALUATION_CACHE.get(code)
     if cached and (time.time() - cached.get("_t", 0)) < 3600:
         return cached
     out: dict = {}
-    # 当前 PE/PB
+    # 当前 PE(TTM)/PB —— 优先腾讯(云端可达)，兜底东财 push2(本地)
+    # 1) 腾讯 qt.gtimg.cn: f[39]=市盈率TTM, f[40]=市净率(部分品种缺失)
     try:
-        url = (f"https://push2.eastmoney.com/api/qt/stock/get?secid={secid}"
-               f"&fields=f162,f167&invt=2&ut=fa5fd194d4d9e83cfbfd4f3f3b5f1c5")
-        j = _em_json(url)
-        if j and isinstance(j.get("data"), dict):
-            out["pe_ttm"] = _as_float(j["data"].get("f162"))
-            out["pb"] = _as_float(j["data"].get("f167"))
+        mkt = _market_of(code)
+        txt = _http_get(f"https://qt.gtimg.cn/q={mkt}{code}",
+                        headers={"Referer": "https://gu.qq.com/"})
+        if txt and "=" in txt:
+            f = txt.split("=", 1)[1].strip().strip('";\n').split("~")
+            pe = _as_float(f[39]) if len(f) > 39 else None
+            pb = _as_float(f[40]) if len(f) > 40 else None
+            if pe:
+                out["pe_ttm"] = pe
+            if pb:
+                out["pb"] = pb
     except Exception:
         pass
-    # 近3年 PE 历史，算当前 PE 分位
+    # 2) 东财 push2 兜底(本地可达；云端 push2 被拦截时跳过)
+    if "pe_ttm" not in out or "pb" not in out:
+        try:
+            url = (f"https://push2.eastmoney.com/api/qt/stock/get?secid={secid}"
+                   f"&fields=f162,f167&invt=2&ut=fa5fd194d4d9e83cfbfd4f3f3b5f1c5")
+            j = _em_json(url)
+            if j and isinstance(j.get("data"), dict):
+                if "pe_ttm" not in out:
+                    out["pe_ttm"] = _as_float(j["data"].get("f162"))
+                if "pb" not in out:
+                    out["pb"] = _as_float(j["data"].get("f167"))
+        except Exception:
+            pass
+    # 近3年 PE 历史分位(东财 emweb, 仅本地可达；云端 emweb 被拦截→留空)
     try:
         vurl = (f"https://emweb.securities.eastmoney.com/PC_HSF10/ValuationAnalysis/"
                 f"PageAjax?code={market}{code}&type=0&isforettm=0")
@@ -2176,8 +2203,8 @@ def get_pool_track(code: str, db, position: dict | None = None, deadline: float 
             # 实时指标(日内活跃度,与除权无关)
             out["vol_ratio"] = round(spot.get("vol_ratio", 0), 2)
             out["turnover"] = round(spot.get("turnover", 0), 2)
-            # 当天实时成交量(万手) - volume_wan 已在 _fetch_spot_xxx 三个函数内部归一化好
-            out["realtime_volume"] = round(spot.get("volume_wan", 0), 2)
+            # 当天实时成交量(万手) 的填充移到「严格按交易时段」块(见下方 3)，
+            # 盘前/非交易日一律留空(避免 spot 残留昨日量被误认为当日实时量)
             out["src"] = spot.get("src", "")
         # 昨日同时点 + 全天累计(成交量/万手), 由 _yesterday_day_metrics 统一提供(共享新浪拉数 + 缓存)
         yest_metrics = _yesterday_day_metrics(code)
@@ -2285,6 +2312,10 @@ def get_pool_track(code: str, db, position: dict | None = None, deadline: float 
             # 未到开盘(北京时间 < 09:30)视为"当日资金流尚未产生"，三列一律留空
             _opened = _bj_now.time() >= _tt(9, 30)
             if _is_trading_today and _opened:
+                # 当天实时成交量(万手)：仅在已开盘且为交易日的盘中/盘后取数；
+                # 盘前/非交易日留空(前端显示 -)，避免 spot 残留的昨日量被误当作当日实时量
+                if spot:
+                    out["realtime_volume"] = round(spot.get("volume_wan", 0), 2)
                 _fund = _fetch_intraday_fund([code]).get(code)
                 _main_pct = _big_net = None
                 if _fund and _fund.get("main_net") is not None:

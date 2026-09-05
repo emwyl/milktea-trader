@@ -4,6 +4,7 @@ import re
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from sqlalchemy import func
 
 from app.db import SessionLocal
 from app.models import User, AccessLog, TrackedPool, _now
@@ -104,26 +105,63 @@ def guest_login(request: Request):
 
 
 @router.get("/access-logs")
-def list_access_logs(page: int = 1, page_size: int = 50, user: User = Depends(get_current_user)):
-    """访问记录（含游客），仅管理员可见。按时间倒序分页。"""
+def list_access_logs(page: int = 1, page_size: int = 10, user: User = Depends(get_current_user)):
+    """访问记录（含游客/已注册用户），仅管理员可见。按用户的最后登录时间倒序分页（默认10条/页）。每行展示一个用户最近一次活动信息（含最新访问页面路径，供前端展示中文名）。"""
     _require_admin(user)
     db = SessionLocal()
     try:
         page = max(1, int(page))
         page_size = min(max(1, int(page_size)), 200)
-        q = db.query(AccessLog)
-        total = q.count()
-        items = (q.order_by(AccessLog.ts.desc())
-                   .offset((page - 1) * page_size).limit(page_size).all())
+
+        # 1) 先按 last_login_at 倒序分页取用户（SQLite DESC 默认把 NULL 放最后 → 未登录用户自然排到末尾）
+        users_q = db.query(User).order_by(User.last_login_at.desc(), User.id.desc())
+        total = users_q.count()
+        users_page = users_q.offset((page - 1) * page_size).limit(page_size).all()
+        usernames = [u.username for u in users_page]
+
+        # 2) 只为这页用户查一次"最新一条访问记录"，避免每行一次 N+1
+        latest_map: dict[str, AccessLog] = {}
+        if usernames:
+            latest_id_sq = (
+                db.query(
+                    AccessLog.username.label("u"),
+                    func.max(AccessLog.id).label("max_id"),
+                )
+                .filter(AccessLog.username.in_(usernames))
+                .group_by(AccessLog.username)
+                .subquery()
+            )
+            for ev in (db.query(AccessLog)
+                       .join(latest_id_sq, AccessLog.id == latest_id_sq.c.max_id)
+                       .all()):
+                latest_map[ev.username] = ev
+
+        items = []
+        for u in users_page:
+            ev = latest_map.get(u.username)
+            last_ts = (ev.ts if ev is not None else None) or u.last_login_at or u.created_at
+            last_event_type = (ev.event_type if ev is not None else None) or ("login" if u.last_login_at else None)
+            last_path = (ev.path if ev is not None else None)
+            last_ip = (ev.ip if ev is not None else None) or u.last_ip
+            last_ua = (ev.ua if ev is not None else None)
+            items.append({
+                "username": u.username,
+                "role": u.role,
+                "is_guest": u.is_guest,
+                "is_active": u.is_active,
+                "last_login_at": u.last_login_at,
+                "created_at": u.created_at,
+                "last_ts": last_ts,
+                "last_event_type": last_event_type,
+                "last_path": last_path,
+                "last_ip": last_ip,
+                "last_ua": last_ua,
+            })
         return {
             "total": total,
             "page": page,
             "page_size": page_size,
-            "items": [{
-                "id": a.id, "ts": a.ts, "ip": a.ip, "ua": a.ua, "path": a.path,
-                "method": a.method, "username": a.username,
-                "is_guest": a.is_guest, "event_type": a.event_type,
-            } for a in items],
+            "items": items,
         }
     finally:
         db.close()

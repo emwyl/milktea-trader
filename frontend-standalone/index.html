@@ -516,7 +516,7 @@
     <header>
       <h1>🧋 加油赚奶茶钱</h1>
       <span class="sub">个人学习用 · 先控风险再谈收益</span>
-      <span class="version" id="appVersion">v20260904118</span>
+      <span class="version" id="appVersion">v20260904124</span>
       <button class="ghost auto-refresh-btn" :class="{active:autoRefresh}" @click="toggleAutoRefresh" :title="autoRefresh?'自动刷新开启中，每5秒更新当前页面数据':'点击开启每5秒自动刷新'">
         {{autoRefresh?'⏸':'▶'}} 自动 5s
       </button>
@@ -754,7 +754,7 @@
           <!-- 工具栏：筛选 + 批量操作（窄屏专列、横滑 + 网格） -->
           <div :class="['filter-toolbar', 'pool-toolbar']" style="display:flex;align-items:flex-start;gap:10px;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid #e5e7eb">
             <div class="row" style="gap:8px;margin:0;flex:1 1 auto;flex-wrap:wrap;align-items:center;min-width:0">
-              <input v-model="poolFilter.q" placeholder="代码/名称" style="min-width:160px" />
+              <input v-model="poolFilter.q" placeholder="代码/名称" style="width:1.5cm;min-width:1.5cm;max-width:1.5cm;flex:0 0 auto" />
               <select v-model="poolFilter.tag" style="min-width:130px">
                 <option value="">全部标签</option>
                 <option v-for="t in poolTags" :key="t.id" :value="t.id">{{t.name}}</option>
@@ -766,7 +766,7 @@
             </div>
             <div class="batchbar" style="margin:0;padding-bottom:0;border-bottom:0;display:flex;gap:6px;flex-wrap:wrap">
               <button @click="openAddPoolModal">新增</button>
-              <button class="ghost" @click="openImportGuide">导入新增</button>
+              <button class="ghost" @click="openImportPool">导入新增</button>
               <input type="file" ref="poolImportFile" style="display:none" accept=".xlsx,.xls,.csv" @change="onImportPoolFile" />
               <button class="ghost" :disabled="!poolSelected.length" @click="batchDeletePool" style="color:var(--danger);border-color:var(--danger)">删除</button>
               <button class="ghost" @click="exportPool">导出</button>
@@ -942,7 +942,44 @@
                   {{p.track.ai_grade||'-'}}
                 </span>
               </template>
-              <template v-else-if="col.key==='position_qty'">{{p.position_qty!=null ? p.position_qty : '-'}}</template>
+              <template v-else-if="col.key==='pe_ttm'">
+            <span :class="p.track.pe_ttm!=null && p.track.pe_ttm<0 ? 'down' : ''" :title="p.track.pe_ttm!=null?'市盈率(TTM)':'-'">{{p.track.pe_ttm!=null ? p.track.pe_ttm : '-'}}</span>
+          </template>
+          <template v-else-if="col.key==='pb'">
+            <span :title="p.track.pb!=null?'市净率':'-'">{{p.track.pb!=null ? p.track.pb : '-'}}</span>
+          </template>
+          <template v-else-if="col.key==='pe_pct_3y'">
+            <span v-if="p.track.pe_pct_3y!=null" :class="p.track.pe_pct_3y<30?'up':(p.track.pe_pct_3y>70?'down':'')" :title="'PE近3年分位(%)：区别于「估值分位(价格)」'">{{p.track.pe_pct_3y}}%</span>
+            <span v-else class="muted">-</span>
+          </template>
+          <template v-else-if="col.key==='net_profit_yoy'">
+            <span v-if="p.track.net_profit_yoy!=null" :class="ui.classOf(p.track.net_profit_yoy)" :title="'净利润同比(%) · 点击看财报明细'" style="cursor:pointer" @click.stop="openFinancial(p)">{{p.track.net_profit_yoy>0?'+':''}}{{p.track.net_profit_yoy}}%</span>
+            <span v-else class="muted" @click.stop="openFinancial(p)" style="cursor:pointer">-</span>
+          </template>
+          <template v-else-if="col.key==='revenue_yoy'">
+            <span v-if="p.track.revenue_yoy!=null" :class="ui.classOf(p.track.revenue_yoy)" :title="'营收同比(%) · 点击看财报明细'" style="cursor:pointer" @click.stop="openFinancial(p)">{{p.track.revenue_yoy>0?'+':''}}{{p.track.revenue_yoy}}%</span>
+            <span v-else class="muted" @click.stop="openFinancial(p)" style="cursor:pointer">-</span>
+          </template>
+          <template v-else-if="col.key==='report_date'">
+            <span v-if="p.track.report_date" :title="'最新财报报告期 · 点击看财报明细'" style="cursor:pointer" @click.stop="openFinancial(p)">{{p.track.report_date}}</span>
+            <span v-else class="muted" @click.stop="openFinancial(p)" style="cursor:pointer">-</span>
+          </template>
+          <template v-else-if="col.key==='goodwill'">
+            <span v-if="p.track.goodwill!=null" :title="'商誉(亿元) · 点击看财报明细'" style="cursor:pointer" @click.stop="openFinancial(p)">{{(p.track.goodwill/1e8).toFixed(2)}}</span>
+            <span v-else class="muted" @click.stop="openFinancial(p)" style="cursor:pointer">-</span>
+          </template>
+          <template v-else-if="col.key==='next_ratio'">
+            <span v-if="p.track.next_ratio!=null" :class="p.track.next_ratio>5?'down':''" :title="'解禁占比(%) · 点击看解禁明细'" style="cursor:pointer" @click.stop="openUnlock(p)">{{p.track.next_ratio}}%</span>
+            <span v-else class="muted" @click.stop="openUnlock(p)" style="cursor:pointer">-</span>
+          </template>
+          <template v-else-if="col.key==='next_date'">
+            <span v-if="p.track.next_date" :title="'解禁日期 · 点击看解禁明细'" style="cursor:pointer" @click.stop="openUnlock(p)">{{p.track.next_date}}</span>
+            <span v-else class="muted" @click.stop="openUnlock(p)" style="cursor:pointer">-</span>
+          </template>
+          <template v-else-if="col.key==='total_score'">
+            <span :class="{'up':(p.track.total_score||0)>=70,'down':(p.track.total_score||0)<40}" :title="p.track.total_score!=null?'AI选股综合评分(满分100)':'-'"><b>{{p.track.total_score!=null ? p.track.total_score : '-'}}</b></span>
+          </template>
+          <template v-else-if="col.key==='position_qty'">{{p.position_qty!=null ? p.position_qty : '-'}}</template>
               <template v-else-if="col.key==='cost_price'">{{p.cost_price!=null ? ui.fmt(p.cost_price) : '-'}}</template>
               <template v-else-if="col.key==='note'" class="muted">{{p.note||'-'}}</template>
               <template v-else-if="col.key==='scheme_type'">{{p.scheme_type||'-'}}</template>
@@ -1249,31 +1286,35 @@
         </div>
       </div>
 
-      <!-- 可投池导入新增弹窗 -->
-      <div v-if="importGuideModal.show" class="modal" @click.self="closeImportGuide">
-        <div class="modal-box" style="max-width:560px">
+      <!-- 可投池导入新增弹窗（合并：说明+模板+选择文件+结果反馈，避免来回弹窗） -->
+      <div v-if="importPoolModal.show" class="modal" @click.self="closeImportPool">
+        <div class="modal-box" style="max-width:640px">
           <div class="modal-head">
             <h3>导入新增<span class="dtag">批量加入可投池</span></h3>
-            <button type="button" class="close-x" @click="closeImportGuide" aria-label="关闭">×</button>
+            <button type="button" class="close-x" @click="closeImportPool" aria-label="关闭">×</button>
           </div>
           <div class="modal-body">
-            <p>支持导入 <strong>Excel（.xlsx / .xls）</strong> 或 <strong>CSV（.csv）</strong> 文件。表头需包含：<b>证券代码（必填）</b>、证券名称（非必填）、标签（非必填）。</p>
-            <div style="background:#f3f4f6;border-radius:8px;padding:12px 14px;margin:14px 0">
-              <p style="margin:0 0 8px;font-weight:600">导入要求：</p>
-              <ul style="margin:0;padding-left:18px;font-size:13px;line-height:1.8;color:#4b5563">
-                <li>证券代码：6 位数字，必填（如 300377）；</li>
-                <li>证券名称：非必填，填了会校验是否与代码匹配；</li>
-                <li>标签：非必填，多个标签用「/」或「,」分隔；</li>
-                <li>已在可投池中的证券会自动跳过、不重复导入，也不改动其原有标签；</li>
-                <li>找不到对应市场的代码 / 格式错误会记为导入失败。</li>
-              </ul>
+            <p style="margin:0 0 10px">支持 <strong>Excel（.xlsx / .xls）</strong> 或 <strong>CSV（.csv）</strong>。表头需含：<b>证券代码（必填）</b>、证券名称（非必填）、标签（非必填）。已在可投池的会自动跳过、不重复导入。</p>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+              <button type="button" class="ghost" @click="downloadImportTemplate">下载模板</button>
+              <button type="button" :disabled="importPoolModal.uploading" @click="pickImportFile">{{importPoolModal.uploading ? '导入中…' : '选择文件导入'}}</button>
+              <span class="muted" v-if="!importPoolModal.result && !importPoolModal.error">选好文件后自动解析并导入</span>
             </div>
-            <p class="muted" style="font-size:13px">不确定格式？点「下载模板」，填写证券代码后导入即可。</p>
+            <div v-if="importPoolModal.error" style="margin-top:12px;color:#dc2626;font-size:13px">{{importPoolModal.error}}</div>
+            <div v-if="importPoolModal.result" style="margin-top:14px">
+              <div style="font-weight:600;margin-bottom:8px">
+                导入完成：成功 <b style="color:#16a34a">{{importPoolModal.result.added.length}}</b> 条<span v-if="importPoolModal.result.failed.length"> · 失败/跳过 <b style="color:#dc2626">{{importPoolModal.result.failed.length}}</b> 条</span>
+              </div>
+              <div v-if="importPoolModal.result.failed.length" style="max-height:200px;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:13px">
+                <div v-for="(f,i) in importPoolModal.result.failed" :key="i" style="padding:4px 0;border-bottom:1px dashed #eee">
+                  <b>{{f.code || f.input || '—'}}</b><span v-if="f.name">（{{f.name}}）</span>：{{f.reason}}
+                </div>
+              </div>
+              <div v-else style="font-size:13px;color:#6b7280;margin-top:4px">全部成功，无重复或失败项。</div>
+            </div>
           </div>
           <div class="modal-foot">
-            <button type="button" class="ghost" @click="closeImportGuide">取消</button>
-            <button type="button" class="ghost" @click="downloadImportTemplate">下载模板</button>
-            <button type="button" @click="confirmImportPool">选择文件导入</button>
+            <button type="button" @click="closeImportPool">关闭</button>
           </div>
         </div>
       </div>
@@ -1381,6 +1422,50 @@
           </div>
           <div class="modal-foot">
             <button type="button" class="ghost" @click="closeEvtRiskModal">关闭</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 可投池解禁明细弹窗 (#66) -->
+      <div v-if="unlockModal.show" class="modal" @click.self="closeUnlockModal">
+        <div class="modal-box" style="max-width:560px">
+          <div class="modal-head">
+            <h3>解禁明细<span class="dtag">未来最近一次</span></h3>
+            <button type="button" class="close-x" @click="closeUnlockModal" aria-label="关闭">×</button>
+          </div>
+          <div class="modal-body">
+            <div class="kv" style="margin-top:0"><span>{{unlockModal.name}} {{unlockModal.code}}</span></div>
+            <div class="kv"><span>解禁日期</span><b>{{unlockModal.next_date||'暂无'}}</b></div>
+            <div class="kv"><span>解禁数量</span><b>{{unlockModal.next_amount!=null ? (unlockModal.next_amount/1e8).toFixed(2)+' 亿股' : '暂无'}}</b></div>
+            <div class="kv"><span>解禁占比</span><b :class="unlockModal.next_ratio>5?'down':''">{{unlockModal.next_ratio!=null ? unlockModal.next_ratio+'%' : '暂无'}}</b></div>
+            <div class="muted" style="margin-top:10px">占比&gt;5% 关注潜在抛压；解禁前后波动可能加大。</div>
+          </div>
+          <div class="modal-foot">
+            <button type="button" class="ghost" @click="closeUnlockModal">关闭</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 可投池财报明细弹窗 (#66) -->
+      <div v-if="financialModal.show" class="modal" @click.self="closeFinancialModal">
+        <div class="modal-box" style="max-width:560px">
+          <div class="modal-head">
+            <h3>财报明细<span class="dtag">最新报告期</span></h3>
+            <button type="button" class="close-x" @click="closeFinancialModal" aria-label="关闭">×</button>
+          </div>
+          <div class="modal-body">
+            <div class="kv" style="margin-top:0"><span>{{financialModal.name}} {{financialModal.code}}</span></div>
+            <div class="kv"><span>报告期</span><b>{{financialModal.report_date||'暂无'}}</b></div>
+            <div class="kv"><span>净利润(亿)</span><b :class="financialModal.net_profit_yoy>0?'up':'down'">{{financialModal.net_profit!=null ? (financialModal.net_profit/1e8).toFixed(2) : '暂无'}}</b></div>
+            <div class="kv"><span>净利润同比</span><b :class="financialModal.net_profit_yoy>0?'up':'down'">{{financialModal.net_profit_yoy!=null ? (financialModal.net_profit_yoy>0?'+':'')+financialModal.net_profit_yoy+'%' : '暂无'}}</b></div>
+            <div class="kv"><span>营收同比</span><b :class="financialModal.revenue_yoy>0?'up':'down'">{{financialModal.revenue_yoy!=null ? (financialModal.revenue_yoy>0?'+':'')+financialModal.revenue_yoy+'%' : '暂无'}}</b></div>
+            <div class="kv"><span>EPS(元)</span><b>{{financialModal.eps!=null ? financialModal.eps : '暂无'}}</b></div>
+            <div class="kv"><span>股东权益(亿)</span><b>{{financialModal.equity!=null ? (financialModal.equity/1e8).toFixed(2) : '暂无'}}</b></div>
+            <div class="kv"><span>商誉(亿)</span><b :class="financialModal.goodwill>0?'down':''">{{financialModal.goodwill!=null ? (financialModal.goodwill/1e8).toFixed(2) : '暂无'}}</b></div>
+            <div class="muted" style="margin-top:10px">商誉越高、占净资产比越大，减值风险越高。</div>
+          </div>
+          <div class="modal-foot">
+            <button type="button" class="ghost" @click="closeFinancialModal">关闭</button>
           </div>
         </div>
       </div>
@@ -1527,36 +1612,43 @@
             <p v-if="!users.length" class="muted" style="text-align:center;padding:20px 0">暂无账号</p>
           </div>
           <p class="muted" v-if="adminTab==='users'">删除账号会同步删除该账号的短线可投池、规则、信号、偏好等个人数据，且不可恢复。</p>
-          <!-- 访问记录（含游客/未登录访客） -->
+          <!-- 访问记录（按用户：游客/未登录访客/已注册用户），按最后登录时间倒序，默认10条/页 -->
           <div v-if="adminTab==='access'">
             <div class="row" style="justify-content:space-between;align-items:center;margin:6px 0 10px">
-              <span class="muted">共 {{accessTotal}} 条访问记录（含游客/未登录访客，按时间倒序）</span>
-              <button class="ghost btn-sm" @click="fetchAccessLogs">刷新</button>
+              <span class="muted">共 {{accessTotal}} 个用户（含游客），按最后登录时间倒序，默认10条/页</span>
+              <button class="ghost btn-sm" @click="fetchAccessLogs(1)">刷新</button>
             </div>
             <table class="tracktbl access-log-tbl">
               <thead><tr>
-                <th style="width:160px">访问时间</th>
-                <th style="width:150px">用户</th>
-                <th style="width:90px">类型</th>
+                <th style="width:170px">最后登录时间</th>
+                <th style="width:170px">用户</th>
+                <th style="width:90px">角色</th>
+                <th style="width:100px">最后操作</th>
                 <th style="width:130px">IP</th>
                 <th>UA（浏览器/设备）</th>
-                <th style="width:190px">路径</th>
+                <th style="width:190px">登录访问的页面</th>
               </tr></thead>
               <tbody>
-                <tr v-for="a in accessLogs" :key="a.id">
-                  <td>{{fmtDateTimeCN(a.ts)}}</td>
+                <tr v-for="a in accessLogs" :key="a.username">
+                  <td>{{fmtDateTimeCN(a.last_login_at) || fmtDateTimeCN(a.last_ts) || '-'}}</td>
                   <td>
-                    <span v-if="a.is_guest" class="pill risk">{{a.username||'游客'}}</span>
-                    <span v-else class="pill ok">{{a.username||'-'}}</span>
+                    <span v-if="a.is_guest" class="pill risk" :title="a.username">{{a.username}}</span>
+                    <span v-else class="pill ok" :title="a.username">{{a.username}}</span>
                   </td>
-                  <td>{{a.event_type}}</td>
-                  <td>{{a.ip||'-'}}</td>
-                  <td style="max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" :title="a.ua">{{a.ua||'-'}}</td>
-                  <td>{{a.path}}</td>
+                  <td>{{a.is_guest ? '游客' : (a.role==='admin' ? '管理员' : '用户')}}</td>
+                  <td>{{eventTypeLabel(a.last_event_type)}}</td>
+                  <td>{{a.last_ip||'-'}}</td>
+                  <td style="max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" :title="a.last_ua">{{a.last_ua||'-'}}</td>
+                  <td :title="a.last_path">{{pathLabel(a.last_path)}}</td>
                 </tr>
               </tbody>
             </table>
-            <p v-if="!accessLogs.length" class="muted" style="text-align:center;padding:20px 0">暂无访问记录</p>
+            <div v-if="accessTotal > accessPageSize" class="row" style="justify-content:center;align-items:center;gap:12px;margin:14px 0 4px">
+              <button class="ghost btn-sm" :disabled="accessPage<=1" @click="fetchAccessLogs(accessPage-1)">‹ 上一页</button>
+              <span class="muted">第 {{accessPage}} / {{accessTotalPages}} 页（共 {{accessTotal}} 个）</span>
+              <button class="ghost btn-sm" :disabled="accessPage>=accessTotalPages" @click="fetchAccessLogs(accessPage+1)">下一页 ›</button>
+            </div>
+            <p v-if="!accessLogs.length" class="muted" style="text-align:center;padding:20px 0">暂无用户</p>
           </div>
         </div>
         <div class="card" v-if="me.role==='admin'" style="border-left:4px solid var(--tea)">
@@ -1981,13 +2073,15 @@ const app = createApp({
     tagModal:{show:false, id:null, name:'', color:'#3b82f6', saving:false},  // 可投池标签配置弹窗
     batchTagModal:{show:false, tag_ids:[], saving:false},  // 可投池批量打标签弹窗
     deleteConfirmModal:{show:false, codes:[], detail:'', saving:false},  // 可投池批量删除确认弹窗
-    importGuideModal:{show:false},  // 可投池导入模板说明弹窗
+    importPoolModal:{show:false, uploading:false, result:null, error:''},  // 可投池导入新增弹窗(合并说明/模板/选择文件/结果反馈)
     columnSettingModal:{show:false, tableKey:'', title:'', columns:[]},  // 通用自定义列设置弹窗
     adviceModal:{show:false, code:'', name:'', title:'', summary:'', points:[], text:''},  // 可投池操作建议详情弹窗
     financeRiskModal:{show:false, code:'', name:'', summary:'', report_date:'', news:[]},  // 可投池财报风险弹窗(近5日大事/新闻)
     evtRiskModal:{show:false, code:'', name:'', tag:'', details:[]},  // 可投池事件风险标签详情弹窗(v117)
+    unlockModal:{show:false, code:'', name:'', next_date:'', next_amount:null, next_ratio:null},  // 可投池解禁明细弹窗(#66)
+    financialModal:{show:false, code:'', name:'', report_date:'', net_profit:null, net_profit_yoy:null, revenue_yoy:null, eps:null, equity:null, goodwill:null},  // 可投池财报明细弹窗(#66)
     columnSettings: (()=>{
-      const currentVer = '20260904-01';  // v117: 删除北向资金列 → 重置列配置缓存
+      const currentVer = '20260904-02';  // v122: #66 新增10列(估值/财报/解禁/评分)+解禁/财报明细弹窗 → 重置列配置缓存
       const savedVer = localStorage.getItem('columnSettingsVersion');
       if(savedVer !== currentVer){ localStorage.removeItem('columnSettings'); localStorage.setItem('columnSettingsVersion', currentVer); return {}; }
       return JSON.parse(localStorage.getItem('columnSettings')||'{}');
@@ -2006,6 +2100,8 @@ const app = createApp({
       const codes = (txt.match(/\d{6}/g) || []).map(c=>c.trim());
       return [...new Set(codes)];
     },
+    // 访问记录总页数（按 page_size 向上取整，至少1页）
+    accessTotalPages(){ return Math.max(1, Math.ceil(this.accessTotal / this.accessPageSize)); },
 
     // 选股模型运行结果中,尚未加入可投池的 code(用于"一键全部加入"按钮)
     pendingCodes(){ return (this.screenResult||[]).filter(c=>!this.poolCodes.includes(c.code)).map(c=>c.code); },
@@ -2191,6 +2287,16 @@ const app = createApp({
           {key:'big_order_net', label:'大单流向\n(万元)', width:108, visible:true, frozen:false, sortable:true, help:'大单流向(万元)=超大单+大单净额，对齐同花顺「大单流向」口径；正数=净买入(红)，负数=净卖出(绿)。仅取当日数据，未产生时留空显示-'},
           {key:'valuation_pct_3y', label:'估值分位\n(近3年)', width:108, visible:true, frozen:false, sortable:true, help:'近3年估值/价格分位(%)。越低越便宜(潜在机会)，越高越贵(注意回落)'},
           {key:'sector_strength', label:'板块\n强度', width:108, visible:true, frozen:false, sortable:true, help:'个股近20日收益相对大盘(上证)强弱：强于大盘/同步/弱于大盘'},
+          {key:'pe_ttm', label:'市盈率\nTTM', width:99, visible:true, frozen:false, sortable:true, help:'市盈率(TTM)=总市值/过去12个月净利润。<0表示亏损；越低越便宜(潜在机会)，越高越贵'},
+          {key:'pb', label:'市净率', width:93, visible:true, frozen:false, sortable:true, help:'市净率=总市值/净资产。破净(<1)可能被低估，高PB需业绩支撑'},
+          {key:'pe_pct_3y', label:'PE近3年\n分位', width:108, visible:true, frozen:false, sortable:true, help:'当前PE在历史PE近3年中的分位(%)。区别于「估值分位(价格)」(价格口径)，本列是PE口径。越低越便宜'},
+          {key:'net_profit_yoy', label:'净利\n同比%', width:105, visible:true, frozen:false, sortable:true, help:'净利润同比增长(%)。点击查看财报明细(净利/营收/ROE/商誉)。正数利好，负数利空'},
+          {key:'revenue_yoy', label:'营收\n同比%', width:105, visible:true, frozen:false, sortable:true, help:'营收同比增长(%)。点击查看财报明细。正数扩张，负数收缩'},
+          {key:'report_date', label:'财报\n日期', width:120, visible:true, frozen:false, sortable:true, help:'最新财报报告期。点击查看财报明细'},
+          {key:'goodwill', label:'商誉\n(亿)', width:99, visible:true, frozen:false, sortable:true, help:'商誉账面价值(亿元)。高商誉占净资产比大=减值风险。点击查看财报明细'},
+          {key:'next_ratio', label:'解禁\n占比%', width:105, visible:true, frozen:false, sortable:true, help:'未来最近一次解禁股数占流通股比例(%)。>5%关注抛压。点击看解禁明细'},
+          {key:'next_date', label:'解禁\n日期', width:120, visible:true, frozen:false, sortable:true, help:'未来最近一次解禁日期。点击看解禁明细(数量/占比)'},
+          {key:'total_score', label:'综合\n评分', width:99, visible:true, frozen:false, sortable:true, help:'AI选股综合评分(满分100)。越高越优'},
           {key:'event_risk_tags', label:'事件\n风险', width:156, visible:true, frozen:false, sortable:false, help:'近期事件风险标签(业绩亏损/大额减持/股东增持/股价异动公告/商誉高/解禁临近/预亏/ST风险/监管问询/股东质押高)'},
           {key:'finance_risk', label:'财报\n风险', width:120, visible:true, frozen:false, sortable:false, help:'财报风险快速标记，点击查看近5日相关大事/新闻(利好红/利空绿/中性灰)'},
           {key:'operation_advice', label:'操作\n建议', width:138, visible:true, frozen:false, sortable:true, help:'基于实时盘口、箱体、量能、技术信号生成的简要操作建议，点击查看完整结论'},
@@ -2430,6 +2536,16 @@ const app = createApp({
       this.evtRiskModal = {show:true, code:(p&&p.code)||'', name:(p&&p.name)||'', tag:tagKey||'', details};
     },
     closeEvtRiskModal(){ this.evtRiskModal={show:false, code:'', name:'', tag:'', details:[]}; },
+    openUnlock(p){
+      const t = (p && p.track) || {};
+      this.unlockModal = {show:true, code:(p&&p.code)||'', name:(p&&p.name)||'', next_date:t.next_date||'', next_amount:t.next_amount!=null?t.next_amount:null, next_ratio:t.next_ratio!=null?t.next_ratio:null};
+    },
+    closeUnlockModal(){ this.unlockModal={show:false, code:'', name:'', next_date:'', next_amount:null, next_ratio:null}; },
+    openFinancial(p){
+      const t = (p && p.track) || {};
+      this.financialModal = {show:true, code:(p&&p.code)||'', name:(p&&p.name)||'', report_date:t.report_date||'', net_profit:t.net_profit!=null?t.net_profit:null, net_profit_yoy:t.net_profit_yoy!=null?t.net_profit_yoy:null, revenue_yoy:t.revenue_yoy!=null?t.revenue_yoy:null, eps:t.eps!=null?t.eps:null, equity:t.equity!=null?t.equity:null, goodwill:t.goodwill!=null?t.goodwill:null};
+    },
+    closeFinancialModal(){ this.financialModal={show:false, code:'', name:'', report_date:'', net_profit:null, net_profit_yoy:null, revenue_yoy:null, eps:null, equity:null, goodwill:null}; },
     colSettingDrop(idx){
       const from = this._dragColIdx;
       if(from==null || from===idx) return;
@@ -2458,7 +2574,7 @@ const app = createApp({
     refreshCurrentView(){
       if(!this.token) return;
       // 有弹窗打开时跳过本次刷新，避免干扰用户当前操作
-      if(this.showRulesModal || this.addPoolModal.show || this.tagModal.show || this.batchTagModal.show || this.deleteConfirmModal.show || this.importGuideModal.show || this.editModal.show || this.columnSettingModal.show || this.adviceModal.show) return;
+      if(this.showRulesModal || this.addPoolModal.show || this.tagModal.show || this.batchTagModal.show || this.deleteConfirmModal.show || this.importPoolModal.show || this.editModal.show || this.columnSettingModal.show || this.adviceModal.show) return;
       const v = this.view;
       if(v==='dash') this.loadDash();
       else if(v==='pool'){
@@ -2494,16 +2610,65 @@ const app = createApp({
     async loadUsers(){ const r=await API('/auth/users'); if(Array.isArray(r)) this.users=r; },
     switchAdminTab(tab){
       this.adminTab = tab;
-      if(tab==='access' && !this.accessLogs.length) this.fetchAccessLogs();
+      if(tab==='access' && !this.accessLogs.length) this.fetchAccessLogs(1);
     },
-    async fetchAccessLogs(){
+    async fetchAccessLogs(page){
       this.accessLoading = true;
       try{
-        const d = await API('/auth/access-logs?page=1&page_size=100');
+        const pg = Math.max(1, parseInt(page||1, 10));
+        const d = await API('/auth/access-logs?page='+pg+'&page_size='+this.accessPageSize);
         this.accessLogs = d.items || [];
         this.accessTotal = d.total || 0;
+        this.accessPage = d.page || pg;
+        this.accessPageSize = d.page_size || this.accessPageSize;
       }catch(e){ this.accessLogs = []; this.accessTotal = 0; }
       finally{ this.accessLoading = false; }
+    },
+    // 把 API 路径翻译成中文页面名（含静态资源与未登录访客首次访问兜底）
+    pathLabel(p){
+      if(!p) return '-';
+      const m = {
+        '/': '首页',
+        '/index.html': '首页',
+        '/api/auth/login': '登录',
+        '/api/auth/logout': '登出',
+        '/api/auth/register': '注册',
+        '/api/auth/guest': '游客登录',
+        '/api/auth/me': '账号信息',
+        '/api/auth/must-change': '改密检查',
+        '/api/auth/users': '账户列表',
+        '/api/auth/access-logs': '访问记录',
+        '/api/health': '健康检查',
+        '/api/stocks/search': '股票搜索',
+        '/api/pool': '可投池',
+        '/api/screens': '筛选方案',
+        '/api/rules': '规则',
+        '/api/notify': '消息通知',
+        '/api/notify/log': '通知日志',
+        '/api/analysis/quote': '行情分析',
+        '/api/analysis/track': '跟踪分析',
+        '/api/preference': '偏好',
+        '/api/settings': '设置',
+        '/api/data/export': '导出',
+        '/api/data/import': '导入',
+        '/api/data/export-all': '整库导出',
+        '/api/data/import-all': '整库导入',
+      };
+      // /api/pool/{code} /api/stocks/{code}/quote 等参数化路径做前缀匹配
+      if(m[p]) return m[p];
+      if(p.startsWith('/api/pool/')) return '可投池 · '+p.slice('/api/pool/'.length);
+      if(p.startsWith('/api/stocks/')) return '行情 · '+p.slice('/api/stocks/'.length);
+      if(p.startsWith('/api/screens/')) return '筛选 · '+p.slice('/api/screens/'.length);
+      if(p.startsWith('/api/rules/')) return '规则 · '+p.slice('/api/rules/'.length);
+      if(p.startsWith('/api/notify/')) return '通知 · '+p.slice('/api/notify/'.length);
+      if(p.startsWith('/api/analysis/')) return '分析 · '+p.slice('/api/analysis/'.length);
+      if(p.startsWith('/api/preference/')) return '偏好 · '+p.slice('/api/preference/'.length);
+      if(p.startsWith('/api/settings/')) return '设置 · '+p.slice('/api/settings/'.length);
+      if(p.startsWith('/api/auth/users/')) return '账户管理 · '+p.slice('/api/auth/users/'.length);
+      return p;
+    },
+    eventTypeLabel(t){
+      return ({login:'登录', logout:'登出', register:'注册', guest:'游客登录', page:'页面访问'})[t] || t || '-';
     },
     async toggleUser(id){ const r=await API('/auth/users/'+id+'/toggle',{method:'PUT'}); if(r.ok) this.loadUsers(); },
     async deleteUser(id){ this.showConfirm('确定删除该账号？其个人数据将一并清理且不可恢复。', async ()=>{ const r=await API('/auth/users/'+id,{method:'DELETE'}); if(r.ok) this.loadUsers(); }); },
@@ -3105,8 +3270,24 @@ const app = createApp({
     openBatchTagModal(){ this.batchTagModal={show:true, tag_ids:[], saving:false}; },
     closeBatchTagModal(){ this.batchTagModal={show:false, tag_ids:[], saving:false}; },
     exportPool(){
-      // v117: 导出当前筛选条件下的【全部】数据(所见即所得)；证券代码/名称等复合列已拆开。
-      // 只导出当前可见列(去掉勾选/操作列)，列顺序与表格一致。
+      // 先确认：告知将导出的条数 / 当前筛选 / 可见列数，避免误导出或盲目下载
+      const n = this.poolTotal || 0;
+      const ft = this.exportFilterText();
+      const vc = this.visiblePoolColCount();
+      this.showConfirm(`将导出当前筛选下的 ${n} 条可投池数据（${ft}），仅导出当前可见列（${vc} 列）。\n确认导出？`, () => this.doExportPool());
+    },
+    exportFilterText(){
+      const f = this.poolFilter || {};
+      const parts = [];
+      if(f.q) parts.push('代码/名称含「'+f.q.trim()+'」');
+      if(f.tag){ const t=(this.poolTags||[]).find(x=>String(x.id)===String(f.tag)); parts.push('标签='+(t?t.name:f.tag)); }
+      return parts.length ? parts.join('，') : '全部';
+    },
+    visiblePoolColCount(){
+      return this.getColumns('pool').filter(c => c.visible && c.key!=='select' && c.key!=='ops').length;
+    },
+    doExportPool(){
+      // v117: 导出当前筛选条件下的【全部】数据(所见即所得)；只导出当前可见列(去掉勾选/操作列)。
       const token = localStorage.getItem('tk') || '';
       const params = new URLSearchParams();
       if(this.poolFilter && this.poolFilter.q) params.append('q', this.poolFilter.q.trim());
@@ -3141,8 +3322,8 @@ const app = createApp({
         })
         .catch(e => { this.showAlert(e.message || '导出失败'); });
     },
-    openImportGuide(){ this.importGuideModal={show:true}; },
-    closeImportGuide(){ this.importGuideModal={show:false}; },
+    openImportPool(){ this.importPoolModal={show:true, uploading:false, result:null, error:''}; },
+    closeImportPool(){ this.importPoolModal.show=false; },
     downloadImportTemplate(){
       // 下载导入模板 CSV（UTF-8 BOM，Excel 可直接打开）：证券代码(必填)/证券名称/标签
       const rows = [['证券代码','证券名称','标签'],['300377','赢时胜','短线'],['002153','石基信息',''],['603093','南华期货','短线/期货']];
@@ -3154,10 +3335,13 @@ const app = createApp({
       document.body.appendChild(a); a.click();
       setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 1000);
     },
-    confirmImportPool(){ this.closeImportGuide(); this.$refs.poolImportFile && this.$refs.poolImportFile.click(); },
+    pickImportFile(){ this.$refs.poolImportFile && this.$refs.poolImportFile.click(); },
     async onImportPoolFile(e){
       const file = e.target.files[0];
       if(!file) return;
+      this.importPoolModal.uploading = true;
+      this.importPoolModal.error = '';
+      this.importPoolModal.result = null;
       const form = new FormData();
       form.append('file', file);
       try{
@@ -3169,13 +3353,16 @@ const app = createApp({
         });
         const r = await resp.json();
         if(resp.ok && r && r.ok){
+          this.importPoolModal.result = r;  // {ok, added:[], failed:[], msg}
           this.poolMsg = r.msg || `导入成功 ${(r.added||[]).length} 条`;
           this.loadPool();
         } else {
-          this.poolMsg = r.detail || '导入失败';
+          this.importPoolModal.error = (r && (r.detail||r.message)) || `导入失败（HTTP ${resp.status}）`;
         }
       }catch(err){
-        this.poolMsg = err.message || '导入失败';
+        this.importPoolModal.error = err.message || '导入失败';
+      }finally{
+        this.importPoolModal.uploading = false;
       }
       setTimeout(()=>{ this.poolMsg=''; }, 5000);
       e.target.value = '';
