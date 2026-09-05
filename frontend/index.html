@@ -379,6 +379,26 @@
   .chart-tip b{color:#fff}
   .chart-tip .up{color:#fca5a5}
   .chart-tip .down{color:#86efac}
+  /* 访问记录窄屏卡片化（与账号管理卡片同款） */
+  @media(max-width:768px){
+    .tracktbl.access-log-tbl{display:none}
+    .access-log-tbl-wrap{display:none}
+    .access-log-cards{display:block}
+  }
+  /* 桌面端强制隐藏访问记录卡片 */
+  @media(min-width:769px){
+    .access-log-cards{display:none !important}
+    .tracktbl.access-log-tbl{display:table !important}
+    .access-log-tbl-wrap{display:block !important}
+  }
+  .access-log-cards{display:none;margin-top:10px}
+  .access-log-card{background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px 12px 10px;margin-bottom:10px}
+  .access-log-card-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:8px;padding-bottom:8px;border-bottom:1px dashed var(--line);flex-wrap:wrap}
+  .access-log-card-user{display:flex;align-items:center;gap:6px;font-size:14px;font-weight:700;flex-wrap:wrap}
+  .access-log-card-time{font-size:11px;color:#6b7280}
+  .access-log-card-ua{font-size:11px;color:#4b5563;word-break:break-all;overflow-wrap:anywhere;line-height:1.45;max-height:3.2em;overflow:hidden}
+  .access-log-card-path{font-size:12px;color:#1d4ed8;font-weight:600}
+
   /* ===== 设置页：账号管理 + 备份卡片（窄屏专用，宽屏隐藏） ===== */
   .admin-user-cards,.backup-cards,.cosback-cards{display:none;margin-top:10px}
   .user-card{background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px 12px 10px;margin-bottom:10px;position:relative}
@@ -516,7 +536,7 @@
     <header>
       <h1>🧋 加油赚奶茶钱</h1>
       <span class="sub">个人学习用 · 先控风险再谈收益</span>
-      <span class="version" id="appVersion">v20260904126</span>
+      <span class="version" id="appVersion">v20260904127</span>
       <button class="ghost auto-refresh-btn" :class="{active:autoRefresh}" @click="toggleAutoRefresh" :title="autoRefresh?'自动刷新开启中，每5秒更新当前页面数据':'点击开启每5秒自动刷新'">
         {{autoRefresh?'⏸':'▶'}} 自动 5s
       </button>
@@ -1634,10 +1654,11 @@
           <p class="muted" v-if="adminTab==='users'">删除账号会同步删除该账号的短线可投池、规则、信号、偏好等个人数据，且不可恢复。</p>
           <!-- 访问记录（按用户：游客/未登录访客/已注册用户），按最后登录时间倒序，默认10条/页 -->
           <div v-if="adminTab==='access'">
-            <div class="row" style="justify-content:space-between;align-items:center;margin:6px 0 10px">
-              <span class="muted">共 {{accessTotal}} 个用户（含游客），按最后登录时间倒序，默认10条/页</span>
-              <button class="ghost btn-sm" @click="fetchAccessLogs(1)">刷新</button>
+              <div class="row" style="justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin:6px 0 10px">
+              <span class="muted" style="flex:1;min-width:0">共 {{accessTotal}} 个用户（含游客），按最后登录时间倒序，默认10条/页</span>
+              <button class="ghost btn-sm" style="flex-shrink:0" @click="fetchAccessLogs(1)">刷新</button>
             </div>
+            <div class="tracktbl-wrap access-log-tbl-wrap">
             <table class="tracktbl access-log-tbl">
               <thead><tr>
                 <th style="width:170px">最后登录时间</th>
@@ -1663,10 +1684,30 @@
                 </tr>
               </tbody>
             </table>
-            <div v-if="accessTotal > accessPageSize" class="row" style="justify-content:center;align-items:center;gap:12px;margin:14px 0 4px">
-              <button class="ghost btn-sm" :disabled="accessPage<=1" @click="fetchAccessLogs(accessPage-1)">‹ 上一页</button>
-              <span class="muted">第 {{accessPage}} / {{accessTotalPages}} 页（共 {{accessTotal}} 个）</span>
-              <button class="ghost btn-sm" :disabled="accessPage>=accessTotalPages" @click="fetchAccessLogs(accessPage+1)">下一页 ›</button>
+            </div>
+            <!-- 窄屏专用：访问记录卡片列表 -->
+            <div class="access-log-cards">
+              <div v-for="a in accessLogs" :key="'alog-'+a.username" class="access-log-card">
+                <div class="access-log-card-head">
+                  <div class="access-log-card-user">
+                    <span v-if="a.is_guest" class="pill risk">{{a.username}}</span>
+                    <span v-else class="pill ok">{{a.username}}</span>
+                    <span class="pill" :style="a.role==='admin'?{background:'#f3e8ff',color:'#7c3aed'}:{background:'#f3f4f6',color:'#374151'}">{{a.is_guest?'游客':(a.role==='admin'?'管理员':'用户')}}</span>
+                  </div>
+                  <div class="access-log-card-time">{{fmtDateTimeCN(a.last_login_at) || fmtDateTimeCN(a.last_ts) || '-'}}</div>
+                </div>
+                <div class="user-card-grids">
+                  <div><div class="k">最后操作</div><div class="v">{{eventTypeLabel(a.last_event_type)}}</div></div>
+                  <div><div class="k">IP</div><div class="v">{{a.last_ip||'-'}}</div></div>
+                  <div><div class="k">UA</div><div class="v"><div class="access-log-card-ua" :title="a.last_ua">{{a.last_ua||'-'}}</div></div></div>
+                  <div><div class="k">登录页面</div><div class="v access-log-card-path" :title="a.last_path">{{pathLabel(a.last_path)}}</div></div>
+                </div>
+              </div>
+            </div>
+            <div v-if="accessTotal > accessPageSize" class="row" style="justify-content:center;align-items:center;gap:8px;flex-wrap:wrap;margin:14px 0 4px">
+              <button class="ghost btn-sm" style="flex-shrink:0" :disabled="accessPage<=1" @click="fetchAccessLogs(accessPage-1)">‹ 上一页</button>
+              <span class="muted" style="text-align:center">第 {{accessPage}} / {{accessTotalPages}} 页（共 {{accessTotal}} 个）</span>
+              <button class="ghost btn-sm" style="flex-shrink:0" :disabled="accessPage>=accessTotalPages" @click="fetchAccessLogs(accessPage+1)">下一页 ›</button>
             </div>
             <p v-if="!accessLogs.length" class="muted" style="text-align:center;padding:20px 0">暂无用户</p>
           </div>
