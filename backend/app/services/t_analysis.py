@@ -641,13 +641,19 @@ def _sector_strength(industry: str) -> dict:
 
 
 # ============ 主入口 ============
-def analyze_t(code: str, db) -> dict:
-    """聚合做T分析全部输出。db 为数据库会话。"""
+def analyze_t(code: str, db, user_id: int | None = None) -> dict:
+    """聚合做T分析全部输出。db 为数据库会话；user_id 用于按账号隔离个股T配置。"""
     daily = ensure_quotes(code, 120)
     rt = get_t_realtime(code, daily)
     st = db.query(Stock).filter(Stock.code == code).first()
-    pool = db.query(TrackedPool).filter(TrackedPool.code == code, TrackedPool.status == "active").first()
-    tcfg = db.query(StockTConfig).filter(StockTConfig.code == code).first()
+    pool_q = db.query(TrackedPool).filter(TrackedPool.code == code, TrackedPool.status == "active")
+    if user_id is not None:
+        pool_q = pool_q.filter(TrackedPool.user_id == user_id)
+    pool = pool_q.first()
+    tcfg_q = db.query(StockTConfig).filter(StockTConfig.code == code)
+    if user_id is not None:
+        tcfg_q = tcfg_q.filter(StockTConfig.user_id == user_id)
+    tcfg = tcfg_q.first()
 
     name = (rt.get("name") or (st.name if st else "")) or code
     industry = st.industry if st else ""

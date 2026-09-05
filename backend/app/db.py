@@ -47,6 +47,7 @@ def run_migrations(engine):
             ("user_profile", "user_id", "INTEGER"),
             ("notify_config", "user_id", "INTEGER"),
             ("notify_log", "user_id", "INTEGER"),
+            ("access_logs", "user_id", "INTEGER"),
         ]
         for table, col, dtype in cols_to_add:
             if _has_table(conn, table) and not _has_col(conn, table, col):
@@ -66,12 +67,23 @@ def run_migrations(engine):
         admin_id = admin_row[0] if admin_row else None
         if admin_id:
             for table in ["screens", "tracked_pool", "position_rules", "signals",
-                          "user_profile", "notify_config", "notify_log"]:
+                          "user_profile", "notify_config", "notify_log", "stock_tconfig"]:
                 if _has_col(conn, table, "user_id"):
                     try:
                         conn.execute(text(f"UPDATE {table} SET user_id=:uid WHERE user_id IS NULL"), {"uid": admin_id})
                     except Exception:
                         pass
+
+        # access_logs 新增 user_id 后，按 username 回填对应 users.id（游客/未匹配 username 保持 NULL）
+        if _has_col(conn, "access_logs", "user_id"):
+            try:
+                conn.execute(text("""
+                    UPDATE access_logs
+                    SET user_id = (SELECT id FROM users WHERE users.username = access_logs.username LIMIT 1)
+                    WHERE user_id IS NULL AND username IS NOT NULL
+                """))
+            except Exception:
+                pass
 
         # stock_tconfig 旧表主键是 code，无法支持多用户；需要重建为 (id PK + user_id+code 唯一)
         if _has_table(conn, "stock_tconfig"):
@@ -100,6 +112,43 @@ def run_migrations(engine):
                         FROM stock_tconfig_legacy
                     """), {"uid": admin_id})
                 conn.execute(text("DROP TABLE stock_tconfig_legacy"))
+
+        # #29-3：默认 admin 若仍在用出厂密码，强制首登改密（改过密码后不会重复触发）
+        try:
+            from app.config import DEFAULT_PASSWORD
+            from app.security import verify_password
+            row = conn.execute(
+                text("SELECT id, salt, password_hash FROM users WHERE username=:u"),
+                {"u": DEFAULT_USERNAME},
+            ).fetchone()
+            if row and row[1] and row[2] and verify_password(DEFAULT_PASSWORD, row[1], row[2]):
+                conn.execute(text("UPDATE users SET must_change_pw=1 WHERE id=:i"), {"i": row[0]})
+        except Exception:
+            pass
+
+        # #29-2：清理历史随机游客账号（游客_xxx），游客统一收敛到唯一系统账号 guest
+        if _has_table(conn, "users") and _has_col(conn, "users", "is_guest"):
+            try:
+                legacy_ids = [r[0] for r in conn.execute(
+                    text("SELECT id FROM users WHERE is_guest=1 AND username LIKE '游客_%'")
+                ).fetchall()]
+                if legacy_ids:
+                    guest_tables = ["tracked_pool", "screens", "position_rules", "signals",
+                                    "user_profile", "notify_config", "notify_log",
+                                    "user_settings", "stock_tconfig", "access_logs"]
+                    for uid in legacy_ids:
+                        for t in guest_tables:
+                            if _has_table(conn, t) and _has_col(conn, t, "user_id"):
+                                try:
+                                    conn.execute(text(f"DELETE FROM {t} WHERE user_id=:u"), {"u": uid})
+                                except Exception:
+                                    pass
+                        try:
+                            conn.execute(text("DELETE FROM users WHERE id=:u"), {"u": uid})
+                        except Exception:
+                            pass
+            except Exception:
+                pass
 
         # 可投池自定义标签表（pool_tags）：用户级标签名称 + 填充色
         if not _has_table(conn, "pool_tags"):

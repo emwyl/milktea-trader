@@ -211,9 +211,12 @@ class UserSetting(Base):
 
 class StockTConfig(Base):
     """个股做T分析页的本地配置：自定义支撑/压力、特殊风控备注。
-    存于本机数据库（仍不出本机），跨设备/浏览器都能读，满足长期多端使用。"""
+    存于本机数据库（仍不出本机），按 user_id 隔离，跨设备/浏览器都能读。"""
     __tablename__ = "stock_tconfig"
-    code: Mapped[str] = mapped_column(String(16), primary_key=True)
+    __table_args__ = (UniqueConstraint("user_id", "code", name="uq_stock_tconfig_user_code"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    code: Mapped[str] = mapped_column(String(16), index=True)
     custom_support: Mapped[float | None] = mapped_column(Float, nullable=True)  # 自定义支撑位
     custom_pressure: Mapped[float | None] = mapped_column(Float, nullable=True)  # 自定义压力位
     risk_note: Mapped[str] = mapped_column(Text, default="")  # 标的特殊风控备注（如：年底清仓禁加仓）
@@ -222,7 +225,8 @@ class StockTConfig(Base):
 
 
 class AccessLog(Base):
-    """网站访问日志：记录进入网站/登录事件，含游客（is_guest=True）。"""
+    """网站访问日志：记录进入网站/登录事件，含游客（is_guest=True）。
+    增加 user_id 字段，便于按账号追溯与清理游客数据。"""
     __tablename__ = "access_logs"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     ts: Mapped[str] = mapped_column(String(32), default=_now, nullable=False, index=True)
@@ -231,5 +235,6 @@ class AccessLog(Base):
     path: Mapped[str | None] = mapped_column(String(256), nullable=True)
     method: Mapped[str | None] = mapped_column(String(16), nullable=True)
     username: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    user_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True, index=True)
     is_guest: Mapped[bool] = mapped_column(Boolean, default=False)
     event_type: Mapped[str | None] = mapped_column(String(32), nullable=True)  # page/login/guest/register

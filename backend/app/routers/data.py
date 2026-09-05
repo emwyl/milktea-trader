@@ -3,7 +3,7 @@
 导出范围：选股模型(screens)、加减仓规则(position_rules)、短线可投池(tracked_pool)、
 偏好画像(user_profile)、通知配置(notify_config)、用户设置(user_settings)，及选股结果。
 不含：signals / notify_log 等派生日志、全局行情(Stock/DailyQuote)、方案类型(scheme_types)、
-系统级 AppSetting、按股票维度的 StockTConfig（非按用户）。
+系统级 AppSetting、个股做T配置(stock_tconfig，已按 user_id 隔离，暂不纳入导入导出范围)。
 """
 from __future__ import annotations
 

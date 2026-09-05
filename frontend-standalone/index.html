@@ -503,8 +503,8 @@
         <button class="login-btn" @click="doRegister">注册并登录</button>
       </div>
       <div v-if="authMode==='guest'">
-        <p class="login-guest-hint">游客账号数据会保存在服务端；换浏览器 / 清缓存后无法找回，但可继续在当前设备使用。</p>
-        <button class="login-btn" @click="doGuest">生成游客账号</button>
+        <p class="login-guest-hint">游客为免注册的试用模式，数据保存在服务端共享试用区，<b>每日清理</b>；需要长期保存请注册账号。</p>
+        <button class="login-btn" @click="doGuest">进入游客模式</button>
       </div>
       <p v-if="err" class="login-error">{{err}}</p>
       <p class="login-disclaimer">⚠️ 本工具仅用于个人学习与研究，所有行情、信号、回测与策略均为辅助参考，<b>不构成任何投资建议</b>。</p>
@@ -516,7 +516,7 @@
     <header>
       <h1>🧋 加油赚奶茶钱</h1>
       <span class="sub">个人学习用 · 先控风险再谈收益</span>
-      <span class="version" id="appVersion">v20260904125</span>
+      <span class="version" id="appVersion">v20260904126</span>
       <button class="ghost auto-refresh-btn" :class="{active:autoRefresh}" @click="toggleAutoRefresh" :title="autoRefresh?'自动刷新开启中，每5秒更新当前页面数据':'点击开启每5秒自动刷新'">
         {{autoRefresh?'⏸':'▶'}} 自动 5s
       </button>
@@ -1486,6 +1486,26 @@
         </div>
       </div>
 
+      <!-- 强制改密弹窗（初始密码 / 密码被重置后必须修改，不可关闭） -->
+      <div v-if="forcePwModal.show" class="modal">
+        <div class="modal-box" style="max-width:460px">
+          <div class="modal-head">
+            <h3>请先修改密码</h3>
+          </div>
+          <div class="modal-body">
+            <div style="line-height:1.7;margin-bottom:14px">当前账号使用的是初始密码，为保障数据安全，请设置新密码后再继续使用。</div>
+            <div class="login-field"><label>当前密码</label><input v-model="forcePwModal.old" type="password" placeholder="请输入当前密码" /></div>
+            <div class="login-field"><label>新密码</label><input v-model="forcePwModal.np" type="password" placeholder="至少4位" /></div>
+            <div class="login-field"><label>确认新密码</label><input v-model="forcePwModal.np2" type="password" placeholder="再次输入新密码" @keyup.enter="submitForcePw" /></div>
+            <p v-if="forcePwModal.err" class="login-error">{{forcePwModal.err}}</p>
+          </div>
+          <div class="modal-foot">
+            <button type="button" class="ghost" @click="logout">退出登录</button>
+            <button type="button" :disabled="forcePwModal.busy" @click="submitForcePw">{{forcePwModal.busy?'提交中…':'确认修改'}}</button>
+          </div>
+        </div>
+      </div>
+
       <!-- 通用确认弹窗（替代原生 confirm） -->
       <div v-if="confirmModal.show" class="modal" @click.self="confirmModal.onCancel">
         <div class="modal-box" style="max-width:460px">
@@ -2092,6 +2112,7 @@ const app = createApp({
     alertModal:{show:false, title:'提示', message:''},  // 通用消息弹窗（替代原生 alert）
     confirmModal:{show:false, title:'请确认', message:'', onConfirm:null, onCancel:null},  // 通用确认弹窗（替代原生 confirm）
     promptModal:{show:false, title:'请输入', message:'', value:'', onConfirm:null},  // 通用输入弹窗（替代原生 prompt）
+    forcePwModal:{show:false, old:'', np:'', np2:'', err:'', busy:false},  // 强制改密弹窗（初始密码/被重置后必须修改）
   }},
   computed:{
     // 批量录入框实时解析出的 6 位代码（去重）
@@ -2613,11 +2634,31 @@ const app = createApp({
     },
 
     openRulesModal(){ this.showRulesModal=true; this.loadRules(); },
-    async doLogin(){ this.err=''; const r=await API('/auth/login',{method:'POST',body:JSON.stringify({username:this.login.u,password:this.login.p})}); if(r.token){ this.token=r.token; localStorage.setItem('tk',r.token); this.me=r.user; this.loadDash(); } else this.err=(r.detail||'登录失败'); },
+    openForcePw(){ this.forcePwModal = {show:true, old:'', np:'', np2:'', err:'', busy:false}; },
+    async submitForcePw(){
+      const f = this.forcePwModal;
+      f.err = '';
+      if(!f.old || !f.np){ f.err='请填写当前密码和新密码'; return; }
+      if(f.np.length < 4){ f.err='新密码至少4位'; return; }
+      if(f.np !== f.np2){ f.err='两次输入的新密码不一致'; return; }
+      f.busy = true;
+      try{
+        const r = await API('/auth/password', {method:'PUT', body:JSON.stringify({old_password:f.old, new_password:f.np})});
+        if(r && r.ok){
+          this.forcePwModal = {show:false, old:'', np:'', np2:'', err:'', busy:false};
+          if(this.me) this.me.must_change_pw = false;
+          this.showToast('密码已更新');
+        }else{
+          f.err = (r && r.detail) || '修改失败，请重试';
+          f.busy = false;
+        }
+      }catch(e){ f.err = (e && e.message) || '网络错误'; f.busy = false; }
+    },
+    async doLogin(){ this.err=''; const r=await API('/auth/login',{method:'POST',body:JSON.stringify({username:this.login.u,password:this.login.p})}); if(r.token){ this.token=r.token; localStorage.setItem('tk',r.token); this.me=r.user; this.loadDash(); if(r.user && r.user.must_change_pw) this.openForcePw(); } else this.err=(r.detail||'登录失败'); },
     async doRegister(){ this.err=''; if(!this.reg.u||!this.reg.p){ this.err='请填写用户名和密码'; return; } if(this.reg.p!==this.reg.p2){ this.err='两次密码不一致'; return; } const r=await API('/auth/register',{method:'POST',body:JSON.stringify({username:this.reg.u,password:this.reg.p})}); if(r.token){ this.token=r.token; localStorage.setItem('tk',r.token); this.me=r.user; this.reg={u:'',p:'',p2:''}; this.loadDash(); } else this.err=(r.detail||'注册失败'); },
     async doGuest(){ this.err=''; const r=await API('/auth/guest',{method:'POST'}); if(r.token){ this.token=r.token; localStorage.setItem('tk',r.token); this.me=r.user; this.loadDash(); } else this.err=(r.detail||'游客登录失败'); },
     logout(){ localStorage.removeItem('tk'); this.token=''; this.me={username:'',role:'',is_guest:false}; },
-    async loadMe(){ const r=await API('/auth/me'); this.me=r; },
+    async loadMe(){ const r=await API('/auth/me'); this.me=r; if(r && r.must_change_pw) this.openForcePw(); },
     async loadUsers(){ const r=await API('/auth/users'); if(Array.isArray(r)) this.users=r; },
     switchAdminTab(tab){
       this.adminTab = tab;

@@ -15,7 +15,7 @@ router = APIRouter(prefix="/api/t-analysis", tags=["t-analysis"])
 @router.get("/{code}")
 def t_analysis(code: str, db: SessionLocal = Depends(get_db), user: User = Depends(get_current_user)):
     """返回某标的的 6 大分区做T分析结果。"""
-    return analyze_t(code, db)
+    return analyze_t(code, db, user_id=user.id)
 
 
 @router.get("/{code}/config")

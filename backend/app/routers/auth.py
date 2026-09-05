@@ -2,9 +2,10 @@
 from __future__ import annotations
 import re
 import uuid
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from sqlalchemy import func
+from sqlalchemy import func, text
 
 from app.db import SessionLocal
 from app.models import User, AccessLog, TrackedPool, _now
@@ -18,12 +19,72 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
 _USERNAME_RE = re.compile(r"^[a-zA-Z0-9_\u4e00-\u9fa5]{2,20}$")
+GUEST_USERNAME = "guest"  # 方案 A：所有游客共用同一个系统账号
 
 
 def _require_admin(user: User) -> User:
     if user.role != "admin":
         raise HTTPException(status_code=403, detail="需要管理员权限")
     return user
+
+
+def _cleanup_guest_data(db, guest_id: int):
+    """清理游客工作区数据（每天第一个游客进入时触发）。保留全局 stocks/quotes/scheme_types/app_settings。"""
+    tables = [
+        "tracked_pool_tags",
+        "tracked_pool",
+        "pool_tags",
+        "screen_results",
+        "screens",
+        "position_rules",
+        "signals",
+        "user_profile",
+        "notify_config",
+        "notify_log",
+        "user_settings",
+        "stock_tconfig",
+        "access_logs",
+    ]
+    for t in tables:
+        try:
+            db.execute(text(f"DELETE FROM {t} WHERE user_id=:uid"), {"uid": guest_id})
+        except Exception:
+            pass
+
+
+def _today_iso() -> str:
+    """按东八区取当天日期（游客每日清理以国内自然日为准）。"""
+    return (datetime.now(timezone.utc) + timedelta(hours=8)).strftime("%Y-%m-%d")
+
+
+def _local_date(iso_str: str | None) -> str:
+    """把库里存的 UTC ISO 时间戳换算成东八区日期，与 _today_iso() 同口径比较。"""
+    if not iso_str:
+        return ""
+    try:
+        dt = datetime.fromisoformat(iso_str)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return (dt.astimezone(timezone.utc) + timedelta(hours=8)).strftime("%Y-%m-%d")
+    except Exception:
+        return ""
+
+
+def _ensure_guest_user(db, client_ip: str):
+    """方案 A：确保存在唯一的系统 guest 账号。"""
+    user = db.query(User).filter(User.username == GUEST_USERNAME, User.is_guest == True).first()
+    if not user:
+        h, s = hash_password(uuid.uuid4().hex)
+        user = User(username=GUEST_USERNAME, password_hash=h, salt=s,
+                    role="user", is_guest=True, last_ip=client_ip)
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+    return user
+
+
+def _get_guest_user_or_none(db):
+    return db.query(User).filter(User.username == GUEST_USERNAME, User.is_guest == True).first()
 
 
 def _client_ip(request: Request) -> str:
@@ -43,15 +104,16 @@ def login(request: Request, body: LoginIn):
             raise HTTPException(status_code=401, detail="用户名或密码错误")
         if not user.is_active:
             raise HTTPException(status_code=403, detail="账号已被禁用")
-        user.last_login_at = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(timespec="seconds")
+        user.last_login_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
         user.last_ip = _client_ip(request)
         db.add(AccessLog(ts=_now(), ip=_client_ip(request), ua=request.headers.get("User-Agent", ""),
-                        path=request.url.path, method="POST", username=user.username,
+                        path=request.url.path, method="POST", username=user.username, user_id=user.id,
                         is_guest=user.is_guest, event_type="login"))
         db.commit()
         token = make_token(user.username)
         return LoginOut(token=token, user={"username": user.username, "role": user.role,
-                                           "is_guest": user.is_guest, "last_login_at": user.last_login_at})
+                                           "is_guest": user.is_guest, "last_login_at": user.last_login_at,
+                                           "must_change_pw": user.must_change_pw})
     finally:
         db.close()
 
@@ -71,7 +133,7 @@ def register(request: Request, body: LoginIn):
                     last_ip=_client_ip(request))
         db.add(user)
         db.add(AccessLog(ts=_now(), ip=_client_ip(request), ua=request.headers.get("User-Agent", ""),
-                        path=request.url.path, method="POST", username=user.username,
+                        path=request.url.path, method="POST", username=user.username, user_id=user.id,
                         is_guest=user.is_guest, event_type="register"))
         db.commit()
         db.refresh(user)
@@ -84,22 +146,27 @@ def register(request: Request, body: LoginIn):
 
 @router.post("/guest", response_model=LoginOut)
 def guest_login(request: Request):
+    """方案 A：所有游客共用唯一系统账号 guest。
+    每天第一个游客进入时，惰性清理游客工作区残留数据（无需后台定时任务）。"""
     db = SessionLocal()
     try:
-        username = f"游客_{uuid.uuid4().hex[:8]}"
-        raw_pw = uuid.uuid4().hex
-        h, s = hash_password(raw_pw)
-        user = User(username=username, password_hash=h, salt=s, role="user", is_guest=True,
-                    last_ip=_client_ip(request))
-        db.add(user)
+        guest = _get_guest_user_or_none(db)
+        if guest is None:
+            guest = _ensure_guest_user(db, _client_ip(request))
+        elif _local_date(guest.last_login_at) != _today_iso():
+            # 当日首个游客进入 → 清理游客工作区（全局行情与正式账号数据不受影响）
+            _cleanup_guest_data(db, guest.id)
+            db.commit()
+        guest.last_login_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        guest.last_ip = _client_ip(request)
         db.add(AccessLog(ts=_now(), ip=_client_ip(request), ua=request.headers.get("User-Agent", ""),
-                        path=request.url.path, method="POST", username=user.username,
+                        path=request.url.path, method="POST", username=guest.username, user_id=guest.id,
                         is_guest=True, event_type="guest"))
         db.commit()
-        db.refresh(user)
-        token = make_token(user.username)
-        return LoginOut(token=token, user={"username": user.username, "role": user.role,
-                                           "is_guest": True, "last_login_at": user.last_login_at})
+        token = make_token(guest.username)
+        return LoginOut(token=token, user={"username": guest.username, "role": guest.role,
+                                           "is_guest": True, "last_login_at": guest.last_login_at,
+                                           "must_change_pw": guest.must_change_pw})
     finally:
         db.close()
 
@@ -170,7 +237,7 @@ def list_access_logs(page: int = 1, page_size: int = 10, user: User = Depends(ge
 @router.get("/me")
 def me(user: User = Depends(get_current_user)):
     return {"username": user.username, "role": user.role, "is_guest": user.is_guest,
-            "last_login_at": user.last_login_at}
+            "last_login_at": user.last_login_at, "must_change_pw": user.must_change_pw}
 
 
 @router.post("/logout")

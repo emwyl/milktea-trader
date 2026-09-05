@@ -8,7 +8,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.config import FRONTEND_DIR
 from app.db import engine, Base, SessionLocal, run_migrations
-from app.models import AccessLog
+from app.models import AccessLog, User
 from app.security import verify_token
 from app.seed import seed_all
 from app.scheduler import start_scheduler
@@ -63,23 +63,30 @@ def _record_page_visit(request: Request):
     elif auth and auth.startswith("Bearer "):
         token = auth.split(" ", 1)[1]
     username = verify_token(token) if token else None
-    is_guest = not username or (username and username.startswith("游客_"))
     ip = request.client.host if request.client else None
     ua = (request.headers.get("User-Agent", "") or "")[:512]
     threading.Thread(
         target=_write_access_log,
-        args=(request.url.path, "GET", ip, ua, username, is_guest, "page"),
+        args=(request.url.path, "GET", ip, ua, username, "page"),
         daemon=True,
     ).start()
 
 
-def _write_access_log(path, method, ip, ua, username, is_guest, event_type):
+def _write_access_log(path, method, ip, ua, username, event_type):
+    """写入访问日志；user_id/is_guest 以 users 表为准（游客统一为 guest 系统账号）。"""
     try:
         db = SessionLocal()
+        uid = None
+        is_guest = True
+        if username:
+            u = db.query(User).filter(User.username == username).first()
+            if u:
+                uid = u.id
+                is_guest = bool(u.is_guest)
         db.add(AccessLog(
             ts=dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
             ip=ip, ua=ua, path=path, method=method,
-            username=username, is_guest=is_guest, event_type=event_type,
+            username=username, user_id=uid, is_guest=is_guest, event_type=event_type,
         ))
         db.commit()
     except Exception:
