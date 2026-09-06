@@ -561,7 +561,7 @@
     <header>
       <h1>🧋 加油赚奶茶钱</h1>
       <span class="sub">个人学习用 · 先控风险再谈收益</span>
-      <span class="version" id="appVersion">v20260906128</span>
+      <span class="version" id="appVersion">v20260906129</span>
       <button class="ghost auto-refresh-btn" :class="{active:autoRefresh}" @click="toggleAutoRefresh" :title="autoRefresh?'自动刷新开启中，每5秒更新当前页面数据':'点击开启每5秒自动刷新'">
         {{autoRefresh?'⏸':'▶'}} 自动 5s
       </button>
@@ -1193,7 +1193,7 @@
             <button type="button" class="close-x" @click="showIdxDetail=false" aria-label="关闭">×</button>
           </div>
           <div class="modal-body">
-            <p class="muted">行情源：腾讯（实时 qt.gtimg.cn / 日线 web.ifzq.gtimg.cn，日线缓存 1 小时）。非交易日显示最近一个交易日的收盘价，当日涨幅为 0.00%。</p>
+            <p class="muted">A 股宽基：腾讯（实时 qt.gtimg.cn / 日线 web.ifzq.gtimg.cn，日线缓存 1 小时）。带「期货」的走后端代理新浪，目前只有实时快照，区间涨幅暂显示 -。非交易日显示最近一个交易日的收盘价。</p>
             <div class="tracktbl-wrap" style="max-height:60vh">
               <table>
                 <thead><tr>
@@ -2274,17 +2274,26 @@ const app = createApp({
     confirmModal:{show:false, title:'请确认', message:'', onConfirm:null, onCancel:null},  // 通用确认弹窗（替代原生 confirm）
     promptModal:{show:false, title:'请输入', message:'', value:'', onConfirm:null},  // 通用输入弹窗（替代原生 prompt）
     forcePwModal:{show:false, old:'', np:'', np2:'', err:'', busy:false},  // 强制改密弹窗（初始密码/被重置后必须修改）
-    // 宽指快览 v128
-    indexes: JSON.parse(localStorage.getItem('mtIdxList')||'null') || [
-      {code:'sh000001', name:'上证指数'},
-      {code:'sh000300', name:'沪深300'},
-      {code:'sh000016', name:'上证50'},
-      {code:'sh000688', name:'科创50'},
-      {code:'sz399006', name:'创业板指'},
-      {code:'sh000905', name:'中证500'},
-      {code:'sh000852', name:'中证1000'},
-      {code:'sh000510', name:'中证A500'},
-    ],
+    // 宽指快览 v129（code 前缀 sina: 表示走后端代理的新浪期货，其余走腾讯）
+    indexes: (function(){
+      const DEF = [
+        {code:'sh000001', name:'上证指数'},
+        {code:'sh000300', name:'沪深300'},
+        {code:'sh000016', name:'上证50'},
+        {code:'sh000688', name:'科创50'},
+        {code:'sz399006', name:'创业板指'},
+        {code:'sh000905', name:'中证500'},
+        {code:'sh000852', name:'中证1000'},
+        {code:'sh000510', name:'中证A500'},
+        {code:'sina:hf_CHA50CFD', name:'富时A50期货'},
+      ];
+      let saved = null;
+      try{ saved = JSON.parse(localStorage.getItem('mtIdxList')||'null'); }catch(e){}
+      if(!saved || !saved.length) return DEF;
+      // 老配置升级：补进 v129 新增的富时A50期货（已存在的不会重复）
+      if(!saved.some(x=>x.code==='sina:hf_CHA50CFD')) saved.push({code:'sina:hf_CHA50CFD', name:'富时A50期货'});
+      return saved;
+    })(),
     idxPool: [
       {code:'sh000001', name:'上证指数'},
       {code:'sz399001', name:'深证成指'},
@@ -2297,6 +2306,12 @@ const app = createApp({
       {code:'sh000688', name:'科创50'},
       {code:'sh000852', name:'中证1000'},
       {code:'sh000905', name:'中证500'},
+      // v129：期货（腾讯不支持，走后端代理新浪）
+      {code:'sina:hf_CHA50CFD', name:'富时A50期货'},
+      {code:'sina:nf_IF0', name:'IF沪深300期货'},
+      {code:'sina:nf_IH0', name:'IH上证50期货'},
+      {code:'sina:nf_IC0', name:'IC中证500期货'},
+      {code:'sina:nf_IM0', name:'IM中证1000期货'},
     ],
     idxQuotes: {},
     idxKlines: {},
@@ -2863,6 +2878,7 @@ const app = createApp({
         {code:'sh000905', name:'中证500'},
         {code:'sh000852', name:'中证1000'},
         {code:'sh000510', name:'中证A500'},
+        {code:'sina:hf_CHA50CFD', name:'富时A50期货'},
       ];
     },
     openIdxConfig(){
@@ -2894,11 +2910,39 @@ const app = createApp({
       await this.loadIdxKlines();
       this.$nextTick(()=> this.renderIdxSparks());
     },
-    // 腾讯 qt.gtimg.cn 返回的是「变量赋值」而非 JSONP 调用：v_sh000001="1~名称~代码~现价~昨收~今开~…";
-    // 所以只能 onload 之后读 window['v_'+code]，再按 ~ 切分解析。
+    // 前端分两路取快照：
+    //  - 普通 A 股宽基：浏览器直连腾讯 qt.gtimg.cn（变量赋值式，onload 后读 window['v_'+code]）
+    //  - sina: 前缀的期货：新浪有防盗链（不带 Referer 直接 Forbidden），浏览器改不了 Referer，
+    //    所以走后端 /api/market/futures 代理（后端伪造 Referer 代拉）。
     loadIdxQuotes(){
-      if(!this.indexes.length) return Promise.resolve();
-      const codes = this.indexes.map(x=>x.code);
+      const all = this.indexes || [];
+      if(!all.length) return Promise.resolve();
+      const txCodes = all.filter(x=>!String(x.code).startsWith('sina:')).map(x=>x.code);
+      const sinaCodes = all.filter(x=>String(x.code).startsWith('sina:')).map(x=>String(x.code).slice(5));
+      const jobs = [];
+      if(txCodes.length) jobs.push(this._fetchTxQuotes(txCodes));
+      if(sinaCodes.length) jobs.push(this._fetchSinaFutures(sinaCodes));
+      return Promise.all(jobs);
+    },
+    _fetchSinaFutures(codes){
+      const tk = localStorage.getItem('tk')||'';
+      return fetch('/api/market/futures?codes=' + encodeURIComponent(codes.join(',')), {
+        headers:{'X-Auth-Token':tk, 'Authorization':'Bearer '+tk}
+      }).then(r=>r.json()).then(j=>{
+        const map = {};
+        Object.entries((j && j.quotes) || {}).forEach(([code, q])=>{
+          if(!q || !isFinite(q.price)) return;
+          const d = (q.date||'').replace(/-/g,'');
+          const t = (q.time||'').replace(/:/g,'');
+          map['sina:'+code] = {
+            price:q.price, prev_close:q.prev_close, chg:q.chg, chg_pct:q.chg_pct,
+            time: (d.length===8 && t.length>=6) ? (d + t.slice(0,6)) : ''
+          };
+        });
+        if(Object.keys(map).length) this.idxQuotes = Object.assign({}, this.idxQuotes, map);
+      }).catch(e=>{ console.warn('sina futures', e); });
+    },
+    _fetchTxQuotes(codes){
       return new Promise((resolve)=>{
         let finished=false;
         const s = document.createElement('script');
@@ -2933,8 +2977,10 @@ const app = createApp({
       });
     },
     async loadIdxKlines(){
-      if(!this.indexes.length) return;
-      for(const x of this.indexes){
+      // 期货走新浪，腾讯 kline 接口不认期货代码（会返回 param error），直接跳过
+      const targets = this.indexes.filter(x=>!String(x.code).startsWith('sina:'));
+      if(!targets.length) return;
+      for(const x of targets){
         const cache = this.idxKlines[x.code];
         if(cache && (Date.now() - cache.fetched_at) < 3600*1000) continue;
         await new Promise((resolve)=>{
