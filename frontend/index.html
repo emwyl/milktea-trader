@@ -12,6 +12,8 @@
   :root{
     --milk:#f5f7fa; --tea:#2563eb; --tea-d:#1d4ed8; --ink:#1f2937; --line:#e5e7eb;
     --ok:#10b981; --warn:#f59e0b; --danger:#ef4444; --card:#ffffff;
+    /* A 股惯例：红涨绿跌 */
+    --up:#ef4444; --down:#10b981;
   }
   *{box-sizing:border-box}
   body{margin:0;font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--milk);color:var(--ink)}
@@ -484,6 +486,29 @@
   .toast{position:fixed;top:16px;left:50%;transform:translateX(-50%) translateY(-8px);z-index:200;background:#1f2937;color:#fff;padding:10px 20px;border-radius:10px;font-size:14px;box-shadow:0 10px 30px rgba(0,0,0,.22);opacity:0;transition:opacity .2s,transform .2s;pointer-events:none;max-width:min(90vw,520px);text-align:center;line-height:1.5}
   .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
   .close-x:hover{background:#f3f4f6;color:var(--ink)}
+  /* 宽指快览 v128 */
+  .idx-head{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+  .idx-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
+  .idx-card{background:#fff;border:1px solid var(--line);border-radius:10px;padding:10px 8px;text-align:center;cursor:pointer;transition:transform .15s,box-shadow .15s;position:relative}
+  .idx-card:hover{transform:translateY(-1px);box-shadow:0 4px 12px rgba(0,0,0,.08)}
+  .idx-name{font-size:12px;color:#6b7280;font-weight:500;margin-bottom:4px}
+  .idx-price{font-size:18px;font-weight:600;color:var(--ink);line-height:1.2}
+  .idx-chg{font-size:12px;margin-top:2px;font-weight:500}
+  .idx-chg.up{color:var(--up)}
+  .idx-chg.down{color:var(--down)}
+  .idx-chg.flat{color:#9ca3af}
+  .idx-time{font-size:10px;color:#9ca3af;margin-top:4px}
+  .idx-empty{color:#9ca3af;font-size:13px;padding:24px 0;text-align:center}
+  .idx-tab-row{overflow-x:auto;display:flex;gap:8px;padding:8px 0;border-bottom:1px solid var(--line);margin-bottom:10px}
+  .idx-tab-row a{padding:6px 12px;border-radius:8px;cursor:pointer;white-space:nowrap;font-size:13px;color:var(--tea-d);border:1px solid var(--line);background:#fff}
+  .idx-tab-row a.active{background:var(--tea);color:#fff;border-color:var(--tea)}
+  @media(max-width:768px){
+    .idx-grid{grid-template-columns:repeat(3,1fr);gap:6px}
+    .idx-card{padding:8px 4px}
+    .idx-name{font-size:11px}
+    .idx-price{font-size:14px}
+    .idx-chg{font-size:11px}
+  }
 </style>
 </head>
 <body>
@@ -536,7 +561,7 @@
     <header>
       <h1>🧋 加油赚奶茶钱</h1>
       <span class="sub">个人学习用 · 先控风险再谈收益</span>
-      <span class="version" id="appVersion">v20260904127</span>
+      <span class="version" id="appVersion">v20260906128</span>
       <button class="ghost auto-refresh-btn" :class="{active:autoRefresh}" @click="toggleAutoRefresh" :title="autoRefresh?'自动刷新开启中，每5秒更新当前页面数据':'点击开启每5秒自动刷新'">
         {{autoRefresh?'⏸':'▶'}} 自动 5s
       </button>
@@ -565,6 +590,26 @@
       <!-- 看板总览 -->
       <div v-if="view==='dash'">
         <div class="card"><div class="row"><b>看板总览</b><button @click="runEngine">运行引擎</button><button class="ghost" @click="openRulesModal">加减仓规则</button><span class="muted">{{dashMsg}}</span></div></div>
+        <!-- 宽指快览 v128：登录进来第一眼看到的大盘健康度（涨跌按 A 股红涨绿跌） -->
+        <div class="card">
+          <div class="idx-head">
+            <b>宽指快览</b>
+            <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+              <span class="muted">{{idxStatusText}}</span>
+              <button class="ghost btn-sm" @click="openIdxConfig" title="配置要显示的指数">配置</button>
+              <button class="ghost btn-sm" @click="openIdxDetail" title="更多历史涨幅/趋势">更多</button>
+            </div>
+          </div>
+          <div class="idx-grid" v-if="indexes.length">
+            <div v-for="x in indexes" :key="x.code" class="idx-card" @click="openIdxDetail" :title="x.name + '：点击查看历史涨幅'">
+              <div class="idx-name">{{x.name}}</div>
+              <div class="idx-price">{{fmtIdxPrice(x.code)}}</div>
+              <div class="idx-chg" :class="idxChgClass(x.code)">{{fmtIdxChg(x.code)}}</div>
+              <div class="idx-time" v-if="fmtIdxTime(x.code)">{{fmtIdxTime(x.code)}}</div>
+            </div>
+          </div>
+          <div v-else class="idx-empty">尚未配置宽指 → 点右上「配置」添加</div>
+        </div>
         <div class="grid g4">
           <div class="stat risk"><b>{{dash.risk_alerts}}</b>高风险预警</div>
           <div class="stat pool"><b>{{dash.pool_count}}</b>可投池</div>
@@ -1099,6 +1144,81 @@
                 <span><button class="ghost btn-sm" @click="addRecToPool(c.code)">加入可投池</button></span>
               </div>
             </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 宽指快览：配置弹窗 v128 -->
+      <div v-if="showIdxConfig" class="modal" @click.self="showIdxConfig=false">
+        <div class="modal-box" style="max-width:760px">
+          <div class="modal-head">
+            <h3>配置宽指快览（显示 {{indexes.length}} / 共 {{idxPool.length}}）</h3>
+            <button type="button" class="close-x" @click="showIdxConfig=false" aria-label="关闭">×</button>
+          </div>
+          <div class="modal-body">
+            <p class="muted">勾选要显示的指数；A 股宽基按勾选顺序展示。点芯片右上 × 可从当前显示移除。</p>
+            <div style="margin:10px 0 6px"><b>内置指数</b>（点击切换是否显示）</div>
+            <div class="tag-chips">
+              <button type="button" v-for="t in idxPool" :key="'pc-'+t.code" class="chip" :class="{active:isIdxSelected(t.code)}" @click="toggleIdxPick(t.code)">{{t.name}}</button>
+            </div>
+            <div style="margin:14px 0 6px"><b>自定义新增</b> <span class="muted">（代码填 sh000001 / sz399006 这类腾讯格式；名称自定义）</span></div>
+            <div class="row" style="gap:6px">
+              <input v-model="idxAdd.code" placeholder="代码" style="flex:1;margin:0" />
+              <input v-model="idxAdd.name" placeholder="名称" style="flex:1;margin:0" />
+              <button class="ghost btn-sm" @click="addCustomIdx" :disabled="!idxAdd.code || !idxAdd.name">添加</button>
+            </div>
+            <div v-if="idxAdd.err" class="muted" style="color:var(--danger);margin-top:6px">{{idxAdd.err}}</div>
+            <div style="margin:14px 0 6px"><b>当前显示（{{(idxDraftList||indexes).length}} 个）</b> <span class="muted">点芯片右上 × 移除</span></div>
+            <div class="tag-chips" v-if="(idxDraftList||indexes).length">
+              <button type="button" v-for="x in (idxDraftList||indexes)" :key="'cur-'+x.code" class="chip active" style="position:relative;padding-right:24px" @click="removeIdx(x.code)" :title="'移除 ' + x.name">
+                {{x.name}}<span style="position:absolute;right:6px;top:50%;transform:translateY(-50%);opacity:.7">×</span>
+              </button>
+            </div>
+            <div v-else class="muted">尚未勾选任何指数</div>
+            <div v-if="idxLastErr" class="muted" style="color:var(--danger);margin-top:8px">{{idxLastErr}}</div>
+          </div>
+          <div class="modal-foot">
+            <button type="button" class="ghost" @click="restoreDefaultIdx">恢复默认</button>
+            <button type="button" class="ghost" @click="showIdxConfig=false">取消</button>
+            <button type="button" @click="saveIdxConfig">保存</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 宽指快览：详情弹窗 v128 -->
+      <div v-if="showIdxDetail" class="modal" @click.self="showIdxDetail=false">
+        <div class="modal-box" style="max-width:980px">
+          <div class="modal-head">
+            <h3>宽指详情（当日 / 5日 / 7日 / 30日 / 60日 涨跌幅 + 近 30 日趋势）</h3>
+            <button type="button" class="close-x" @click="showIdxDetail=false" aria-label="关闭">×</button>
+          </div>
+          <div class="modal-body">
+            <p class="muted">行情源：腾讯（实时 qt.gtimg.cn / 日线 web.ifzq.gtimg.cn，日线缓存 1 小时）。非交易日显示最近一个交易日的收盘价，当日涨幅为 0.00%。</p>
+            <div class="tracktbl-wrap" style="max-height:60vh">
+              <table>
+                <thead><tr>
+                  <th>名称</th><th>代码</th><th>最新点位</th><th>当日</th><th>5日</th><th>7日</th><th>30日</th><th>60日</th><th>近30日趋势</th>
+                </tr></thead>
+                <tbody>
+                  <tr v-for="x in indexes" :key="'dt-'+x.code">
+                    <td>{{x.name}}</td>
+                    <td class="muted">{{x.code}}</td>
+                    <td>{{fmtIdxPrice(x.code)}}</td>
+                    <td :class="idxChgClass(x.code)">{{fmtIdxChg(x.code)}}</td>
+                    <td :class="idxPeriodChgClass(x.code, 5)">{{fmtIdxPeriodChg(x.code, 5)}}</td>
+                    <td :class="idxPeriodChgClass(x.code, 7)">{{fmtIdxPeriodChg(x.code, 7)}}</td>
+                    <td :class="idxPeriodChgClass(x.code, 30)">{{fmtIdxPeriodChg(x.code, 30)}}</td>
+                    <td :class="idxPeriodChgClass(x.code, 60)">{{fmtIdxPeriodChg(x.code, 60)}}</td>
+                    <td><canvas :ref="el=>idxSparkRef[x.code]=el" width="120" height="36" style="width:120px;height:36px;display:block"></canvas></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p v-if="!indexes.length" class="muted">尚未配置任何指数</p>
+          </div>
+          <div class="modal-foot">
+            <button class="ghost" @click="refreshIdxDetail">刷新</button>
+            <button class="ghost" @click="showIdxDetail=false">关闭</button>
           </div>
         </div>
       </div>
@@ -2154,6 +2274,40 @@ const app = createApp({
     confirmModal:{show:false, title:'请确认', message:'', onConfirm:null, onCancel:null},  // 通用确认弹窗（替代原生 confirm）
     promptModal:{show:false, title:'请输入', message:'', value:'', onConfirm:null},  // 通用输入弹窗（替代原生 prompt）
     forcePwModal:{show:false, old:'', np:'', np2:'', err:'', busy:false},  // 强制改密弹窗（初始密码/被重置后必须修改）
+    // 宽指快览 v128
+    indexes: JSON.parse(localStorage.getItem('mtIdxList')||'null') || [
+      {code:'sh000001', name:'上证指数'},
+      {code:'sh000300', name:'沪深300'},
+      {code:'sh000016', name:'上证50'},
+      {code:'sh000688', name:'科创50'},
+      {code:'sz399006', name:'创业板指'},
+      {code:'sh000905', name:'中证500'},
+      {code:'sh000852', name:'中证1000'},
+      {code:'sh000510', name:'中证A500'},
+    ],
+    idxPool: [
+      {code:'sh000001', name:'上证指数'},
+      {code:'sz399001', name:'深证成指'},
+      {code:'sz399006', name:'创业板指'},
+      {code:'sh000010', name:'上证180'},
+      {code:'sh000015', name:'红利指数'},
+      {code:'sh000016', name:'上证50'},
+      {code:'sh000300', name:'沪深300'},
+      {code:'sh000510', name:'中证A500'},
+      {code:'sh000688', name:'科创50'},
+      {code:'sh000852', name:'中证1000'},
+      {code:'sh000905', name:'中证500'},
+    ],
+    idxQuotes: {},
+    idxKlines: {},
+    idxLoadedAt: 0,
+    idxQuoteAt: 0,
+    showIdxConfig: false,
+    showIdxDetail: false,
+    idxAdd: {code:'', name:'', err:''},
+    idxDraftList: null,
+    idxSparkRef: {},
+    idxLastErr: '',
   }},
   computed:{
     // 批量录入框实时解析出的 6 位代码（去重）
@@ -2308,10 +2462,12 @@ const app = createApp({
     },
   },
   mounted(){ if(this.token){ this.loadMe(); this.loadDash(); }
+    // 宽指快览：登录即拉一次快照与日线(v128)
+    if(this.token && this.indexes.length){ this.loadIdxQuotes(); this.loadIdxKlines(); }
     // 全局自动刷新：默认开启，每 5 秒根据当前页面刷新对应数据
     if(this.autoRefresh) this.startAutoRefresh();
     // ESC 关闭弹窗
-    this._keydown = (e)=>{ if(e.key==='Escape'){ this.showRulesModal=false; } };
+    this._keydown = (e)=>{ if(e.key==='Escape'){ this.showRulesModal=false; if(this.showIdxConfig) this.showIdxConfig=false; else if(this.showIdxDetail) this.showIdxDetail=false; } };
     document.addEventListener('keydown', this._keydown);
   },
   beforeUnmount(){ this.stopAutoRefresh(); if(this._keydown) document.removeEventListener('keydown', this._keydown); },
@@ -2647,9 +2803,13 @@ const app = createApp({
     refreshCurrentView(){
       if(!this.token) return;
       // 有弹窗打开时跳过本次刷新，避免干扰用户当前操作
-      if(this.showRulesModal || this.addPoolModal.show || this.tagModal.show || this.batchTagModal.show || this.deleteConfirmModal.show || this.importPoolModal.show || this.editModal.show || this.columnSettingModal.show || this.adviceModal.show) return;
+      if(this.showRulesModal || this.addPoolModal.show || this.tagModal.show || this.batchTagModal.show || this.deleteConfirmModal.show || this.importPoolModal.show || this.editModal.show || this.columnSettingModal.show || this.adviceModal.show || this.showIdxConfig || this.showIdxDetail || this.forcePwModal.show) return;
       const v = this.view;
-      if(v==='dash') this.loadDash();
+      if(v==='dash'){
+        this.loadDash();
+        // 宽指快照 20 秒刷新一次（日线有 1 小时缓存，不跟着跑）
+        if(Date.now() - (this.idxQuoteAt||0) > 20000){ this.idxQuoteAt = Date.now(); this.loadIdxQuotes(); }
+      }
       else if(v==='pool'){
         this.loadPool();
         this.loadPoolTags();
@@ -2662,6 +2822,247 @@ const app = createApp({
         this.loadSettings();
         if(this.me.role==='admin'){ this.loadUsers(); this.loadBackups(); this.loadCosStatus(); }
       }
+    },
+
+    // ===== 宽指快览 v128 =====
+    isIdxSelected(code){ return (this.idxDraftList||this.indexes).some(x=>x.code===code); },
+    toggleIdxPick(code){
+      const pool = this.idxPool.find(t=>t.code===code);
+      if(!pool) return;
+      const list = (this.idxDraftList || this.indexes.slice());
+      const i = list.findIndex(x=>x.code===code);
+      if(i>=0) list.splice(i,1);
+      else list.push({code:pool.code, name:pool.name});
+      this.idxDraftList = list;
+    },
+    addCustomIdx(){
+      this.idxAdd.err='';
+      const code=(this.idxAdd.code||'').trim();
+      const name=(this.idxAdd.name||'').trim();
+      if(!code || !name){ this.idxAdd.err='请填写代码和名称'; return; }
+      const list = (this.idxDraftList || this.indexes.slice());
+      if(list.some(x=>x.code===code)){ this.idxAdd.err='代码已在当前显示中'; return; }
+      if(!this.idxPool.find(t=>t.code===code)) this.idxPool.push({code, name});
+      list.push({code, name});
+      this.idxDraftList = list;
+      this.idxAdd.code=''; this.idxAdd.name='';
+    },
+    removeIdx(code){
+      const list = (this.idxDraftList || this.indexes.slice());
+      const i = list.findIndex(x=>x.code===code);
+      if(i>=0) list.splice(i,1);
+      this.idxDraftList = list;
+    },
+    restoreDefaultIdx(){
+      this.idxDraftList = [
+        {code:'sh000001', name:'上证指数'},
+        {code:'sh000300', name:'沪深300'},
+        {code:'sh000016', name:'上证50'},
+        {code:'sh000688', name:'科创50'},
+        {code:'sz399006', name:'创业板指'},
+        {code:'sh000905', name:'中证500'},
+        {code:'sh000852', name:'中证1000'},
+        {code:'sh000510', name:'中证A500'},
+      ];
+    },
+    openIdxConfig(){
+      this.showIdxConfig = true;
+      this.idxDraftList = null;
+      this.idxAdd = {code:'', name:'', err:''};
+      this.idxLastErr = '';
+    },
+    saveIdxConfig(){
+      const list = (this.idxDraftList || this.indexes).slice();
+      if(!list.length){ this.idxLastErr='请至少勾选一个指数'; return; }
+      this.indexes = list;
+      localStorage.setItem('mtIdxList', JSON.stringify(list));
+      this.showIdxConfig = false;
+      this.idxDraftList = null;
+      this.showToast('宽指配置已保存');
+      this.loadIdxQuotes();
+      this.loadIdxKlines();
+    },
+    openIdxDetail(){
+      this.showIdxDetail = true;
+      this.loadIdxKlines().then(()=>{
+        this.$nextTick(()=> this.renderIdxSparks());
+      });
+    },
+    async refreshIdxDetail(){
+      this.idxQuotes = {};  // 触发 UI 重渲染，避免旧数据显示
+      await this.loadIdxQuotes();
+      await this.loadIdxKlines();
+      this.$nextTick(()=> this.renderIdxSparks());
+    },
+    // 腾讯 qt.gtimg.cn 返回的是「变量赋值」而非 JSONP 调用：v_sh000001="1~名称~代码~现价~昨收~今开~…";
+    // 所以只能 onload 之后读 window['v_'+code]，再按 ~ 切分解析。
+    loadIdxQuotes(){
+      if(!this.indexes.length) return Promise.resolve();
+      const codes = this.indexes.map(x=>x.code);
+      return new Promise((resolve)=>{
+        let finished=false;
+        const s = document.createElement('script');
+        const done = ()=>{
+          if(finished) return; finished=true;
+          try{ document.body.removeChild(s); }catch(e){}
+          const map = {};
+          codes.forEach(code=>{
+            const raw = window['v_'+code];
+            if(!raw || typeof raw!=='string') return;
+            const arr = raw.split('~');
+            if(arr.length<6) return;
+            const price = parseFloat(arr[3]);      // 当前价
+            const prevClose = parseFloat(arr[4]);  // 昨收
+            if(!isFinite(price) || !isFinite(prevClose)) return;
+            const chg = price - prevClose;
+            const t = arr.find(v=>/^\d{14}$/.test(v)) || '';
+            map[code] = {
+              price, prev_close: prevClose, chg,
+              chg_pct: prevClose>0 ? (chg/prevClose)*100 : 0,
+              time: t
+            };
+          });
+          if(Object.keys(map).length) this.idxQuotes = Object.assign({}, this.idxQuotes, map);
+          resolve();
+        };
+        s.onload = done; s.onerror = done;
+        s.charset = 'GBK';
+        s.src = 'https://qt.gtimg.cn/q=' + codes.join(',') + '&_t=' + Date.now();
+        document.body.appendChild(s);
+        setTimeout(done, 6000);
+      });
+    },
+    async loadIdxKlines(){
+      if(!this.indexes.length) return;
+      for(const x of this.indexes){
+        const cache = this.idxKlines[x.code];
+        if(cache && (Date.now() - cache.fetched_at) < 3600*1000) continue;
+        await new Promise((resolve)=>{
+          // web.ifzq 不支持 JSONP 回调，但支持 _var=xxx —— 返回 `xxx={...}`，同样是变量赋值，onload 后读取即可。
+          // 注意：指数不带复权参数，param 末尾必须是空（带 qfq 会返回 bad params）。
+          const vb = 'idxK_' + x.code.replace(/[^a-zA-Z0-9]/g,'_') + '_' + Math.floor(Math.random()*10000);
+          let finished=false;
+          const s = document.createElement('script');
+          const cleanup = ()=>{
+            if(finished) return; finished=true;
+            try{ document.body.removeChild(s); }catch(e){}
+            try{ delete window[vb]; }catch(e){}
+            resolve();
+          };
+          s.onload = ()=>{
+            try{
+              const data = window[vb];
+              const rec = data && data.data && data.data[x.code];
+              let series = null;
+              if(rec){
+                if(Array.isArray(rec.day) && rec.day.length) series = rec.day;
+                else if(Array.isArray(rec.qfqday) && rec.qfqday.length) series = rec.qfqday;
+              }
+              if(series){
+                // 日线数组：[日期, 开, 收, 高, 低, 量]
+                const closes = series.map(k=>parseFloat(k[2])).filter(v=>isFinite(v));
+                const dates = series.map(k=>k[0]);
+                this.idxKlines = Object.assign({}, this.idxKlines, {[x.code]: {closes, dates, fetched_at: Date.now()}});
+              }
+            }catch(e){ console.warn('idxKlines parse', e); }
+            cleanup();
+          };
+          s.onerror = cleanup;
+          s.src = 'https://web.ifzq.gtimg.cn/appstock/app/kline/kline?_var=' + vb + '&param=' + x.code + ',day,,,90,&_t=' + Date.now();
+          document.body.appendChild(s);
+          setTimeout(cleanup, 8000);
+        });
+      }
+      this.idxLoadedAt = Date.now();
+    },
+    // 日线收盘序列 + 用实时价覆盖最后一点（盘中算 7/30 日涨幅时才准）
+    idxSeries(code){
+      const k = this.idxKlines[code];
+      if(!k || !k.closes || !k.closes.length) return null;
+      const arr = k.closes.slice();
+      const q = this.idxQuotes[code];
+      if(q && isFinite(q.price) && q.price>0) arr[arr.length-1] = q.price;
+      return arr;
+    },
+    renderIdxSparks(){
+      Object.keys(this.idxSparkRef).forEach(code=>{
+        const canvas = this.idxSparkRef[code];
+        if(!canvas) return;
+        const src = this.idxSeries(code);
+        if(!src || src.length<2){
+          const ctx = canvas.getContext('2d');
+          if(ctx) ctx.clearRect(0,0,canvas.width,canvas.height);
+          return;
+        }
+        const closes = src.length > 31 ? src.slice(-31) : src;  // 近 30 日
+        const w = canvas.width, h = canvas.height;
+        const min = Math.min.apply(null, closes), max = Math.max.apply(null, closes);
+        const range = (max - min) || 1;
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0,0,w,h);
+        const up = closes[closes.length-1] >= closes[0];
+        ctx.strokeStyle = up ? '#ef4444' : '#10b981';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        closes.forEach((v,i)=>{
+          const x = (i / (closes.length-1)) * w;
+          const y = h - ((v - min) / range) * h;
+          if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+        });
+        ctx.stroke();
+      });
+    },
+    fmtIdxPrice(code){
+      const q = this.idxQuotes[code];
+      if(!q || !isFinite(q.price)) return '-';
+      const decimals = q.price < 100 ? 3 : 2;
+      return q.price.toLocaleString('zh-CN', {minimumFractionDigits: decimals, maximumFractionDigits: decimals});
+    },
+    fmtIdxTime(code){
+      const q = this.idxQuotes[code];
+      if(!q || !q.time || q.time.length<12) return '';
+      const t = q.time;
+      return t.slice(4,6) + '-' + t.slice(6,8) + ' ' + t.slice(8,10) + ':' + t.slice(10,12);
+    },
+    fmtIdxChg(code){
+      const q = this.idxQuotes[code];
+      if(!q || !isFinite(q.chg_pct)) return '-';
+      const sign = q.chg_pct >= 0 ? '+' : '';
+      return sign + q.chg_pct.toFixed(2) + '%';
+    },
+    idxChgClass(code){
+      const q = this.idxQuotes[code];
+      if(!q || !isFinite(q.chg_pct)) return 'flat';
+      if(q.chg_pct > 0.001) return 'up';
+      if(q.chg_pct < -0.001) return 'down';
+      return 'flat';
+    },
+    fmtIdxPeriodChg(code, days){
+      const closes = this.idxSeries(code);
+      if(!closes || closes.length < days+1) return '-';
+      const last = closes[closes.length-1];
+      const prev = closes[closes.length-1-days];
+      if(!isFinite(prev) || prev<=0) return '-';
+      const pct = (last - prev) / prev * 100;
+      const sign = pct >= 0 ? '+' : '';
+      return sign + pct.toFixed(2) + '%';
+    },
+    idxPeriodChgClass(code, days){
+      const closes = this.idxSeries(code);
+      if(!closes || closes.length < days+1) return 'flat';
+      const last = closes[closes.length-1];
+      const prev = closes[closes.length-1-days];
+      if(!isFinite(prev) || prev<=0) return 'flat';
+      const pct = (last - prev) / prev * 100;
+      if(pct > 0.001) return 'up';
+      if(pct < -0.001) return 'down';
+      return 'flat';
+    },
+    idxStatusText(){
+      if(!this.indexes.length) return '未配置';
+      const ready = this.indexes.filter(x=>this.idxQuotes[x.code]).length;
+      if(!ready) return '加载中…';
+      return ready + '/' + this.indexes.length + ' 已就绪';
     },
 
     // ===== 全局轻量 Toast =====
