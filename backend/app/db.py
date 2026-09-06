@@ -113,16 +113,29 @@ def run_migrations(engine):
                     """), {"uid": admin_id})
                 conn.execute(text("DROP TABLE stock_tconfig_legacy"))
 
-        # #29-3：默认 admin 若仍在用出厂密码，强制首登改密（改过密码后不会重复触发）
+        # #29-3 已于 2026-09-07 废弃：原逻辑「默认 admin 仍在用出厂密码就强制首登改密」会让用户反复被要求改密。
+        # 现改为：仍在用旧出厂密码(admin123)、或被打了强制改密标记的 admin，
+        # 统一重置为新出厂密码(baofu123)并清除标记，保证升级后可直接用 baofu123 登录。
         try:
             from app.config import DEFAULT_PASSWORD
-            from app.security import verify_password
+            from app.security import hash_password, verify_password
             row = conn.execute(
                 text("SELECT id, salt, password_hash FROM users WHERE username=:u"),
                 {"u": DEFAULT_USERNAME},
             ).fetchone()
-            if row and row[1] and row[2] and verify_password(DEFAULT_PASSWORD, row[1], row[2]):
-                conn.execute(text("UPDATE users SET must_change_pw=1 WHERE id=:i"), {"i": row[0]})
+            if row and row[0]:
+                need = False
+                if row[1] and row[2] and verify_password("admin123", row[1], row[2]):
+                    need = True  # 仍在用旧出厂密码
+                mc = conn.execute(text("SELECT must_change_pw FROM users WHERE id=:i"), {"i": row[0]}).fetchone()
+                if mc and mc[0]:
+                    need = True  # 被打了强制改密标记
+                if need:
+                    h, s = hash_password(DEFAULT_PASSWORD)
+                    conn.execute(
+                        text("UPDATE users SET password_hash=:h, salt=:s, must_change_pw=0 WHERE id=:i"),
+                        {"h": h, "s": s, "i": row[0]},
+                    )
         except Exception:
             pass
 

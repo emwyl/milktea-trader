@@ -22,7 +22,7 @@ TOKEN_TTL_HOURS = int(os.getenv("STOCK_ADVISOR_TOKEN_TTL", "720"))  # 默认 30 
 
 # 初始化默认管理员账号（首次启动创建，可改）
 DEFAULT_USERNAME = os.getenv("STOCK_ADVISOR_USER", "admin")
-DEFAULT_PASSWORD = os.getenv("STOCK_ADVISOR_PASS", "admin123")
+DEFAULT_PASSWORD = os.getenv("STOCK_ADVISOR_PASS", "baofu123")
 
 # 行情源：akshare 不可用时降级为内置演示数据，保证系统可运行
 AKSHARE_ENABLED = os.getenv("STOCK_ADVISOR_AKSHARE", "1") != "0"

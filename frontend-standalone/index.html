@@ -561,7 +561,7 @@
     <header>
       <h1>🧋 加油赚奶茶钱</h1>
       <span class="sub">个人学习用 · 先控风险再谈收益</span>
-      <span class="version" id="appVersion">v20260906129</span>
+      <span class="version" id="appVersion">v20260907130</span>
       <button class="ghost auto-refresh-btn" :class="{active:autoRefresh}" @click="toggleAutoRefresh" :title="autoRefresh?'自动刷新开启中，每5秒更新当前页面数据':'点击开启每5秒自动刷新'">
         {{autoRefresh?'⏸':'▶'}} 自动 5s
       </button>
@@ -3142,11 +3142,11 @@ const app = createApp({
         }
       }catch(e){ f.err = (e && e.message) || '网络错误'; f.busy = false; }
     },
-    async doLogin(){ this.err=''; const r=await API('/auth/login',{method:'POST',body:JSON.stringify({username:this.login.u,password:this.login.p})}); if(r.token){ this.token=r.token; localStorage.setItem('tk',r.token); this.me=r.user; this.loadDash(); if(r.user && r.user.must_change_pw) this.openForcePw(); } else this.err=(r.detail||'登录失败'); },
+    async doLogin(){ this.err=''; const r=await API('/auth/login',{method:'POST',body:JSON.stringify({username:this.login.u,password:this.login.p})}); if(r.token){ this.token=r.token; localStorage.setItem('tk',r.token); this.me=r.user; this.loadDash(); } else this.err=(r.detail||'登录失败'); },
     async doRegister(){ this.err=''; if(!this.reg.u||!this.reg.p){ this.err='请填写用户名和密码'; return; } if(this.reg.p!==this.reg.p2){ this.err='两次密码不一致'; return; } const r=await API('/auth/register',{method:'POST',body:JSON.stringify({username:this.reg.u,password:this.reg.p})}); if(r.token){ this.token=r.token; localStorage.setItem('tk',r.token); this.me=r.user; this.reg={u:'',p:'',p2:''}; this.loadDash(); } else this.err=(r.detail||'注册失败'); },
     async doGuest(){ this.err=''; const r=await API('/auth/guest',{method:'POST'}); if(r.token){ this.token=r.token; localStorage.setItem('tk',r.token); this.me=r.user; this.loadDash(); } else this.err=(r.detail||'游客登录失败'); },
     logout(){ localStorage.removeItem('tk'); this.token=''; this.me={username:'',role:'',is_guest:false}; },
-    async loadMe(){ const r=await API('/auth/me'); this.me=r; if(r && r.must_change_pw) this.openForcePw(); },
+    async loadMe(){ const r=await API('/auth/me'); this.me=r; },
     async loadUsers(){ const r=await API('/auth/users'); if(Array.isArray(r)) this.users=r; },
     switchAdminTab(tab){
       this.adminTab = tab;
