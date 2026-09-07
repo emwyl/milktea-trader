@@ -11,7 +11,8 @@ from app.db import Base
 
 
 def _now() -> str:
-    return dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
+    # v143: 改毫秒精度,确保同日多次写入的 operated_at 可区分排序(v143 day_view_log 同秒会乱序)
+    return dt.datetime.now(dt.timezone.utc).isoformat(timespec="milliseconds")
 
 
 class User(Base):
@@ -92,6 +93,7 @@ class TrackedPool(Base):
     position_pct: Mapped[float | None] = mapped_column(Float, nullable=True)  # 仓位占比 %
     scheme_type: Mapped[str] = mapped_column(String(32), default="custom")
     status: Mapped[str] = mapped_column(String(16), default="active")  # active/archive
+    day_view: Mapped[str] = mapped_column(String(16), default="")  # 日初判断：看涨/看跌/不动/风险/空
     tags: Mapped[list["PoolTag"]] = relationship("PoolTag", secondary="tracked_pool_tags", back_populates="pools")
 
 
@@ -113,6 +115,25 @@ class TrackedPoolTag(Base):
     pool_id: Mapped[int] = mapped_column(Integer, ForeignKey("tracked_pool.id"), primary_key=True)
     tag_id: Mapped[int] = mapped_column(Integer, ForeignKey("pool_tags.id"), primary_key=True)
     user_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+
+
+class DayViewLog(Base):
+    """日初判断修改记录（v143）：每次修改都追加一条；同一天允许多条；盯盘日志取当日最后一条。"""
+    __tablename__ = "day_view_log"
+    __table_args__ = (
+        # 复合索引:按 (user, code, trade_date, operated_at) 高频查询
+        # 单字段索引 user_id/code 也建,便于按账号清理与按股票查全量历史
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    code: Mapped[str] = mapped_column(String(16), index=True)
+    trade_date: Mapped[str] = mapped_column(String(10), index=True)  # YYYY-MM-DD,由前端传入(避免后端时区)
+    trend: Mapped[str] = mapped_column(String(4), default="-")  # 看涨/看跌/风险/-
+    target_price: Mapped[float | None] = mapped_column(Float, nullable=True)  # 目标价位
+    target_note: Mapped[str] = mapped_column(String(40), default="")  # 目标依据,前端校验 ≤20字,DB 给冗余
+    operator: Mapped[str] = mapped_column(String(64), default="")  # 操作用户名(冗余便于历史回看)
+    operator_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    operated_at: Mapped[str] = mapped_column(String(32), default=_now)  # ISO8601 UTC,带时区
 
 
 class PositionRule(Base):

@@ -8,21 +8,33 @@ import io
 from urllib.parse import quote
 
 import pandas as pd
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query
 from fastapi.responses import StreamingResponse
+from typing import Optional
 
 from app.db import SessionLocal, get_db
 from app.deps import get_current_user
-from app.models import DailyQuote, PoolTag, SchemeType, Stock, TrackedPool, TrackedPoolTag, User, UserProfile, _now
-from app.schemas import PoolBatchDeleteIn, PoolBatchTagsIn, PoolImportIn, PoolIn, PoolOut, TagIn, TagOut
+from app.models import DailyQuote, DayViewLog, PoolTag, SchemeType, Stock, TrackedPool, TrackedPoolTag, User, UserProfile, _now
+from app.schemas import (
+    DayViewIn, DayViewLogIn, DayViewLogOut, PoolBatchDeleteIn, PoolBatchTagsIn, PoolImportIn, PoolIn, PoolOut,
+    TagIn, TagOut, WatchLogItem, WatchLogOut,
+)
 from app.services.data_fetcher import ensure_stock_name, get_pool_track, _fetch_intraday_fund, _market_return
 from app.services.preference import match_scheme
 from app.services.screener import get_screener
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 
 _CODE_RE = _re.compile(r'^\d{6}$')
 # 颜色格式校验（#RGB / #RRGGBB）
 _HEX_COLOR_RE = _re.compile(r"^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$")
+
+# v143: 强制用中国时区取"今日"——避免容器跑 UTC 导致跨日错位
+_CN_TZ = dt.timezone(dt.timedelta(hours=8))
+
+
+def _today_cn() -> str:
+    return dt.datetime.now(_CN_TZ).date().isoformat()
+
 
 router = APIRouter(prefix="/api/pool", tags=["pool"])
 
@@ -79,12 +91,14 @@ def _seed_from_db(code: str, db) -> dict | None:
 def _to_out(p: TrackedPool, db) -> PoolOut:
     tags = [{"id": t.id, "name": t.name, "color": t.color} for t in p.tags]
     tag_ids = [t.id for t in p.tags]
+    # v143: day_view 字段保留(不再写),day_view_today/day_view_log_count 由调用方按 today 注入
     return PoolOut(id=p.id, code=p.code, name=_name(p.code, db), industry=_industry(p.code, db),
                    note=p.note,
                    cost_price=p.cost_price, position_qty=p.position_qty,
                    position_pct=p.position_pct,
                    scheme_type=p.scheme_type, status=p.status, added_at=str(p.added_at),
-                   tag_ids=tag_ids, tags=tags)
+                   tag_ids=tag_ids, tags=tags, day_view=p.day_view or "",
+                   day_view_today="", day_view_log_count=0)
 
 
 def _user_pool_q(db, user_id: int):
@@ -102,6 +116,7 @@ def list_pool(
     tag: str = Query("", description="按标签 ID 筛选(多个用逗号分隔)"),
     page: int = Query(1, ge=1, description="页码，从 1 开始"),
     page_size: int = Query(15, ge=1, le=100, description="每页条数，默认 15"),
+    today: str = Query("", description="v143: 当前日期 YYYY-MM-DD,用于返回 day_view_today 字段;留空=服务器中国时区今日"),
     db: SessionLocal = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -182,7 +197,7 @@ def list_pool(
             for p in page_rows:
                 if not _name(p.code, db):
                     name_futs[ex.submit(ensure_stock_name, p.code, db)] = p.code
-            done, _pending = wait(set(track_futs) | set(name_futs) | warm_futs, timeout=8.6)
+            done, _pending = wait(set(track_futs) | set(name_futs) | warm_futs, timeout=9.5)
             for f in done:
                 if f in track_futs:
                     code = track_futs[f]
@@ -205,10 +220,37 @@ def list_pool(
             # 不等未完成任务：让慢请求在后台自行结束(结果进 60s 缓存，下次刷新秒回)
             ex.shutdown(wait=False, cancel_futures=False)
 
+    # v143: 批量拉 day_view_log 派生字段(today 最后一条 trend + 总计数),N 只股票 2 次查询
+    today_map: dict[str, str] = {}
+    count_map: dict[str, int] = {}
+    if page_rows:
+        codes = [p.code for p in page_rows]
+        # 没传 today 时默认用中国时区今日(避免 UTC 跨日错位)
+        eff_today = today or _today_cn()
+        if eff_today and _re.match(r"^\d{4}-\d{2}-\d{2}$", eff_today):
+            # 当日最后一条 trend
+            day_rows = (db.query(DayViewLog)
+                        .filter(DayViewLog.user_id == user.id,
+                                DayViewLog.trade_date == eff_today,
+                                DayViewLog.code.in_(codes))
+                        .order_by(DayViewLog.code, DayViewLog.operated_at.desc())
+                        .all())
+            for r in day_rows:
+                if r.code not in today_map:
+                    today_map[r.code] = r.trend or "-"
+        # 总历史条数
+        cnt_rows = (db.query(DayViewLog.code, func.count(DayViewLog.id))
+                    .filter(DayViewLog.user_id == user.id, DayViewLog.code.in_(codes))
+                    .group_by(DayViewLog.code)
+                    .all())
+        count_map = {c: int(n) for c, n in cnt_rows}
+
     result = []
     for p in page_rows:
         o = _to_out(p, db).model_dump()
         o["track"] = tracks.get(p.code, {})
+        o["day_view_today"] = today_map.get(p.code, "")
+        o["day_view_log_count"] = count_map.get(p.code, 0)
         result.append(o)
     return {"items": result, "total": total, "page": page, "page_size": page_size}
 
@@ -463,6 +505,9 @@ def _exp(o: dict, t: dict) -> list[tuple[str, object]]:
     add("备注", o.get("note") or "")
     add("标签", "/".join(str(x.get("name", "")) for x in (o.get("tags") or [])))
     add("方案", o.get("scheme_type") or "")
+    # v143: 日初判断(当日最后一条) + 历史总条数
+    add("日初判断(当日)", o.get("day_view_today") or "")
+    add("日初判断历史数", o.get("day_view_log_count") or 0)
     return cells
 
 
@@ -666,7 +711,14 @@ def restore(code: str, db: SessionLocal = Depends(get_db), user: User = Depends(
 @router.put("/{code}")
 def update_pool(code: str, note: str = "", cost_price: float | None = None,
                 position_qty: float | None = None, position_pct: float | None = None,
-                tag_ids: str = Query("", description="标签ID,多个逗号分隔,传空则清空,不传保持原标签"),
+                # v138: 修复「改了非标签字段就把标签全删掉」的 bug——
+                #   旧实现默认 `Query("")`，FastAPI 把「URL 里不传」和「传空串」都映射成 ""，
+                #   导致前端只改持仓/成本/备注时，后端总是进入「清空所有标签」分支。
+                #   改为 Optional + Query(None)，让 None = 「不动标签」(语义对照 docstring)：
+                #     · tag_ids is None   → 不动现有标签 (前端未传)
+                #     · tag_ids == ""     → 清空所有标签 (前端显式传空)
+                #     · tag_ids == "1,2"  → 替换为这些标签
+                tag_ids: Optional[str] = Query(None, description="标签ID,多个逗号分隔；None=不动,空串=清空,逗号串=替换"),
                 db: SessionLocal = Depends(get_db), user: User = Depends(get_current_user)):
     # 复用 list_pool 的可见范围(active + archive 且有持仓),避免对 archive 持仓更新时
     # 查不到而「新建一条重复记录」——那是之前造成 id=6/id=7 重复的根因。
@@ -689,7 +741,7 @@ def update_pool(code: str, note: str = "", cost_price: float | None = None,
         exists.position_qty = position_qty
     if position_pct is not None:
         exists.position_pct = position_pct
-    if tag_ids is not None:
+    if tag_ids is not None:  # v138: None 表示「不动」,仅在显式传入(空或非空)时才触碰标签
         # 空字符串/0 都视为清空标签；否则按逗号解析后替换
         raw = (tag_ids or "").strip()
         if raw == "":
@@ -708,6 +760,171 @@ def update_pool(code: str, note: str = "", cost_price: float | None = None,
     db.commit()
     db.refresh(exists)
     return _to_out(exists, db)
+# v143: 日初判断重构——历史走 day_view_log 表,旧 PUT /{code}/day-view 标记 deprecated
+# 新接口:POST /{code}/day-view-log(追加一条);GET /{code}/day-view-log(取历史);GET /{code}/watch-log(盯盘日志聚合)
+_V143_TREND = ("看涨", "看跌", "风险", "-")
+_RE_DATE = _re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+@router.put("/{code}/day-view")
+def update_day_view(code: str, body: DayViewIn,
+                    db: SessionLocal = Depends(get_db), user: User = Depends(get_current_user)):
+    """v135 旧接口,v143 标记 deprecated。新写入请走 POST /{code}/day-view-log。
+
+    旧字段(TrackedPool.day_view)只读保留,不写新值;若需"恢复"逻辑可读旧值。
+    """
+    # v143: 不再写旧字段,直接返回当前 code 的最新 day_view(从 log 派生 today)
+    exists = _user_pool_q(db, user.id).filter(TrackedPool.code == code).order_by(TrackedPool.id).first()
+    if not exists:
+        raise HTTPException(status_code=404, detail="该股票不在可投池中")
+    return _to_out(exists, db)
+
+
+@router.post("/{code}/day-view-log")
+def add_day_view_log(code: str, body: DayViewLogIn,
+                     db: SessionLocal = Depends(get_db), user: User = Depends(get_current_user)):
+    """v143: 追加一条日初判断修改记录。
+
+    校验:trend ∈ {看涨,看跌,风险,-};target_price ≥ 0;target_note ≤ 20 字;trade_date YYYY-MM-DD;
+    同一交易日允许多次写入(append-only)。
+    """
+    if not _RE_DATE.match(body.trade_date or ""):
+        raise HTTPException(status_code=400, detail="trade_date 必须是 YYYY-MM-DD")
+    if body.trend not in _V143_TREND:
+        raise HTTPException(status_code=400, detail=f"trend 必须是: {','.join(_V143_TREND)}")
+    if body.target_price is not None and body.target_price < 0:
+        raise HTTPException(status_code=400, detail="target_price 必须 ≥ 0")
+    note = (body.target_note or "").strip()
+    if len(note) > 20:
+        raise HTTPException(status_code=400, detail="target_note 不能超过 20 字")
+
+    exists = _user_pool_q(db, user.id).filter(TrackedPool.code == code).order_by(TrackedPool.id).first()
+    if not exists:
+        raise HTTPException(status_code=404, detail="该股票不在可投池中")
+
+    row = DayViewLog(
+        user_id=user.id, code=code, trade_date=body.trade_date,
+        trend=body.trend,
+        target_price=body.target_price if body.target_price is not None and body.target_price > 0 else None,
+        target_note=note[:20],
+        operator=user.username or "", operator_id=user.id,
+        operated_at=_now(),
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return DayViewLogOut(
+        id=row.id, code=row.code, trade_date=row.trade_date,
+        trend=row.trend, target_price=row.target_price, target_note=row.target_note or "",
+        operator=row.operator or "", operated_at=row.operated_at or "",
+    )
+
+
+@router.get("/{code}/day-view-log")
+def list_day_view_log(code: str, trade_date: str = Query("", description="可选:YYYY-MM-DD 过滤单日"),
+                      limit: int = Query(200, ge=1, le=2000),
+                      db: SessionLocal = Depends(get_db), user: User = Depends(get_current_user)):
+    """v143: 列出该 code 的所有日初判断历史,按 trade_date desc, operated_at desc。"""
+    q = (db.query(DayViewLog)
+         .filter(DayViewLog.user_id == user.id, DayViewLog.code == code))
+    if trade_date and _RE_DATE.match(trade_date):
+        q = q.filter(DayViewLog.trade_date == trade_date)
+    rows = q.order_by(DayViewLog.trade_date.desc(), DayViewLog.operated_at.desc()).limit(limit).all()
+    return [DayViewLogOut(
+        id=r.id, code=r.code, trade_date=r.trade_date,
+        trend=r.trend or "-", target_price=r.target_price,
+        target_note=r.target_note or "",
+        operator=r.operator or "", operated_at=r.operated_at or "",
+    ).model_dump() for r in rows]
+
+
+def _deviation_reason(trend: str, dev: float | None) -> str:
+    """v143: 偏离原因复盘——按 trend × deviation 方向生成纯模板话术。
+
+    deviation = (target_price - close) / target_price:
+      · dev > 0 → 收盘价 < 目标位(价格没到目标)
+      · dev < 0 → 收盘价 > 目标位(价格已超过目标)
+    """
+    if dev is None:
+        return "目标价位缺失,无法评估偏离"
+    abs_d = abs(dev)
+    if abs_d <= 0.005:
+        return "符合预判,盘中波动在预期内"
+    if trend == "看涨":
+        if dev > 0:
+            return "标的未达目标位,继续观察上冲动能"
+        return "标的走强突破目标位,留意止盈窗口"
+    if trend == "看跌":
+        if dev < 0:
+            return "未如预期走弱,需重新评估逻辑"
+        return "符合预判走弱,目标位高于收盘,已达成下行"
+    if trend == "风险":
+        if abs_d <= 0.05:
+            return "已按风控要求处置,波动可控"
+        return "已按风控要求处置,关注进一步信号"
+    # 趋势"-"或未设置
+    if dev > 0:
+        return "收盘低于目标位,需结合其他判断"
+    return "收盘高于目标位,需结合其他判断"
+
+
+@router.get("/{code}/watch-log")
+def watch_log(code: str, limit: int = Query(60, ge=1, le=500),
+              db: SessionLocal = Depends(get_db), user: User = Depends(get_current_user)):
+    """v143: 盯盘日志——按 trade_date desc 聚合,每交易日取当日最后一条 log 作为复盘输入,
+    结合 daily_quotes(open/close/分时均价)计算偏离度与复盘原因。
+    """
+    name = _name(code, db)
+    # 1) 拉所有 log(按 trade_date desc, operated_at desc)
+    logs = (db.query(DayViewLog)
+            .filter(DayViewLog.user_id == user.id, DayViewLog.code == code)
+            .order_by(DayViewLog.trade_date.desc(), DayViewLog.operated_at.desc())
+            .all())
+    if not logs:
+        return WatchLogOut(code=code, name=name, items=[]).model_dump()
+
+    # 2) 每交易日保留最后一条
+    last_by_date: dict[str, DayViewLog] = {}
+    for r in logs:
+        if r.trade_date not in last_by_date:
+            last_by_date[r.trade_date] = r
+
+    dates = list(last_by_date.keys())[:limit]
+    # 3) 一次性取这些日期的日线(收盘/开盘/均价=amount/volume)
+    quotes = {}
+    if dates:
+        qrows = (db.query(DailyQuote)
+                 .filter(DailyQuote.code == code, DailyQuote.date.in_(dates))
+                 .all())
+        for q in qrows:
+            quotes[q.date] = q
+
+    items: list[WatchLogItem] = []
+    for d in dates:
+        lg = last_by_date[d]
+        q = quotes.get(d)
+        open_p = q.open if q and q.open else None
+        close_p = q.close if q and q.close else None
+        intraday_avg = None
+        if q and q.volume and q.volume > 0 and q.amount:
+            try:
+                intraday_avg = round(q.amount / q.volume, 3)
+            except Exception:
+                intraday_avg = None
+        deviation = None
+        deviation_pct = None
+        if lg.target_price and lg.target_price > 0 and close_p:
+            deviation = round((lg.target_price - close_p) / lg.target_price, 4)
+            deviation_pct = round(deviation * 100, 2)
+        items.append(WatchLogItem(
+            trade_date=d,
+            open=open_p, close=close_p, intraday_avg=intraday_avg,
+            trend=lg.trend or "-", target_price=lg.target_price,
+            target_note=lg.target_note or "",
+            deviation=deviation, deviation_pct=deviation_pct,
+            deviation_reason=_deviation_reason(lg.trend or "-", deviation),
+        ))
+    return WatchLogOut(code=code, name=name, items=items).model_dump()
 @router.get("/tags")
 def list_tags(db: SessionLocal = Depends(get_db), user: User = Depends(get_current_user)):
     """列出当前用户的可投池自定义标签。"""

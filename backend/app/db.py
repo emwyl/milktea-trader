@@ -219,3 +219,38 @@ def run_migrations(engine):
                 """))
             except Exception:
                 pass
+
+        # v135：tracked_pool 加 day_view（日初主观判断）。允许为空字符串。
+        if _has_col(conn, "tracked_pool", "id"):
+            try:
+                if not _has_col(conn, "tracked_pool", "day_view"):
+                    conn.execute(text("ALTER TABLE tracked_pool ADD COLUMN day_view VARCHAR(16) DEFAULT ''"))
+            except Exception:
+                pass
+
+        # v143：日初判断修改记录表（day_view_log）。
+        #   每次修改都追加一条（不删旧），同一天允许多条；
+        #   「当日最新」=同日 operated_at 最大；盯盘日志按交易日聚合，每交易日取最后一条作为复盘输入。
+        if not _has_table(conn, "day_view_log"):
+            try:
+                conn.execute(text("""
+                    CREATE TABLE day_view_log (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        user_id INTEGER,
+                        code VARCHAR(16),
+                        trade_date VARCHAR(10),
+                        trend VARCHAR(4) DEFAULT '-',
+                        target_price FLOAT,
+                        target_note VARCHAR(40) DEFAULT '',
+                        operator VARCHAR(64) DEFAULT '',
+                        operator_id INTEGER,
+                        operated_at VARCHAR(32) DEFAULT '',
+                        FOREIGN KEY(user_id) REFERENCES users(id)
+                    )
+                """))
+                # 复合索引：按 (user, code, trade_date, operated_at) 高频查
+                conn.execute(text("CREATE INDEX ix_day_view_log_user_code_date_oper ON day_view_log(user_id, code, trade_date, operated_at)"))
+                conn.execute(text("CREATE INDEX ix_day_view_log_code ON day_view_log(code)"))
+                conn.execute(text("CREATE INDEX ix_day_view_log_user_id ON day_view_log(user_id)"))
+            except Exception:
+                pass

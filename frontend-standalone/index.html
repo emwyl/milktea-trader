@@ -316,6 +316,9 @@
   .tracktbl.pool-tbl thead th.sorted.frozen{background:#e0e7ff}
   .tracktbl.pool-tbl thead th .sort-arrow{display:inline-block;margin-left:3px;font-size:10px;line-height:1;width:8px;text-align:center;color:#9ca3af;vertical-align:middle}
   .tracktbl.pool-tbl thead th.sorted .sort-arrow{color:#1d4ed8}
+  /* 成交量异常：超过 max(T-1全天, 20日均量) × 10 倍 → 数据错误，红色高亮 + 虚线 */
+  .vol-abnormal{color:var(--danger);font-weight:700;background:#fee2e2;padding:1px 6px;border-radius:4px;border:1px dashed var(--danger);text-decoration:line-through wavy rgba(239,68,68,.5)}
+  .bad-data{color:#dc2626;font-weight:700;font-size:12px;background:#fee2e2;padding:1px 6px;border-radius:4px;white-space:nowrap;display:inline-block}
   /* 可投池表头列宽拖拽把手 */
   .tracktbl.pool-tbl thead th .resize-handle{position:absolute;right:0;top:0;bottom:0;width:6px;cursor:col-resize;z-index:10;background:transparent;transition:background .15s}
   .tracktbl.pool-tbl thead th .resize-handle:hover{background:rgba(59,130,246,.25)}
@@ -491,27 +494,81 @@
   .toast{position:fixed;top:16px;left:50%;transform:translateX(-50%) translateY(-8px);z-index:200;background:#1f2937;color:#fff;padding:10px 20px;border-radius:10px;font-size:14px;box-shadow:0 10px 30px rgba(0,0,0,.22);opacity:0;transition:opacity .2s,transform .2s;pointer-events:none;max-width:min(90vw,520px);text-align:center;line-height:1.5}
   .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
   .close-x:hover{background:#f3f4f6;color:var(--ink)}
-  /* 宽指快览 v128 */
+  /* v143: 日初判断列按钮 + 弹窗 */
+  .day-view-filled{padding:2px 6px;border:1px solid var(--line);background:#f8fafc}
+  .day-view-empty{padding:2px 6px;border:1px dashed var(--line);background:#fff}
+  .day-view-tag{display:inline-block;padding:1px 6px;border-radius:6px;font-size:12px;font-weight:600}
+  .day-view-tag.tag-看涨{background:#fff1f0;color:#dc2626}
+  .day-view-tag.tag-看跌{background:#ecfdf5;color:#16a34a}
+  .day-view-tag.tag-风险{background:#fef3c7;color:#b45309}
+  .day-view-tag.tag--{background:#f3f4f6;color:#6b7280}
+  .day-view-count{display:inline-block;margin-left:4px;padding:0 4px;background:#e0e7ff;color:#3730a3;border-radius:8px;font-size:10px;font-weight:600;line-height:14px;vertical-align:middle}
+  .day-view-watch-btn{color:#0e7490;border-color:#a5f3fc}
+  .day-view-watch-btn:hover{background:#ecfeff}
+  /* v143: 日初判断录入弹窗布局 */
+  .dv-section-title{font-size:13px;font-weight:600;color:var(--ink);margin:0 0 8px;display:flex;align-items:baseline}
+  .dv-edit-row{display:flex;gap:12px;margin-bottom:8px;flex-wrap:wrap}
+  .dv-field{display:flex;flex-direction:column;gap:4px;min-width:120px}
+  .dv-field label{font-size:12px;color:#6b7280;font-weight:500}
+  .dv-field input[type="text"],.dv-field input[type="number"],.dv-field input[type="date"]{padding:6px 8px;border:1px solid var(--line);border-radius:6px;font-size:13px;background:#fff;font-family:inherit}
+  .dv-trend-chips{display:flex;gap:6px;flex-wrap:wrap}
+  .dv-chip{padding:5px 12px;border:1px solid var(--line);border-radius:6px;background:#fff;font-size:12px;cursor:pointer;font-weight:500;transition:all .15s}
+  .dv-chip.tag-看涨.active{background:#fff1f0;color:#dc2626;border-color:#dc2626}
+  .dv-chip.tag-看跌.active{background:#ecfdf5;color:#16a34a;border-color:#16a34a}
+  .dv-chip.tag-风险.active{background:#fef3c7;color:#b45309;border-color:#b45309}
+  .dv-chip.tag--.active{background:#f3f4f6;color:#374151;border-color:#6b7280}
+  .dv-note-counter{font-size:11px;color:#9ca3af;text-align:right;margin-top:2px}
+  .dv-note-counter.over{color:#dc2626;font-weight:600}
+  .dv-history-tbl{width:100%;border-collapse:collapse;font-size:12px;margin-top:4px}
+  .dv-history-tbl th,.dv-history-tbl td{padding:6px 8px;border-bottom:1px solid var(--line);text-align:left}
+  .dv-history-tbl th{background:#f9fafb;font-weight:600;color:#374151}
+  .dv-history-tbl td{max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  /* v143: 盯盘日志表格 */
+  .wl-tbl{width:100%;border-collapse:collapse;font-size:13px}
+  .wl-tbl th,.wl-tbl td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left}
+  .wl-tbl th{background:#f9fafb;font-weight:600;color:#374151;position:sticky;top:0;z-index:1}
+  .wl-row{cursor:pointer;transition:background .12s}
+  .wl-row:hover{background:#f8fafc}
+  .wl-row.expanded{background:#eff6ff}
+  .wl-arrow{color:#6b7280;font-size:10px;display:inline-block;width:12px}
+  .wl-detail-row td{background:#f9fafb;padding:8px 24px}
+  .wl-detail-tbl{width:100%;border-collapse:collapse;font-size:12px;background:#fff;border-radius:6px;overflow:hidden}
+  .wl-detail-tbl th,.wl-detail-tbl td{padding:5px 8px;border-bottom:1px solid var(--line);text-align:left}
+  .wl-detail-tbl th{background:#f3f4f6;color:#6b7280;font-weight:500}
+  /* 宽指快览 v134：参考行业涨跌幅卡片——背景色直观反映涨跌方向，名称加粗 */
   .idx-head{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px}
   .idx-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
-  .idx-card{background:#fff;border:1px solid var(--line);border-radius:10px;padding:10px 8px;text-align:center;cursor:pointer;transition:transform .15s,box-shadow .15s;position:relative}
+  .idx-card{cursor:pointer;position:relative;padding:10px 12px;border-radius:10px;border:1px solid transparent;text-align:left;transition:transform .15s,box-shadow .15s;overflow:hidden}
   .idx-card:hover{transform:translateY(-1px);box-shadow:0 4px 12px rgba(0,0,0,.08)}
-  .idx-name{font-size:12px;color:#6b7280;font-weight:500;margin-bottom:4px}
-  .idx-price{font-size:18px;font-weight:600;color:var(--ink);line-height:1.2}
-  .idx-chg{font-size:12px;margin-top:2px;font-weight:500}
-  .idx-chg.up{color:var(--up)}
-  .idx-chg.down{color:var(--down)}
-  .idx-chg.flat{color:#9ca3af}
-  .idx-time{font-size:10px;color:#9ca3af;margin-top:4px}
+  /* 涨：浅红 + 红字 */
+  .idx-card.up{background:#fff1f0;border-color:#fecaca;color:var(--up)}
+  .idx-card.up .idx-price{color:var(--up)}
+  .idx-card.up .idx-chg{color:var(--up)}
+  /* 跌：浅绿 + 绿字 */
+  .idx-card.down{background:#ecfdf5;border-color:#a7f3d0;color:var(--down)}
+  .idx-card.down .idx-price{color:var(--down)}
+  .idx-card.down .idx-chg{color:var(--down)}
+  /* 平：白底灰字 */
+  .idx-card.flat{background:#f9fafb;border-color:var(--line);color:#9ca3af}
+  .idx-card.flat .idx-price{color:var(--ink)}
+  .idx-card.flat .idx-chg{color:#9ca3af}
+  /* 名称加粗（用户反馈：必须一眼看到是什么宽指） */
+  .idx-name{font-size:14px;font-weight:700;line-height:1.3;margin-bottom:6px;color:inherit;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .idx-price{font-size:20px;font-weight:700;line-height:1.1;margin-bottom:4px}
+  .idx-bottom{display:flex;justify-content:space-between;align-items:baseline;gap:6px;margin-top:4px}
+  .idx-prev{font-size:11px;color:inherit;opacity:.7;white-space:nowrap}
+  .idx-chg{font-size:13px;font-weight:700;white-space:nowrap}
+  .idx-time{font-size:10px;opacity:.55;margin-top:4px}
   .idx-empty{color:#9ca3af;font-size:13px;padding:24px 0;text-align:center}
   .idx-tab-row{overflow-x:auto;display:flex;gap:8px;padding:8px 0;border-bottom:1px solid var(--line);margin-bottom:10px}
   .idx-tab-row a{padding:6px 12px;border-radius:8px;cursor:pointer;white-space:nowrap;font-size:13px;color:var(--tea-d);border:1px solid var(--line);background:#fff}
   .idx-tab-row a.active{background:var(--tea);color:#fff;border-color:var(--tea)}
   @media(max-width:768px){
     .idx-grid{grid-template-columns:repeat(3,1fr);gap:6px}
-    .idx-card{padding:8px 4px}
-    .idx-name{font-size:11px}
-    .idx-price{font-size:14px}
+    .idx-card{padding:8px 6px}
+    .idx-name{font-size:12px;margin-bottom:4px}
+    .idx-price{font-size:15px}
+    .idx-prev{font-size:10px}
     .idx-chg{font-size:11px}
   }
 </style>
@@ -566,7 +623,7 @@
     <header>
       <h1>🧋 加油赚奶茶钱</h1>
       <span class="sub">个人学习用 · 先控风险再谈收益</span>
-      <span class="version" id="appVersion">v20260907133</span>
+      <span class="version" id="appVersion">v20260907144</span>
       <button class="ghost auto-refresh-btn" :class="{active:autoRefresh}" @click="toggleAutoRefresh" :title="autoRefresh?'自动刷新开启中，每5秒更新当前页面数据':'点击开启每5秒自动刷新'">
         {{autoRefresh?'⏸':'▶'}} 自动 5s
       </button>
@@ -606,10 +663,13 @@
             </div>
           </div>
           <div class="idx-grid" v-if="indexes.length">
-            <div v-for="x in indexes" :key="x.code" class="idx-card" @click="openIdxDetail" :title="x.name + '：点击查看历史涨幅'">
-              <div class="idx-name">{{x.name}}</div>
+            <div v-for="x in indexes" :key="x.code" class="idx-card" :class="idxChgClass(x.code)" @click="openIdxDetail" :title="x.name + '：点击查看历史涨幅'">
+              <div class="idx-name" :title="x.name">{{x.name}}</div>
               <div class="idx-price">{{fmtIdxPrice(x.code)}}</div>
-              <div class="idx-chg" :class="idxChgClass(x.code)">{{fmtIdxChg(x.code)}}</div>
+              <div class="idx-bottom">
+                <span class="idx-prev">昨收 {{fmtIdxPrev(x.code)}}</span>
+                <span class="idx-chg">{{fmtIdxChg(x.code)}}</span>
+              </div>
               <div class="idx-time" v-if="fmtIdxTime(x.code)">{{fmtIdxTime(x.code)}}</div>
             </div>
           </div>
@@ -819,15 +879,15 @@
           <div class="hintbar">短线可投池 = <b>你自己积攒的股票池</b>(手工输入代码加入)。系统每日跟踪 <b>箱体上下沿 / MA5·MA20 / 量比 / 换手 / 涨跌幅</b>,辅助你判断趋势与决策。</div>
         </div>
         <div v-if="poolMsg" class="hintbar" style="background:#e8f4ed;border-left-color:var(--ok);color:var(--ok)">{{poolMsg}}</div>
-        <div v-if="poolErr" class="data-err">⚠ {{poolErr.msg}} <button @click="_retryErr('poolErr')">重试</button></div>
-        <div v-if="tagsErr" class="data-err">⚠ {{tagsErr.msg}} <button @click="_retryErr('tagsErr')">重试</button></div>
+        <div v-if="poolErr" class="data-err">⚠ {{poolErr.msg}} <button @click="retryErr('poolErr')">重试</button></div>
+        <div v-if="tagsErr" class="data-err">⚠ {{tagsErr.msg}} <button @click="retryErr('tagsErr')">重试</button></div>
         <div class="card">
           <!-- 筛选与批量操作工具条 -->
           <!-- 工具栏：筛选 + 批量操作（窄屏专列、横滑 + 网格） -->
           <div :class="['filter-toolbar', 'pool-toolbar']" style="display:flex;align-items:flex-start;gap:10px;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid #e5e7eb">
             <div class="row" style="gap:8px;margin:0;flex:1 1 auto;flex-wrap:wrap;align-items:center;min-width:0">
-              <input v-model="poolFilter.q" placeholder="代码/名称" style="width:1.5cm;min-width:1.5cm;max-width:1.5cm;flex:0 0 auto" />
-              <select v-model="poolFilter.tag" style="min-width:130px">
+              <input v-model="poolFilter.q" placeholder="代码/名称" style="width:3cm;min-width:3cm;max-width:3cm;flex:0 0 auto" />
+              <select v-model="poolFilter.tag" style="width:3cm;min-width:3cm;max-width:3cm;flex:0 0 auto">
                 <option value="">全部标签</option>
                 <option v-for="t in poolTags" :key="t.id" :value="t.id">{{t.name}}</option>
               </select>
@@ -881,80 +941,123 @@
                 <div style="font-size:11px;color:#2563eb;text-decoration:underline;cursor:pointer" @click.stop="openAnalysis(p.code)">{{p.code}}</div>
               </template>
               <template v-else-if="col.key==='price'">
-                <div><b>{{ui.fmt(p.track.price)}}</b></div>
+                <div v-if="p.track.price!=null"><b>{{ui.fmt(p.track.price)}}</b></div>
+                <div v-else-if="mktBad(p.track,'q')||mktBad(p.track,'s')" class="bad-data" title="行情读取异常，未展示价格">数据异常</div>
+                <div v-else class="muted">-</div>
                 <div v-if="p.track.price_note" style="margin-top:2px">
                   <span class="pill" style="background:#fee2e2;color:#b91c1c;font-size:10px" :title="p.track.price_note">实时fallback</span>
                 </div>
               </template>
               <template v-else-if="col.key==='change_pct'">
-                <div :class="ui.classOf(p.track.change_pct)"><b>{{ui.fmtPct(p.track.change_pct)}}</b></div>
+                <div v-if="p.track.change_pct!=null" :class="ui.classOf(p.track.change_pct)"><b>{{ui.fmtPct(p.track.change_pct)}}</b></div>
+                <div v-else-if="mktBad(p.track,'q')||mktBad(p.track,'s')" class="bad-data" title="行情读取异常，未展示涨跌幅">数据异常</div>
+                <div v-else class="muted">-</div>
+              </template>
+              <template v-else-if="col.key==='day_view'">
+                <!-- v143: 改成按钮 + 弹窗录入(原下拉切换废弃);展示当日最后一条 trend 或「填写」 -->
+                <button class="ghost btn-sm" :class="p.day_view_today ? 'day-view-filled' : 'day-view-empty'"
+                  @click.stop="openDayViewModal(p)"
+                  :title="p.day_view_today ? ('点击修改 ' + (p.name||p.code) + ' 的日初判断') : ('点击填写 ' + (p.name||p.code) + ' 的日初判断')">
+                  <span v-if="p.day_view_today && p.day_view_today !== '-'" :class="'day-view-tag tag-' + p.day_view_today">{{ p.day_view_today }}</span>
+                  <span v-else class="muted">{{ (p.day_view_log_count > 0) ? '修改' : '填写' }}</span>
+                  <span v-if="p.day_view_log_count > 0" class="day-view-count" :title="'该股累计 ' + p.day_view_log_count + ' 条日初判断历史'">{{ p.day_view_log_count }}</span>
+                </button>
               </template>
               <template v-else-if="col.key==='realtime_volume'">
-                <span :class="{'up':p.track.realtime_volume != null && p.track.realtime_volume > (p.track.yesterday_volume_at_time || 0) && p.track.realtime_volume > (p.track.avg_volume_20 || 0)}">{{p.track.realtime_volume!=null ? p.track.realtime_volume : '-'}}</span>
+                <span v-if="p.track.realtime_volume!=null" :class="isVolumeAbnormal(p.track) ? 'vol-abnormal' : (p.track.realtime_volume > (p.track.yesterday_volume_at_time||0) && p.track.realtime_volume > (p.track.avg_volume_20||0) ? 'up' : '')" :title="volumeTitle(p.track)">{{p.track.realtime_volume}}</span>
+                <span v-else-if="mktBad(p.track,'s')" class="bad-data" title="实时行情读取异常">数据异常</span>
+                <span v-else class="muted">-</span>
               </template>
               <template v-else-if="col.key==='yesterday_volume_at_time'">
-                <span class="muted">{{p.track.yesterday_volume_at_time!=null ? p.track.yesterday_volume_at_time : '-'}}</span>
+                <span v-if="p.track.yesterday_volume_at_time!=null" class="muted">{{p.track.yesterday_volume_at_time}}</span>
+                <span v-else-if="mktBad(p.track,'s')" class="bad-data" title="行情读取异常">数据异常</span>
+                <span v-else class="muted">-</span>
               </template>
               <template v-else-if="col.key==='avg_volume_20'">
-                <span class="muted">{{p.track.avg_volume_20!=null ? p.track.avg_volume_20 : '-'}}</span>
+                <span v-if="p.track.avg_volume_20!=null" class="muted">{{p.track.avg_volume_20}}</span>
+                <span v-else-if="mktBad(p.track,'q')" class="bad-data" title="行情读取异常">数据异常</span>
+                <span v-else class="muted">-</span>
               </template>
               <template v-else-if="col.key==='yesterday_volume_total'">
-                <span class="muted">{{p.track.yesterday_volume_total!=null ? p.track.yesterday_volume_total : '-'}}</span>
+                <span v-if="p.track.yesterday_volume_total!=null" class="muted">{{p.track.yesterday_volume_total}}</span>
+                <span v-else-if="mktBad(p.track,'s')" class="bad-data" title="行情读取异常">数据异常</span>
+                <span v-else class="muted">-</span>
               </template>
               <template v-else-if="col.key==='vol_ratio'">
-                <span :class="ui.volClass(p.track.vol_ratio)">{{p.track.vol_ratio||'-'}}</span>
+                <span v-if="p.track.vol_ratio!=null && p.track.vol_ratio>0" :class="ui.volClass(p.track.vol_ratio)">{{p.track.vol_ratio}}</span>
+                <span v-else-if="mktBad(p.track,'s')" class="bad-data" title="实时行情读取异常">数据异常</span>
+                <span v-else class="muted">-</span>
               </template>
               <template v-else-if="col.key==='turnover'">
-                <span :class="(p.track.turnover!=null && p.track.turnover>=3 && p.track.turnover<=8)?'up':''">{{p.track.turnover!=null ? p.track.turnover+'%' : '-'}}</span>
+                <span v-if="p.track.turnover!=null" :class="(p.track.turnover>=3 && p.track.turnover<=8)?'up':''">{{p.track.turnover}}%</span>
+                <span v-else-if="mktBad(p.track,'s')" class="bad-data" title="实时行情读取异常">数据异常</span>
+                <span v-else class="muted">-</span>
               </template>
               <template v-else-if="col.key==='intra_amplitude'">
-                <span :class="(p.track.intra_amplitude!=null && p.track.intra_amplitude>=3 && p.track.intra_amplitude<=7)?'up':''"
-                      :title="(p.track.intra_amplitude_source || '取自日线') + (p.track.intra_amplitude!=null ? ' · '+p.track.intra_amplitude+'%' : '') + ' · (最高-最低)/昨收'">{{p.track.intra_amplitude!=null ? p.track.intra_amplitude+'%' : '-'}}</span>
+                <span v-if="p.track.intra_amplitude!=null" :class="(p.track.intra_amplitude>=3 && p.track.intra_amplitude<=7)?'up':''"
+                      :title="(p.track.intra_amplitude_source || '取自日线') + ' · '+p.track.intra_amplitude+'% · (最高-最低)/昨收'">{{p.track.intra_amplitude}}%</span>
+                <span v-else-if="mktBad(p.track,'q')" class="bad-data" title="行情读取异常">数据异常</span>
+                <span v-else class="muted">-</span>
               </template>
               <template v-else-if="col.key==='ma5'">
-                <span>
+                <span v-if="p.track.ma5!=null">
                   <span :class="{'up': p.track.above_ma5===true}">{{ui.fmt(p.track.ma5)}}</span>
                   <span v-if="p.track.above_ma5===true" class="up" style="margin-left:2px">⬆</span>
                   <span v-else-if="p.track.above_ma5===false" class="down" style="margin-left:2px">⬇</span>
                 </span>
+                <span v-else-if="mktBad(p.track,'q')" class="bad-data" title="行情读取异常">数据异常</span>
+                <span v-else class="muted">-</span>
               </template>
               <template v-else-if="col.key==='ma20'">
-                <span>
+                <span v-if="p.track.ma20!=null">
                   <span :class="{'up': p.track.above_ma20===true}">{{ui.fmt(p.track.ma20)}}</span>
                   <span v-if="p.track.above_ma20===true" class="up" style="margin-left:2px">⬆</span>
                   <span v-else-if="p.track.above_ma20===false" class="down" style="margin-left:2px">⬇</span>
                 </span>
+                <span v-else-if="mktBad(p.track,'q')" class="bad-data" title="行情读取异常">数据异常</span>
+                <span v-else class="muted">-</span>
               </template>
               <template v-else-if="col.key==='box_pos'">
                 <div v-if="p.track.box_pos!==undefined" class="boxbar" :title="'箱体位置 '+Math.round(p.track.box_pos*100)+'%：'+(p.track.box_pos<=0.15?'贴近下沿支撑（相对低位），等企稳低吸':(p.track.box_pos>=0.85?'贴近上沿压力（相对高位），可观察高抛':'箱体中间，方向不明，观望'))">
                   <small :class="{'up':p.track.box_pos<0.25}" :style="{left: (p.track.box_pos*100)+'%'}">{{Math.round(p.track.box_pos*100)}}%</small>
                   <i :class="{'up':p.track.box_pos<0.25}" :style="{left: (p.track.box_pos*100)+'%'}"></i>
                 </div>
+                <span v-else-if="mktBad(p.track,'q')" class="bad-data" title="行情读取异常">数据异常</span>
                 <span v-else class="muted">-</span>
               </template>
               <template v-else-if="col.key==='pct_5d'">
-                <span :class="ui.classOf(p.track.pct_5d)" :title="p.track.pct_5d!=null?'近5日累计涨跌幅':'-'"><b>{{p.track.pct_5d!=null ? p.track.pct_5d+'%' : '-'}}</b></span>
+                <span v-if="p.track.pct_5d!=null" :class="ui.classOf(p.track.pct_5d)" title="近5日累计涨跌幅"><b>{{p.track.pct_5d}}%</b></span>
+                <span v-else-if="mktBad(p.track,'q')" class="bad-data" title="行情读取异常">数据异常</span>
+                <span v-else class="muted">-</span>
               </template>
               <template v-else-if="col.key==='gap'">
                 <span v-if="p.track.gap" :class="p.track.gap.dir==='up'?'up':(p.track.gap.dir==='down'?'down':'muted')" :title="p.track.gap.text">{{p.track.gap.text}}</span>
+                <span v-else-if="mktBad(p.track,'q')" class="bad-data" title="行情读取异常">数据异常</span>
                 <span v-else class="muted">-</span>
               </template>
               <template v-else-if="col.key==='main_net_pct'">
-                <span :class="ui.classOf(p.track.main_net_pct)" :title="p.track.main_net_pct!=null?'主力资金当日净流入占比(%)':'当日资金流数据尚未产生，留空'">{{p.track.main_net_pct!=null ? p.track.main_net_pct+'%' : '-'}}</span>
+                <span v-if="p.track.main_net_pct!=null" :class="ui.classOf(p.track.main_net_pct)" :title="'主力资金当日净流入占比(%)'">{{p.track.main_net_pct}}%</span>
+                <span v-else-if="mktBad(p.track,'f')" class="bad-data" title="资金流数据读取异常">数据异常</span>
+                <span v-else class="muted">-</span>
               </template>
               <template v-else-if="col.key==='main_signal'">
                 <span v-if="p.track.main_signal" :class="(p.track.main_signal.level==='strong_bull'||p.track.main_signal.level==='bull')?'up':((p.track.main_signal.level==='strong_bear'||p.track.main_signal.level==='bear')?'down':'muted')">{{p.track.main_signal.text}}</span>
+                <span v-else-if="mktBad(p.track,'f')" class="bad-data" title="资金流数据读取异常">数据异常</span>
                 <span v-else class="muted">-</span>
               </template>
               <template v-else-if="col.key==='big_order_net'">
-                <span :class="ui.classOf(p.track.big_order_net)" :title="p.track.big_order_net!=null?'大单流向(万元)：超大单+大单净额，正数净买入/负数净卖出':'当日资金流数据尚未产生，留空'">{{p.track.big_order_net!=null ? p.track.big_order_net : '-'}}</span>
+                <span v-if="p.track.big_order_net!=null" :class="ui.classOf(p.track.big_order_net)" :title="'大单流向(万元)：超大单+大单净额，正数净买入/负数净卖出'">{{p.track.big_order_net}}</span>
+                <span v-else-if="mktBad(p.track,'f')" class="bad-data" title="资金流数据读取异常">数据异常</span>
+                <span v-else class="muted">-</span>
               </template>
               <template v-else-if="col.key==='valuation_pct_3y'">
                 <span v-if="p.track.valuation_pct_3y!=null" :class="p.track.valuation_pct_3y<30?'up':(p.track.valuation_pct_3y>70?'down':'')" :title="'近3年分位 '+(p.track.valuation_basis==='price'?'（价格分位近似，PE历史接口暂不可用）':'（PE历史分位）')+(p.track.valuation_pe?(' · PE '+p.track.valuation_pe):'')+(p.track.valuation_pb?(' · PB '+p.track.valuation_pb):'')">{{p.track.valuation_pct_3y}}%</span>
+                <span v-else-if="mktBad(p.track,'q')" class="bad-data" title="行情读取异常">数据异常</span>
                 <span v-else class="muted">-</span>
               </template>
               <template v-else-if="col.key==='sector_strength'">
                 <span v-if="p.track.sector_strength" :class="p.track.sector_strength.level==='strong'?'up':(p.track.sector_strength.level==='weak'?'down':'muted')" :title="'相对大盘(上证)近20日强弱，差值 '+(p.track.sector_strength.diff||0)+'%'">{{p.track.sector_strength.text}}</span>
+                <span v-else-if="mktBad(p.track,'q')" class="bad-data" title="行情读取异常">数据异常</span>
                 <span v-else class="muted">-</span>
               </template>
               <template v-else-if="col.key==='event_risk_tags'">
@@ -982,6 +1085,7 @@
                   :title="p.track.operation_advice.summary">
                   {{p.track.operation_advice.title}}
                 </button>
+                <span v-else-if="mktBad(p.track,'q')" class="bad-data" title="行情读取异常，无法生成建议">数据异常</span>
                 <span v-else class="muted">-</span>
               </template>
               <template v-else-if="col.key==='tech_signals'">
@@ -990,32 +1094,24 @@
                   <span :class="p.track.tech_signals.kdj==='看多'?'up':(p.track.tech_signals.kdj==='看空'?'down':'')">{{p.track.tech_signals.kdj==='看多'?'多':(p.track.tech_signals.kdj==='看空'?'空':'中')}}</span><span class="muted">/</span>
                   <span :class="p.track.tech_signals.boll==='看多'?'up':(p.track.tech_signals.boll==='看空'?'down':'')">{{p.track.tech_signals.boll==='看多'?'多':(p.track.tech_signals.boll==='看空'?'空':'中')}}</span>
                 </span>
+                <span v-else-if="mktBad(p.track,'q')" class="bad-data" title="行情读取异常">数据异常</span>
                 <span v-else class="muted">-</span>
               </template>
               <template v-else-if="col.key==='must_pass'">
-                <span :class="{'red':(p.track.must_pass_score||0)>20}" :title="formatPassTitle(p.track.must_pass)">
+                <span v-if="mktBad(p.track,'q')" class="bad-data" title="行情读取异常，未打分">数据异常</span>
+                <span v-else :class="{'red':(p.track.must_pass_score||0)>20}" :title="formatPassTitle(p.track.must_pass)">
                   <b>{{p.track.must_pass_score}}</b><span class="muted" style="font-size:11px">分</span>
                 </span>
               </template>
               <template v-else-if="col.key==='key_pass'">
-                <span :class="{'red':(p.track.key_pass_score||0)>20}" :title="formatPassTitle(p.track.key_pass)">
+                <span v-if="mktBad(p.track,'q')" class="bad-data" title="行情读取异常，未打分">数据异常</span>
+                <span v-else :class="{'red':(p.track.key_pass_score||0)>20}" :title="formatPassTitle(p.track.key_pass)">
                   <b>{{p.track.key_pass_score}}</b><span class="muted" style="font-size:11px">分</span>
                 </span>
               </template>
-              <template v-else-if="col.key==='aux_pass'">
-                <span :style="p.track.aux_pass_score===100?{color:'var(--ok)',fontWeight:'bold'}:{}" :title="formatPassTitle(p.track.aux_pass)">
-                  <b>{{p.track.aux_pass_score}}</b><span class="muted" style="font-size:11px">分</span>
-                </span>
-              </template>
-              <template v-else-if="col.key==='ai_grade'">
-                <span class="pill"
-                  :class="{'add':p.track.ai_grade==='A','alert':p.track.ai_grade==='B','reduce':p.track.ai_grade==='C','danger':p.track.ai_grade==='D'}"
-                  :title="p.track.veto_reasons && p.track.veto_reasons.length ? '一票否决: '+p.track.veto_reasons.join(' / ') : '总分 '+p.track.total_score+' 分'">
-                  {{p.track.ai_grade||'-'}}
-                </span>
-              </template>
               <template v-else-if="col.key==='pe_ttm'">
-            <span :class="p.track.pe_ttm!=null && p.track.pe_ttm<0 ? 'down' : ''" :title="p.track.pe_ttm!=null?'市盈率(TTM)':'-'">{{p.track.pe_ttm!=null ? p.track.pe_ttm : '-'}}</span>
+            <span v-if="p.track.pe_ttm!=null && p.track.pe_ttm<0" class="down" :title="'PE-TTM 无效（净亏损）：' + p.track.pe_ttm">亏损</span>
+            <span v-else :title="'市盈率(TTM)'">{{p.track.pe_ttm!=null ? p.track.pe_ttm : '-'}}</span>
           </template>
           <template v-else-if="col.key==='pb'">
             <span :title="p.track.pb!=null?'市净率':'-'">{{p.track.pb!=null ? p.track.pb : '-'}}</span>
@@ -1049,15 +1145,17 @@
             <span v-else class="muted" @click.stop="openUnlock(p)" style="cursor:pointer">-</span>
           </template>
           <template v-else-if="col.key==='total_score'">
-            <span :class="{'up':(p.track.total_score||0)>=70,'down':(p.track.total_score||0)<40}" :title="p.track.total_score!=null?'AI选股综合评分(满分100)':'-'"><b>{{p.track.total_score!=null ? p.track.total_score : '-'}}</b></span>
+            <span v-if="mktBad(p.track,'q')" class="bad-data" title="行情读取异常，未评分">数据异常</span>
+            <span v-else :class="{'up':(p.track.total_score||0)>=70,'down':(p.track.total_score||0)<40}" :title="'AI选股综合评分(满分100)'"><b>{{p.track.total_score!=null ? p.track.total_score : '-'}}</b></span>
           </template>
           <template v-else-if="col.key==='position_qty'">{{p.position_qty!=null ? p.position_qty : '-'}}</template>
               <template v-else-if="col.key==='cost_price'">{{p.cost_price!=null ? ui.fmt(p.cost_price) : '-'}}</template>
               <template v-else-if="col.key==='note'" class="muted">{{p.note||'-'}}</template>
-              <template v-else-if="col.key==='scheme_type'">{{p.scheme_type||'-'}}</template>
               <template v-else-if="col.key==='ops'">
                 <button v-if="p.status==='archive'" class="ghost btn-sm" @click.stop="restorePool(p)">恢复</button>
                 <button class="ghost btn-sm" @click.stop="startEdit(p)">修改</button>
+                <!-- v143: 盯盘日志按钮,仅当该 code 至少有一条 day_view_log 时显示(避免误点空弹窗) -->
+                <button v-if="p.day_view_log_count > 0" class="ghost btn-sm day-view-watch-btn" @click.stop="openWatchLogModal(p)" :title="(p.name||p.code) + ' 盯盘日志(已记录 ' + p.day_view_log_count + ' 条)'">盯盘日志</button>
                 <button class="ghost btn-sm" @click.stop="removePool(p.code, p.name)">移除</button>
               </template>
             </td>
@@ -1080,8 +1178,8 @@
                   <div class="pool-card-code" @click="openAnalysis(p.code)">{{p.code}}</div>
                 </div>
                 <div class="pool-card-price">
-                  <div class="p">{{ui.fmt(p.track.price)}}</div>
-                  <div :class="['c', ui.classOf(p.track.change_pct)]">{{ui.fmtPct(p.track.change_pct)}}</div>
+                  <div class="p">{{p.track.price!=null ? ui.fmt(p.track.price) : ((mktBad(p.track,'q')||mktBad(p.track,'s')) ? '数据异常' : '-')}}</div>
+                  <div :class="['c', ui.classOf(p.track.change_pct)]">{{p.track.change_pct!=null ? ui.fmtPct(p.track.change_pct) : ((mktBad(p.track,'q')||mktBad(p.track,'s')) ? '数据异常' : '-')}}</div>
                 </div>
               </div>
               <div v-if="poolCardOpen[p.code]" class="pool-card-body">
@@ -1090,22 +1188,22 @@
               </div>
               <div v-if="p.track.price_note" style="margin:-2px 0 4px"><span class="pill" style="background:#fee2e2;color:#b91c1c;font-size:10px">实时fallback</span></div>
               <div class="pool-card-grids">
-                <div><div class="k">当天成交量</div><div :class="['v', p.track.realtime_volume != null && p.track.realtime_volume > (p.track.yesterday_volume_at_time||0) && p.track.realtime_volume > (p.track.avg_volume_20||0) ? 'up':'']">{{p.track.realtime_volume!=null?p.track.realtime_volume:'-'}}</div></div>
-                <div><div class="k">T-1同期成交量</div><div class="v">{{p.track.yesterday_volume_at_time!=null?p.track.yesterday_volume_at_time:'-'}}</div></div>
-                <div><div class="k">T-1全天成交量</div><div class="v">{{p.track.yesterday_volume_total!=null?p.track.yesterday_volume_total:'-'}}</div></div>
-                <div><div class="k">20日均成交量</div><div class="v">{{p.track.avg_volume_20!=null?p.track.avg_volume_20:'-'}}</div></div>
-                <div><div class="k">量比 / 换手</div><div class="v"><span :class="ui.volClass(p.track.vol_ratio)">{{p.track.vol_ratio||'-'}}</span> / <span :class="(p.track.turnover!=null && p.track.turnover>=3 && p.track.turnover<=8)?'up':''">{{p.track.turnover!=null ? p.track.turnover+'%' : '-'}}</span></div></div>
+                <div><div class="k">当天成交量</div>
+                  <div v-if="p.track.realtime_volume!=null" :class="['v', isVolumeAbnormal(p.track) ? 'vol-abnormal' : (p.track.realtime_volume > (p.track.yesterday_volume_at_time||0) && p.track.realtime_volume > (p.track.avg_volume_20||0) ? 'up':'')]" :title="volumeTitle(p.track)">{{isVolumeAbnormal(p.track) ? p.track.realtime_volume + ' ⚠异常' : p.track.realtime_volume}}</div>
+                  <div v-else class="v">{{mktBad(p.track,'s') ? '数据异常' : '-'}}</div>
+                </div>
+                <div><div class="k">T-1同期成交量</div><div class="v">{{p.track.yesterday_volume_at_time!=null?p.track.yesterday_volume_at_time:(mktBad(p.track,'s')?'数据异常':'-')}}</div></div>
+                <div><div class="k">T-1全天成交量</div><div class="v">{{p.track.yesterday_volume_total!=null?p.track.yesterday_volume_total:(mktBad(p.track,'s')?'数据异常':'-')}}</div></div>
+                <div><div class="k">20日均成交量</div><div class="v">{{p.track.avg_volume_20!=null?p.track.avg_volume_20:(mktBad(p.track,'q')?'数据异常':'-')}}</div></div>
+                <div><div class="k">量比 / 换手</div><div class="v"><span v-if="p.track.vol_ratio!=null && p.track.vol_ratio>0" :class="ui.volClass(p.track.vol_ratio)">{{p.track.vol_ratio}}</span><span v-else>{{mktBad(p.track,'s')?'数据异常':'-'}}</span> / <span :class="(p.track.turnover!=null && p.track.turnover>=3 && p.track.turnover<=8)?'up':''">{{p.track.turnover!=null ? p.track.turnover+'%' : (mktBad(p.track,'s')?'数据异常':'-')}}</span></div></div>
                 <div><div class="k">日内振幅</div><div class="v"><span :class="(p.track.intra_amplitude!=null && p.track.intra_amplitude>=3 && p.track.intra_amplitude<=7)?'up':''"
-                       :title="(p.track.intra_amplitude_source || '取自日线') + (p.track.intra_amplitude!=null ? ' · '+p.track.intra_amplitude+'%' : '') + ' · (最高-最低)/昨收'">{{p.track.intra_amplitude!=null ? p.track.intra_amplitude+'%' : '-'}}</span></div></div>
-                <div><div class="k">MA5 / MA20</div><div class="v"><span :class="p.track.above_ma5===true?'up':(p.track.above_ma5===false?'down':'')">{{ui.fmt(p.track.ma5)}}</span>{{p.track.above_ma5===true?'⬆':(p.track.above_ma5===false?'⬇':'—')}} / <span :class="p.track.above_ma20===true?'up':(p.track.above_ma20===false?'down':'')">{{ui.fmt(p.track.ma20)}}</span>{{p.track.above_ma20===true?'⬆':(p.track.above_ma20===false?'⬇':'—')}}</div></div>
-                <div><div class="k">箱体位置</div><div class="v">{{p.track.box_pos!==undefined ? Math.round(p.track.box_pos*100)+'%' : '-'}}</div></div>
-                <div><div class="k">操作建议</div><div class="v"><button v-if="p.track.operation_advice" class="chip pool-card-advice" :class="{alert:p.track.operation_advice.key==='reduce', add:p.track.operation_advice.key==='buy'||p.track.operation_advice.key==='t', reduce:p.track.operation_advice.key==='sell', danger:p.track.operation_advice.key==='wait'}" @click.stop="openAdviceModal(p)" :title="p.track.operation_advice.summary">{{p.track.operation_advice.title}}</button><span v-else class="muted">-</span></div></div>
-                <div><div class="k">必看达标</div><div class="v" :class="{'red':(p.track.must_pass_score||0)<4}">{{p.track.must_pass_score||0}}分 · {{formatPass(p.track.must_pass)}}</div></div>
-                <div><div class="k">重要达标</div><div class="v" :class="{'red':(p.track.key_pass_score||0)<3}">{{p.track.key_pass_score||0}}分 · {{formatPass(p.track.key_pass)}}</div></div>
-                <div><div class="k">辅助达标</div><div class="v" :style="p.track.aux_pass_score===100?{color:'var(--ok)',fontWeight:'bold'}:{}">{{p.track.aux_pass_score||0}}分</div></div>
-                <div><div class="k">AI 评级</div><div class="v"><span v-if="p.track.ai_grade" class="pill" :class="{'add':p.track.ai_grade==='A','alert':p.track.ai_grade==='B','reduce':p.track.ai_grade==='C','danger':p.track.ai_grade==='D'}">{{p.track.ai_grade}}</span><span v-else>-</span></div></div>
+                       :title="(p.track.intra_amplitude_source || '取自日线') + (p.track.intra_amplitude!=null ? ' · '+p.track.intra_amplitude+'%' : '') + ' · (最高-最低)/昨收'">{{p.track.intra_amplitude!=null ? p.track.intra_amplitude+'%' : (mktBad(p.track,'q')?'数据异常':'-')}}</span></div></div>
+                <div><div class="k">MA5 / MA20</div><div v-if="p.track.ma5!=null || p.track.ma20!=null" class="v"><span :class="p.track.above_ma5===true?'up':(p.track.above_ma5===false?'down':'')">{{ui.fmt(p.track.ma5)}}</span>{{p.track.above_ma5===true?'⬆':(p.track.above_ma5===false?'⬇':'—')}} / <span :class="p.track.above_ma20===true?'up':(p.track.above_ma20===false?'down':'')">{{ui.fmt(p.track.ma20)}}</span>{{p.track.above_ma20===true?'⬆':(p.track.above_ma20===false?'⬇':'—')}}</div><div v-else class="v">{{mktBad(p.track,'q')?'数据异常':'—'}}</div></div>
+                <div><div class="k">箱体位置</div><div class="v">{{p.track.box_pos!==undefined ? Math.round(p.track.box_pos*100)+'%' : (mktBad(p.track,'q')?'数据异常':'-')}}</div></div>
+                <div><div class="k">操作建议</div><div class="v"><button v-if="p.track.operation_advice" class="chip pool-card-advice" :class="{alert:p.track.operation_advice.key==='reduce', add:p.track.operation_advice.key==='buy'||p.track.operation_advice.key==='t', reduce:p.track.operation_advice.key==='sell', danger:p.track.operation_advice.key==='wait'}" @click.stop="openAdviceModal(p)" :title="p.track.operation_advice.summary">{{p.track.operation_advice.title}}</button><span v-else-if="mktBad(p.track,'q')" class="bad-data" title="行情读取异常，无法生成建议">数据异常</span><span v-else class="muted">-</span></div></div>
+                <div><div class="k">必看达标</div><div v-if="mktBad(p.track,'q')" class="v bad-data">数据异常</div><div v-else class="v" :class="{'red':(p.track.must_pass_score||0)<4}">{{p.track.must_pass_score||0}}分 · {{formatPass(p.track.must_pass)}}</div></div>
+                <div><div class="k">重要达标</div><div v-if="mktBad(p.track,'q')" class="v bad-data">数据异常</div><div v-else class="v" :class="{'red':(p.track.key_pass_score||0)<3}">{{p.track.key_pass_score||0}}分 · {{formatPass(p.track.key_pass)}}</div></div>
                 <div v-if="p.position_qty!=null"><div class="k">持仓 / 成本</div><div class="v">{{p.position_qty}} / {{ui.fmt(p.cost_price)}}</div></div>
-                <div v-if="p.scheme_type"><div class="k">方案</div><div class="v">{{p.scheme_type}}</div></div>
               </div>
               <div v-if="p.note" class="pool-card-note">📝 {{p.note}}</div>
               <div class="pool-card-actions">
@@ -1525,9 +1623,9 @@
         </div>
       </div>
 
-      <!-- 可投池财报风险快速标记弹窗（近5日大事/新闻） -->
+      <!-- 可投池财报风险快速标记弹窗（v144：触发明细 + 关键词过滤后的近5日新闻） -->
       <div v-if="financeRiskModal.show" class="modal" @click.self="closeFinanceRiskModal">
-        <div class="modal-box" style="max-width:640px">
+        <div class="modal-box" style="max-width:680px">
           <div class="modal-head">
             <h3>财报风险快速标记<span class="dtag">近5日大事/新闻</span></h3>
             <button type="button" class="close-x" @click="closeFinanceRiskModal" aria-label="关闭">×</button>
@@ -1535,12 +1633,34 @@
           <div class="modal-body">
             <div class="kv" style="margin-top:0"><span>{{financeRiskModal.name}} {{financeRiskModal.code}}</span><b :class="financeRiskModal.summary==='无明显风险'?'up':'down'">{{financeRiskModal.summary}}</b></div>
             <div v-if="financeRiskModal.report_date" class="muted" style="margin-top:6px">报告期：{{financeRiskModal.report_date}}</div>
-            <div style="margin-top:14px; font-weight:600; color:#374151; margin-bottom:8px">近5日相关大事 / 新闻（利好红 · 利空绿 · 中性灰）：</div>
+
+            <!-- v144 触发明细：每条 reason 配上具体财务值，解释「为什么是利空」 -->
+            <div v-if="financeRiskModal.triggers && financeRiskModal.triggers.length" style="margin-top:12px; background:#fef2f2; border:1px solid #fecaca; border-radius:6px; padding:10px 12px">
+              <div style="font-weight:600; color:#991b1b; margin-bottom:6px">⚠ 风险触发明细</div>
+              <div v-for="(t, i) in financeRiskModal.triggers" :key="'trg-'+i" style="display:flex; gap:8px; padding:4px 0; line-height:1.5; align-items:baseline">
+                <span class="pill risk" style="flex:0 0 auto; font-size:11px">{{t.reason}}</span>
+                <span style="color:#374151">{{t.text}}</span>
+                <span v-if="t.time" class="muted" style="font-size:11px">（{{t.time}}）</span>
+              </div>
+            </div>
+
+            <!-- v144 关键词过滤后的近5日新闻 -->
+            <div style="margin-top:14px; font-weight:600; color:#374151; margin-bottom:4px">
+              近5日相关大事 / 新闻<span v-if="financeRiskModal.news_keywords && financeRiskModal.news_keywords.length" class="muted" style="font-weight:400; margin-left:6px">（已按关键词筛选：{{financeRiskModal.news_keywords.join(' / ')}}）</span>：
+            </div>
+            <div style="font-size:12px; color:#6b7280; margin-bottom:6px">利好红 · 利空绿 · 中性灰</div>
             <div v-for="(n, idx) in financeRiskModal.news" :key="idx" style="display:flex; gap:10px; margin:8px 0; line-height:1.5; align-items:flex-start">
               <span :class="n.sentiment==='bull'?'up':(n.sentiment==='bear'?'down':'muted')" style="flex:0 0 auto; font-weight:700; min-width:32px">{{n.sentiment==='bull'?'利好':(n.sentiment==='bear'?'利空':'中性')}}</span>
               <span style="color:#374151">{{n.title}} <small class="muted" style="margin-left:4px">{{n.time}}</small></span>
             </div>
-            <div v-if="!financeRiskModal.news || !financeRiskModal.news.length" class="muted" style="margin-top:8px">近5日无相关大事 / 新闻</div>
+            <div v-if="!financeRiskModal.news || !financeRiskModal.news.length" class="muted" style="margin-top:8px">
+              近5日无相关大事 / 新闻
+            </div>
+            <!-- v144 兜底：触发原因明确，但东财近5日未收录匹配关键词的新闻 -->
+            <div v-else-if="financeRiskModal.news_fallback" class="warnbox" style="margin-top:10px; padding:8px 10px; font-size:12px">
+              近5日东财未检索到与「{{financeRiskModal.summary}}」关键词（{{financeRiskModal.news_keywords.join(' / ')}}）直接相关的报道，
+              下方展示的为该股近5日全部大事/新闻（已降级兜底），实际利空请以最新财报公告为准，建议人工查询报告原文。
+            </div>
           </div>
           <div class="modal-foot">
             <button type="button" class="ghost" @click="closeFinanceRiskModal">关闭</button>
@@ -1613,6 +1733,142 @@
           </div>
           <div class="modal-foot">
             <button type="button" class="ghost" @click="closeFinancialModal">关闭</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- v143: 日初判断录入弹窗 — 上半录入(趋势/价位/依据) + 下半当日历史 -->
+      <div v-if="dayViewModal.show" class="modal" @click.self="closeDayViewModal">
+        <div class="modal-box" style="max-width:640px">
+          <div class="modal-head">
+            <h3>日初判断录入 — {{ dayViewModal.name }} {{ dayViewModal.code }}</h3>
+            <button type="button" class="close-x" @click="closeDayViewModal" aria-label="关闭">×</button>
+          </div>
+          <div class="modal-body">
+            <!-- 上半:录入区 -->
+            <div class="dv-section-title">录入(保存后立即追加一行到下方历史)</div>
+            <div class="dv-edit-row">
+              <div class="dv-field">
+                <label>交易日</label>
+                <input type="date" v-model="dayViewModal.trade_date" :max="dayViewModal.trade_date" />
+              </div>
+              <div class="dv-field">
+                <label>涨跌趋势</label>
+                <div class="dv-trend-chips">
+                  <button type="button" v-for="t in ['看涨','看跌','风险','-']" :key="t"
+                    :class="['dv-chip', 'tag-'+t, { active: dayViewModal.trend === t }]"
+                    @click="dayViewModal.trend = t">{{ t }}</button>
+                </div>
+              </div>
+            </div>
+            <div class="dv-edit-row">
+              <div class="dv-field" style="flex:1">
+                <label>目标价位(元,可选)</label>
+                <input type="number" v-model.number="dayViewModal.target_price" step="0.01" min="0" placeholder="留空表示不设" />
+              </div>
+              <div class="dv-field" style="flex:2">
+                <label>目标依据(≤20字,可选)</label>
+                <input type="text" v-model="dayViewModal.target_note" maxlength="20" :placeholder="'例:突破前高,缺口支撑'" />
+                <div class="dv-note-counter" :class="{'over': (dayViewModal.target_note||'').length > 20}">{{ (dayViewModal.target_note||'').length }}/20</div>
+              </div>
+            </div>
+
+            <div class="dv-section-title" style="margin-top:16px">
+              当日历史
+              <span class="muted" style="font-weight:400;margin-left:8px">已有 {{ dayViewModal.history.length }} 条,最新一条作为该日复盘输入</span>
+            </div>
+            <div v-if="!dayViewModal.history.length" class="muted" style="padding:12px 0;text-align:center">今日暂无修改记录</div>
+            <table v-else class="dv-history-tbl">
+              <thead>
+                <tr><th style="width:36px">序号</th><th style="width:80px">用户</th><th style="width:80px">时间</th><th style="width:60px">趋势</th><th style="width:80px">目标价位</th><th>目标依据</th></tr>
+              </thead>
+              <tbody>
+                <tr v-for="(h, i) in dayViewModal.history" :key="h.id">
+                  <td>{{ i+1 }}</td>
+                  <td>{{ h.operator || '-' }}</td>
+                  <td>{{ fmtTimeShort(h.operated_at) }}</td>
+                  <td><span :class="'day-view-tag tag-' + (h.trend || '-')">{{ h.trend || '-' }}</span></td>
+                  <td>{{ h.target_price != null ? h.target_price : '-' }}</td>
+                  <td :title="h.target_note || ''">{{ h.target_note || '-' }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="modal-foot">
+            <button type="button" class="ghost" @click="dayViewModal.target_price=null;dayViewModal.target_note='';dayViewModal.trend='-'" :disabled="dayViewModal.saving">重置</button>
+            <button type="button" @click="submitDayViewLog" :disabled="dayViewModal.saving">{{ dayViewModal.saving ? '保存中...' : '保存' }}</button>
+            <button type="button" class="ghost" @click="closeDayViewModal">关闭</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- v143: 盯盘日志弹窗 — 该股所有交易日复盘,行可展开当日多次修改明细 -->
+      <div v-if="watchLogModal.show" class="modal" @click.self="closeWatchLogModal">
+        <div class="modal-box" style="max-width:1080px">
+          <div class="modal-head">
+            <h3>盯盘日志 — {{ watchLogModal.name }} {{ watchLogModal.code }}</h3>
+            <button type="button" class="close-x" @click="closeWatchLogModal" aria-label="关闭">×</button>
+          </div>
+          <div class="modal-body">
+            <div v-if="watchLogModal.loading" class="muted" style="padding:24px;text-align:center">加载中...</div>
+            <div v-else-if="!watchLogModal.items.length" class="muted" style="padding:24px;text-align:center">该股暂无日初判断记录,先去「日初判断」列点「填写」录入</div>
+            <table v-else class="wl-tbl">
+              <thead>
+                <tr>
+                  <th style="width:32px"></th>
+                  <th style="width:96px">交易日</th>
+                  <th style="width:80px">开盘</th>
+                  <th style="width:80px">收盘</th>
+                  <th style="width:90px">分时均价</th>
+                  <th style="width:80px">预判趋势</th>
+                  <th style="width:80px">目标价位</th>
+                  <th>目标依据</th>
+                  <th style="width:80px">偏离度</th>
+                  <th>偏离原因复盘</th>
+                </tr>
+              </thead>
+              <tbody>
+                <template v-for="(it, idx) in watchLogModal.items" :key="it.trade_date">
+                  <tr class="wl-row" :class="{ expanded: it._expanded }" @click="toggleWatchLogExpand(it)">
+                    <td><span class="wl-arrow">{{ it._expanded ? '▼' : '▶' }}</span></td>
+                    <td><b>{{ it.trade_date }}</b></td>
+                    <td>{{ it.open != null ? it.open : '-' }}</td>
+                    <td>{{ it.close != null ? it.close : '-' }}</td>
+                    <td>{{ it.intraday_avg != null ? it.intraday_avg : '-' }}</td>
+                    <td><span :class="'day-view-tag tag-' + (it.trend || '-')">{{ it.trend || '-' }}</span></td>
+                    <td>{{ it.target_price != null ? it.target_price : '-' }}</td>
+                    <td :title="it.target_note || ''">{{ it.target_note || '-' }}</td>
+                    <td :class="(it.deviation!=null && it.deviation>0) ? 'up' : ((it.deviation!=null && it.deviation<0) ? 'down' : '')">
+                      {{ it.deviation_pct != null ? (it.deviation_pct>0?'+':'') + it.deviation_pct + '%' : '-' }}
+                    </td>
+                    <td :title="it.deviation_reason || ''">{{ it.deviation_reason || '-' }}</td>
+                  </tr>
+                  <tr v-if="it._expanded" class="wl-detail-row">
+                    <td colspan="10">
+                      <div v-if="!it._details" class="muted" style="padding:8px 0">加载中...</div>
+                      <div v-else-if="!it._details.length" class="muted" style="padding:8px 0">该日无修改明细</div>
+                      <table v-else class="wl-detail-tbl">
+                        <thead><tr><th style="width:36px">序号</th><th style="width:100px">时间</th><th style="width:80px">用户</th><th style="width:70px">趋势</th><th style="width:90px">目标价位</th><th>目标依据</th></tr></thead>
+                        <tbody>
+                          <tr v-for="(d, di) in it._details" :key="d.id">
+                            <td>{{ di+1 }}</td>
+                            <td>{{ fmtTimeShort(d.operated_at) }}</td>
+                            <td>{{ d.operator || '-' }}</td>
+                            <td><span :class="'day-view-tag tag-' + (d.trend || '-')">{{ d.trend || '-' }}</span></td>
+                            <td>{{ d.target_price != null ? d.target_price : '-' }}</td>
+                            <td :title="d.target_note || ''">{{ d.target_note || '-' }}</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </td>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
+          </div>
+          <div class="modal-foot">
+            <span class="muted" style="font-size:12px;margin-right:auto">偏离度 = (目标价位 − 收盘) / 目标价位;同交易日多次修改,取最后一条作为复盘输入</span>
+            <button type="button" class="ghost" @click="closeWatchLogModal">关闭</button>
           </div>
         </div>
       </div>
@@ -1785,7 +2041,7 @@
               <span class="muted" style="flex:1;min-width:0">共 {{accessTotal}} 个用户（含游客），按最后登录时间倒序，默认10条/页</span>
               <button class="ghost btn-sm" style="flex-shrink:0" @click="fetchAccessLogs(1)">刷新</button>
             </div>
-            <div v-if="accessErr" class="data-err">⚠ {{accessErr.msg}} <button @click="_retryErr('accessErr')">重试</button></div>
+            <div v-if="accessErr" class="data-err">⚠ {{accessErr.msg}} <button @click="retryErr('accessErr')">重试</button></div>
             <div class="tracktbl-wrap access-log-tbl-wrap">
             <table class="tracktbl access-log-tbl">
               <thead><tr>
@@ -2307,12 +2563,16 @@ const app = createApp({
     importPoolModal:{show:false, uploading:false, result:null, error:''},  // 可投池导入新增弹窗(合并说明/模板/选择文件/结果反馈)
     columnSettingModal:{show:false, tableKey:'', title:'', columns:[]},  // 通用自定义列设置弹窗
     adviceModal:{show:false, code:'', name:'', title:'', summary:'', points:[], text:''},  // 可投池操作建议详情弹窗
-    financeRiskModal:{show:false, code:'', name:'', summary:'', report_date:'', news:[]},  // 可投池财报风险弹窗(近5日大事/新闻)
+    financeRiskModal:{show:false, code:'', name:'', summary:'', report_date:'', triggers:[], news_keywords:[], news_matched:0, news_fallback:false, news:[]},  // 可投池财报风险弹窗(v144: 触发明细+关键词过滤)
     evtRiskModal:{show:false, code:'', name:'', tag:'', details:[]},  // 可投池事件风险标签详情弹窗(v117)
     unlockModal:{show:false, code:'', name:'', next_date:'', next_amount:null, next_ratio:null},  // 可投池解禁明细弹窗(#66)
     financialModal:{show:false, code:'', name:'', report_date:'', net_profit:null, net_profit_yoy:null, revenue_yoy:null, eps:null, equity:null, goodwill:null},  // 可投池财报明细弹窗(#66)
+    // v143: 日初判断录入弹窗(上半录入 + 下半当日历史)
+    dayViewModal:{show:false, code:'', name:'', trade_date:'', trend:'-', target_price:null, target_note:'', history:[], saving:false},
+    // v143: 盯盘日志弹窗(每日复盘 + 行可展开当日多次修改)
+    watchLogModal:{show:false, code:'', name:'', items:[], loading:false},
     columnSettings: (()=>{
-      const currentVer = '20260904-02';  // v122: #66 新增10列(估值/财报/解禁/评分)+解禁/财报明细弹窗 → 重置列配置缓存
+      const currentVer = '20260907-04';  // v143: 日初判断列从下拉改成弹窗按钮 → 重置列配置缓存,避免旧宽度/可见性冲突
       const savedVer = localStorage.getItem('columnSettingsVersion');
       if(savedVer !== currentVer){ localStorage.removeItem('columnSettings'); localStorage.setItem('columnSettingsVersion', currentVer); return {}; }
       return JSON.parse(localStorage.getItem('columnSettings')||'{}');
@@ -2415,10 +2675,12 @@ const app = createApp({
     activePoolColumns(){ return this.getColumns('pool'); },
     // 可投池实际可见列（避免 v-for 与 v-if 同元素导致 Vue3 渲染异常）
     visiblePoolColumns(){
-      // #66 云端空值处理：pe_ttm/pb/pe_pct_3y/net_profit_yoy/revenue_yoy/report_date/goodwill/next_ratio/next_date
-      // 来自外部免费源(腾讯qt/东财datacenter)，云端白名单仅放行 kline 主机→取不到；
-      // 这些列配置为「有数才显示」，取不到时整列隐藏（不显示 -）。total_score 为本地算分，始终显示。
-      const conditional = {pe_ttm:1,pb:1,pe_pct_3y:1,net_profit_yoy:1,revenue_yoy:1,report_date:1,goodwill:1,next_ratio:1,next_date:1};
+      // #66/v136 云端空值处理：源可达性分两类（实测 2026-09-07）
+      //   已可达：pe_ttm / pb（腾讯 qt）/ report_date / net_profit_yoy / revenue_yoy（东财 RPT_LICO_FN_CPD 新版）
+      //   暂取不到：pe_pct_3y（东财 emweb em 估值历史 9501）、goodwill（资产负债表细项 9501）、
+      //            next_date / next_ratio（限售解禁 9501）→ 仍用「全池无数据则整列隐藏」策略
+      // 已可达的列总是显示（即使某行暂未拉到值也显示 -）；仅真正取不到的列才允许被业务规则隐藏。
+      const conditional = {pe_pct_3y:1,goodwill:1,next_ratio:1,next_date:1};
       const pools = this.pool || [];
       return (this.activePoolColumns||[]).filter(c=>{
         if(!c.visible) return false;
@@ -2525,6 +2787,14 @@ const app = createApp({
       }
       return out;
     },
+    // 修复 v138：原写在 methods 里，运行时模板渲染为 `function () { [native code] }`；
+    // 改为 computed 后走 getter 语义，模板里 `{{idxStatusText}}` 读取的总是返回值字符串。
+    idxStatusText(){
+      if(!this.indexes.length) return '未配置';
+      const ready = this.indexes.filter(x=>this.idxQuotes[x.code]).length;
+      if(!ready) return '加载中…';
+      return ready + '/' + this.indexes.length + ' 已就绪';
+    },
   },
   mounted(){ if(this.token){ this.loadMe(); this.loadDash(); }
     // 宽指快览：登录即拉一次快照与日线(v128)
@@ -2563,7 +2833,8 @@ const app = createApp({
           {key:'code_name', label:'代码/名称', width:144, visible:true, frozen:true, sortable:true},
           {key:'price', label:'现价', width:75, visible:true, frozen:true, sortable:true},
           {key:'change_pct', label:'涨跌幅', width:75, visible:true, frozen:true, sortable:true},
-          {key:'realtime_volume', label:'当天实时\n成交量（万手）', width:117, visible:true, frozen:false, sortable:true, help:'当天截至当前时点的累计成交量,单位:万手(1手=100股)。同时大于 T-1 日同期 与 20日平均成交量 时标红'},
+          {key:'day_view', label:'日初\n判断', width:96, visible:true, frozen:false, sortable:true, help:'你自己的日初主观判断 + 目标价位 + 目标依据(≤20字)。点「填写/修改」按钮弹窗录入；同一天允许多次修改，每次都记一行(序号/用户/时间/趋势/价位/依据)。看涨=准备买入，看跌=准备卖出，风险=有事件风险，-=仅设目标位不表态。系统不会据此自动触发动作'},
+          {key:'realtime_volume', label:'当天实时\n成交量（万手）', width:117, visible:true, frozen:false, sortable:true, help:'当天截至当前时点的累计成交量,单位:万手(1手=100股)。同时大于 T-1 日同期 与 20日平均成交量 时标红；超过 max(T-1全天, 20日均量) × 10 倍视为数据错误标"异常"'},
           {key:'yesterday_volume_at_time', label:'T-1日同期\n成交量（万手）', width:117, visible:true, frozen:false, sortable:true, help:'前一个交易日同时点的累计成交量,单位:万手。按 30 分钟向下取整 + 盘前强制 09:30 / 盘后强制 15:00'},
           {key:'avg_volume_20', label:'20日平均\n成交量（万手）', width:117, visible:true, frozen:false, sortable:true, help:'近20个交易日收盘后日均成交量,单位:万手'},
           {key:'yesterday_volume_total', label:'T-1日全天\n成交量（万手）', width:117, visible:true, frozen:false, sortable:true, help:'前一交易日收盘后全天累计成交量,单位:万手。'+
@@ -2597,13 +2868,10 @@ const app = createApp({
           {key:'tech_signals', label:'MACD/\nKDJ/布林', width:138, visible:true, frozen:false, sortable:true},
           {key:'must_pass', label:'必看-达标项', width:117, visible:true, frozen:false, sortable:true},
           {key:'key_pass', label:'重要-达标项', width:117, visible:true, frozen:false, sortable:true},
-          {key:'aux_pass', label:'辅助-达标项', width:117, visible:true, frozen:false, sortable:true},
-          {key:'ai_grade', label:'AI评等级', width:108, visible:true, frozen:false, sortable:true},
           {key:'position_qty', label:'持仓', width:90, visible:true, frozen:false, sortable:true},
           {key:'cost_price', label:'成本', width:99, visible:true, frozen:false, sortable:true},
           {key:'note', label:'备注', width:138, visible:true, frozen:false, sortable:true},
           {key:'tags', label:'标签', width:180, visible:true, frozen:false, sortable:true},
-          {key:'scheme_type', label:'方案', width:111, visible:true, frozen:false, sortable:true},
           {key:'ops', label:'操作', width:110, visible:true, frozen:false, sortable:false, hideable:false}
         ];
       }
@@ -2707,11 +2975,53 @@ const app = createApp({
           const m = {A:4, B:3, C:2, D:1};
           return t.ai_grade && m[t.ai_grade] != null ? m[t.ai_grade] : 0;
         }
+        case 'pe_ttm':     return (t.pe_ttm!=null ? +t.pe_ttm : null);
+        case 'pb':         return (t.pb!=null ? +t.pb : null);
+        case 'pe_pct_3y':  return (t.pe_pct_3y!=null ? +t.pe_pct_3y : null);
+        case 'net_profit_yoy': return (t.net_profit_yoy!=null ? +t.net_profit_yoy : null);
+        case 'revenue_yoy':    return (t.revenue_yoy!=null ? +t.revenue_yoy : null);
+        case 'report_date':    return t.report_date || '';
+        case 'goodwill':       return (t.goodwill!=null ? +t.goodwill : null);
+        case 'next_ratio':     return (t.next_ratio!=null ? +t.next_ratio : null);
+        case 'next_date':      return t.next_date || '';
+        case 'total_score':    return (t.total_score!=null ? +t.total_score : null);
+        case 'pct_5d':     return (t.pct_5d!=null ? +t.pct_5d : null);
+        case 'gap': {
+          if(!t.gap || !t.gap.dir) return null;
+          return t.gap.dir === 'up' ? 1 : (t.gap.dir === 'down' ? -1 : 0);
+        }
+        case 'main_net_pct':   return (t.main_net_pct!=null ? +t.main_net_pct : null);
+        case 'big_order_net':  return (t.big_order_net!=null ? +t.big_order_net : null);
+        case 'valuation_pct_3y': return (t.valuation_pct_3y!=null ? +t.valuation_pct_3y : null);
+        case 'sector_strength': {
+          if(!t.sector_strength || !t.sector_strength.level) return null;
+          const m = {strong:2, neutral:1, weak:0};
+          return m[t.sector_strength.level] != null ? m[t.sector_strength.level] : null;
+        }
+        case 'main_signal': {
+          if(!t.main_signal || !t.main_signal.level) return null;
+          const m = {strong_bull:4, bull:3, neutral:2, bear:1, strong_bear:0};
+          return m[t.main_signal.level] != null ? m[t.main_signal.level] : null;
+        }
+        case 'event_risk_tags': {
+          if(!t.event_risk_tags) return null;
+          return Object.keys(t.event_risk_tags).length;
+        }
+        case 'finance_risk': {
+          if(!t.finance_risk) return null;
+          // 无风险=0，有风险=1（让 asc 把有风险的排到底，符合"风险提示靠后"语义）
+          return t.finance_risk.summary === '无明显风险' ? 0 : 1;
+        }
+        case 'day_view': {
+          // v143: 4 枚举 排序 — 看涨 > 看跌 > 风险 > -
+          const m = {看涨:4, 看跌:3, 风险:2, '-':1};
+          // 兼容历史「不动」字串(不应再出现,但若老库脏数据仍能 fallback 0)
+          return p.day_view_today && m[p.day_view_today] != null ? m[p.day_view_today] : (m[p.day_view] != null ? m[p.day_view] : 0);
+        }
         case 'position_qty': return (p.position_qty!=null ? +p.position_qty : null);
         case 'cost_price':  return (p.cost_price!=null ? +p.cost_price : null);
         case 'note':        return p.note || '';
         case 'tags':        return (p.tags && p.tags.length) ? p.tags.map(t=>t.name).join(',') : '';
-        case 'scheme_type': return p.scheme_type || '';
         case 'ops':         return null;  // 操作列不参与排序
         default: return null;
       }
@@ -2730,6 +3040,135 @@ const app = createApp({
         this.poolSort = {key:col.key, dir:'asc'};
       }
     },
+    // 当天实时成交量异常判定：> max(T-1全天, 20日平均) × 10 视为数据错误（明显不合理会误导用户）
+    isVolumeAbnormal(t){
+      if(!t || t.realtime_volume==null) return false;
+      const base = Math.max(t.yesterday_volume_total||0, t.avg_volume_20||0);
+      if(base <= 0) return false;
+      return t.realtime_volume > base * 10;
+    },
+    volumeTitle(t){
+      if(this.isVolumeAbnormal(t)){
+        const base = Math.max(t.yesterday_volume_total||0, t.avg_volume_20||0);
+        return `⚠ 数据异常：当天实时成交量 ${t.realtime_volume} 万手 ≈ ${(t.realtime_volume/base).toFixed(1)} 倍 max(T-1全天 ${t.yesterday_volume_total||0}, 20日均 ${t.avg_volume_20||0})，疑似数据错误`;
+      }
+      return '当天截至当前时点累计成交量（万手）';
+    },
+    // v137 行情可信度标记：后端 track.mkt = {q:日线, s:实时盘口, f:当日资金流}, 1=可信 0=读取异常
+    // 读取异常时相关行情列显示【数据异常】，绝不展示演示/过期/0 等错误数值；未打标(undefined)=老数据，按正常处理
+    mktBad(t, g){
+      if(!t || !t.mkt || t.mkt[g]===undefined) return false;
+      return t.mkt[g]===0;
+    },
+    // v143: 改弹窗录入 — openDayViewModal / submitDayViewLog / openWatchLogModal
+    async openDayViewModal(p){
+      // 取今天(本地时区)作为 trade_date
+      const d = new Date();
+      const today = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+      // 弹窗状态重置
+      this.dayViewModal = {
+        show:true, code:p.code, name:p.name||p.code, trade_date:today,
+        trend:'-', target_price:null, target_note:'', history:[], saving:false
+      };
+      // 拉该 code 当日历史(用于下半区展示,新窗口开时立刻可见)
+      await this.loadDayViewLog(p.code, today);
+    },
+    async loadDayViewLog(code, trade_date){
+      try{
+        const list = await API(`/pool/${code}/day-view-log?trade_date=${encodeURIComponent(trade_date)}`);
+        this.dayViewModal.history = Array.isArray(list) ? list : [];
+      }catch(e){
+        this.dayViewModal.history = [];
+        console.warn('load day-view-log failed', e);
+      }
+    },
+    async submitDayViewLog(){
+      const m = this.dayViewModal;
+      if(!m.trade_date || !/^\d{4}-\d{2}-\d{2}$/.test(m.trade_date)){
+        this.showAlert('请输入有效的日期(YYYY-MM-DD)'); return;
+      }
+      if(m.trend === '-' && m.target_price == null && !(m.target_note||'').trim()){
+        this.showAlert('请至少填写一项(趋势/目标价位/目标依据)'); return;
+      }
+      const note = (m.target_note||'').trim();
+      if(note.length > 20){
+        this.showAlert('目标依据不能超过 20 字(当前 ' + note.length + ')'); return;
+      }
+      if(m.target_price != null && (+m.target_price) < 0){
+        this.showAlert('目标价位不能为负'); return;
+      }
+      m.saving = true;
+      try{
+        await API(`/pool/${m.code}/day-view-log`, {method:'POST', body: JSON.stringify({
+          trade_date: m.trade_date, trend: m.trend,
+          target_price: (m.target_price==null || m.target_price==='') ? null : (+m.target_price),
+          target_note: note
+        })});
+        // 成功:刷新当日历史 + 刷新列表(让 day_view_today / count 同步)
+        await this.loadDayViewLog(m.code, m.trade_date);
+        await this.loadPool();
+        this.showToast('已记录');
+        // 清空录入区(保留弹窗,便于连续录入)
+        m.trend = '-'; m.target_price = null; m.target_note = '';
+      }catch(e){
+        this.showAlert('保存失败:' + (e && e.message || '网络错误'));
+      }finally{
+        m.saving = false;
+      }
+    },
+    closeDayViewModal(){
+      this.dayViewModal.show = false;
+    },
+    async openWatchLogModal(p){
+      this.watchLogModal = {show:true, code:p.code, name:p.name||p.code, items:[], loading:true};
+      try{
+        const data = await API(`/pool/${p.code}/watch-log`);
+        this.watchLogModal.items = (data && data.items) || [];
+      }catch(e){
+        this.showAlert('加载盯盘日志失败:' + (e && e.message || '网络错误'));
+        this.watchLogModal.items = [];
+      }finally{
+        this.watchLogModal.loading = false;
+      }
+    },
+    closeWatchLogModal(){
+      this.watchLogModal.show = false;
+    },
+    // 复盘表行展开:按 trade_date 拉该日全部修改明细
+    async toggleWatchLogExpand(item){
+      if(item._expanded){
+        item._expanded = false; item._details = []; return;
+      }
+      item._expanded = true;
+      if(item._details) return;  // 已加载
+      try{
+        const list = await API(`/pool/${this.watchLogModal.code}/day-view-log?trade_date=${encodeURIComponent(item.trade_date)}`);
+        item._details = Array.isArray(list) ? list : [];
+      }catch(e){
+        item._details = [];
+        console.warn('load day-view-log details failed', e);
+      }
+    },
+    fmtTimeShort(iso){
+      if(!iso) return '-';
+      try{
+        const d = new Date(iso);
+        if(isNaN(d.getTime())) return iso;
+        const h = String(d.getHours()).padStart(2,'0');
+        const m = String(d.getMinutes()).padStart(2,'0');
+        return `${h}:${m}`;
+      }catch(e){ return iso; }
+    },
+    fmtDateShort(date){
+      if(!date) return '-';
+      try{
+        const d = new Date(date);
+        if(isNaN(d.getTime())) return date;
+        return `${d.getMonth()+1}-${String(d.getDate()).padStart(2,'0')}`;
+      }catch(e){ return date; }
+    },
+    // 旧 updateDayView 留作兜底(被 openDayViewModal 替代);新列已不用 select,留 stub 防止 v142 旧 JS 缓存 ReferenceError
+    updateDayView(){ /* v143 改用弹窗,此方法空操作 */ },
     // 可投池表头列宽拖拽：开始
     startResize(e, col){
       e.preventDefault();
@@ -2813,16 +3252,27 @@ const app = createApp({
     closeAdviceModal(){ this.adviceModal={show:false, code:'', name:'', key:'wait', title:'', summary:'', points:[], text:''}; },
     openFinanceRisk(p){
       const fr = (p && p.track && p.track.finance_risk) || {};
+      const triggers = Array.isArray(fr.triggers) ? fr.triggers : [];
+      const kws = Array.isArray(fr.news_keywords) ? fr.news_keywords : [];
+      const matched = typeof fr.news_matched === 'number' ? fr.news_matched : 0;
+      // 后端逻辑：仅当 keywords 过滤为空且确实存在触发原因时，才把近 5 日全部新闻降级塞入 news。
+      // 此时 news 长度 > 0 但全部"未匹配关键词"——前端用 news_fallback=true 标注兜底状态。
+      const news = Array.isArray(fr.news) ? fr.news : [];
+      const news_fallback = triggers.length > 0 && matched === 0 && news.length > 0;
       this.financeRiskModal = {
         show:true,
         code:p.code||'',
         name:p.name||'',
         summary:fr.summary||'无明显风险',
         report_date:fr.report_date||'',
-        news:(fr.news||[]).slice()
+        triggers,
+        news_keywords: kws,
+        news_matched: matched,
+        news_fallback,
+        news: news.slice(),
       };
     },
-    closeFinanceRiskModal(){ this.financeRiskModal={show:false, code:'', name:'', summary:'', report_date:'', news:[]}; },
+    closeFinanceRiskModal(){ this.financeRiskModal={show:false, code:'', name:'', summary:'', report_date:'', triggers:[], news_keywords:[], news_matched:0, news_fallback:false, news:[]}; },
     openEvtRisk(p, tagKey){
       // v117: 事件风险标签点击 → 详情弹窗。value 为详情数组(触发依据/相关公告/新闻)
       const tagMap = (p && p.track && p.track.event_risk_tags) || {};
@@ -3114,6 +3564,12 @@ const app = createApp({
       const decimals = q.price < 100 ? 3 : 2;
       return q.price.toLocaleString('zh-CN', {minimumFractionDigits: decimals, maximumFractionDigits: decimals});
     },
+    fmtIdxPrev(code){
+      const q = this.idxQuotes[code];
+      if(!q || !isFinite(q.prev_close)) return '-';
+      const decimals = q.prev_close < 100 ? 3 : 2;
+      return q.prev_close.toLocaleString('zh-CN', {minimumFractionDigits: decimals, maximumFractionDigits: decimals});
+    },
     fmtIdxTime(code){
       const q = this.idxQuotes[code];
       if(!q || !q.time || q.time.length<12) return '';
@@ -3154,13 +3610,7 @@ const app = createApp({
       if(pct < -0.001) return 'down';
       return 'flat';
     },
-    idxStatusText(){
-      if(!this.indexes.length) return '未配置';
-      const ready = this.indexes.filter(x=>this.idxQuotes[x.code]).length;
-      if(!ready) return '加载中…';
-      return ready + '/' + this.indexes.length + ' 已就绪';
-    },
-
+    // idxStatusText 已迁到 computed（v138 修复：methods 里运行时模板渲染为 native function 字符串）
     // ===== 全局轻量 Toast =====
     showToast(message, duration=2500){
       if(this.toast.timer){ clearTimeout(this.toast.timer); this.toast.timer=null; }
@@ -3202,7 +3652,7 @@ const app = createApp({
     // key: 'poolErr'|'tagsErr'|'accessErr'；值为 null 或 {msg, retry}
     _setErr(key, msg, retry){ this[key] = {msg, retry: retry||null}; },
     _clrErr(key){ this[key] = null; },
-    _retryErr(key){ const e=this[key]; this._clrErr(key); if(e && e.retry) e.retry(); },
+    retryErr(key){ const e=this[key]; this._clrErr(key); if(e && e.retry) e.retry(); },
     switchAdminTab(tab){
       this.adminTab = tab;
       if(tab==='access' && !this.accessLogs.length) this.fetchAccessLogs(1);
@@ -3685,7 +4135,9 @@ const app = createApp({
       params.append('page_size', this.poolPageSize || 15);
       const r=await API('/pool?' + params.toString());
       const prevSelected = new Set(this.poolSelected);
-      this.pool=r.items || []; this.poolTotal=r.total || 0; this.poolCodes=this.pool.map(p=>p.code);
+      // 每行归一化：track/day_view 缺失时兜底空对象，防止表格 cell 访问 p.track.xxx 抛 TypeError 导致整页白屏(v141)
+      this.pool=(r.items || []).map(p=>({...p, track:(p&&p.track&&typeof p.track==='object')?p.track:{}, day_view:(p&&p.day_view&&typeof p.day_view==='object')?p.day_view:{}}));
+      this.poolTotal=r.total || 0; this.poolCodes=this.pool.map(p=>p.code);
       // 自动刷新时保留用户已勾选的记录（仅去掉已不在当前页的）
       this.poolSelected = this.pool.filter(p=>prevSelected.has(p.code)).map(p=>p.code);
       const totalPages = Math.ceil(this.poolTotal/this.poolPageSize)||1;

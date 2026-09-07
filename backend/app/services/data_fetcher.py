@@ -297,9 +297,15 @@ def _fetch_akshare(code: str, days: int) -> list[Quote] | None:
         return None
 
 
-def ensure_quotes(code: str, days: int = 180) -> list[Quote]:
+def ensure_quotes(code: str, days: int = 180, _prov: list | None = None) -> list[Quote]:
     """取日线：新鲜度缓存 → HTTP 直连（腾讯→东财）→ DB 缓存 → akshare → 演示数据。
     直连成功会写回缓存（覆盖旧演示数据）；直连失败才回退缓存/演示。
+
+    _prov(v137)：可选传出参，用于把本条日线的真实来源告诉调用方（写 _prov[0]）：
+      "live"  = 本次 HTTP 直连真实源成功（腾讯/东财/akshare），可放心展示
+      "fresh" = 命中内存新鲜缓存（内容源自前次 live/cache 结果，需调用方与实时盘口交叉验证）
+      "cache" = 读本地库缓存（可能是历史真实数据；也可能是历史故障期遗留的演示行，需交叉验证）
+      "demo"  = 所有真实源不可用时的确定性演示数据（仅供离线演示，绝不能当真实行情展示）
 
     性能说明(2026-09-03)：第 0 步的新鲜度缓存是关键。原实现每只票每次都走 HTTP +
     DELETE/INSERT 整表，单只约 2.4s；可投池 138 只票、一页 15 只，冷启动要 7 秒左右，
@@ -309,6 +315,8 @@ def ensure_quotes(code: str, days: int = 180) -> list[Quote]:
     # 0. 新鲜度短路（演示数据不进缓存，见 _daily_fresh_put 注释）
     fresh = _daily_fresh_get(code, days)
     if fresh is not None:
+        if _prov is not None:
+            _prov[:] = ["fresh"]
         return fresh
 
     db = SessionLocal()
@@ -330,6 +338,8 @@ def ensure_quotes(code: str, days: int = 180) -> list[Quote]:
                                   close=q.close, volume=q.volume, amount=q.amount,
                                   turnover=q.turnover, pre_close=q.pre_close))
             db.commit()
+            if _prov is not None:
+                _prov[:] = ["live"]
             _daily_fresh_put(code, days, quotes)
             return quotes[-days:]
 
@@ -340,6 +350,8 @@ def ensure_quotes(code: str, days: int = 180) -> list[Quote]:
             cached = [Quote(code=r.code, date=r.date, open=r.open, high=r.high, low=r.low,
                             close=r.close, volume=r.volume, amount=r.amount,
                             turnover=r.turnover, pre_close=r.pre_close) for r in rows[-days:]]
+            if _prov is not None:
+                _prov[:] = ["cache"]
             _daily_fresh_put(code, days, cached)
             return cached
 
@@ -352,6 +364,8 @@ def ensure_quotes(code: str, days: int = 180) -> list[Quote]:
                                   close=q.close, volume=q.volume, amount=q.amount,
                                   turnover=q.turnover, pre_close=q.pre_close))
             db.commit()
+            if _prov is not None:
+                _prov[:] = ["live"]
             _daily_fresh_put(code, days, quotes)
             return quotes[-days:]
 
@@ -363,6 +377,8 @@ def ensure_quotes(code: str, days: int = 180) -> list[Quote]:
             db.add(DailyQuote(code=q.code, date=q.date, open=q.open, high=q.high, low=q.low,
                               close=q.close, volume=q.volume, amount=q.amount,
                               turnover=q.turnover, pre_close=q.pre_close))
+        if _prov is not None:
+            _prov[:] = ["demo"]
         db.commit()
         return quotes[-days:]
     finally:
@@ -1990,27 +2006,49 @@ def _fetch_unlock(code: str) -> dict | None:
 
 
 def _fetch_financials(code: str) -> dict | None:
-    """最新财报关键指标（真实数据，东方财富业绩报表）：净利润、净资产、商誉、营收同比。"""
+    """最新财报关键指标（真实数据，东方财富业绩报表）。
+
+    字段映射（v135 → v136 数据源切换）：
+    - report_date     ← RPT_LICO_FN_CPD.REPORTDATE     (新源，可达)
+    - net_profit      ← RPT_LICO_FN_CPD.PARENT_NETPROFIT (新源)
+    - net_profit_yoy  ← RPT_LICO_FN_CPD.SJLTZ           (新源，净利润同比%)
+    - revenue_yoy     ← RPT_LICO_FN_CPD.YSTZ            (新源，营收同比%)
+    - bps             ← RPT_LICO_FN_CPD.BPS             (新源，每股净资产)
+    - equity          ← 暂无可达源，留 None
+    - goodwill        ← RPT_FCI_BUSINESSASSET.GOOD_WILL (旧源，2024 起 9501 留 fallback)
+    """
     cached = _FIN_CACHE.get(code)
     if cached and (time.time() - cached.get("_t", 0)) < 86400:
         return cached
     out: dict = {"_t": time.time()}
+    # 1) 新版业绩报表（datacenter.eastmoney.com/securities 域）
     try:
-        url = ("https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_FCI_PERFORMANCE"
-               "&columns=ALL&filter=(SECURITY_CODE%3D%22" + code + "%22)&pageSize=4"
-               "&sortColumns=REPORT_DATE&sortTypes=-1")
+        url = ("https://datacenter.eastmoney.com/securities/api/data/v1/get"
+               "?reportName=RPT_LICO_FN_CPD"
+               "&columns=ALL"
+               "&filter=(SECURITY_CODE%3D%22" + code + "%22)"
+               "&pageSize=1&sortColumns=REPORTDATE&sortTypes=-1")
         j = _em_json(url)
         if j and isinstance(j.get("result"), dict) and j["result"].get("data"):
             r = j["result"]["data"][0]
-            out["report_date"] = str(r.get("REPORT_DATE"))[:10]
-            out["net_profit"] = _as_float(r.get("NET_PROFIT"))          # 净利润(元)
-            out["net_profit_yoy"] = _as_float(r.get("NET_PROFIT_YOY"))  # 净利润同比(%)
-            out["revenue_yoy"] = _as_float(r.get("REVENUE_YOY"))        # 营收同比(%)
-            out["equity"] = _as_float(r.get("EQUITY"))                  # 股东权益(元)
-            out["eps"] = _as_float(r.get("BASIC_EPS"))                  # 每股收益
+            rd = str(r.get("REPORTDATE") or "")[:10]
+            if rd:
+                out["report_date"] = rd
+            ystz = _as_float(r.get("YSTZ"))          # 营业总收入同比(%)
+            sjltz = _as_float(r.get("SJLTZ"))        # 归属母公司净利润同比(%)
+            if ystz is not None:
+                out["revenue_yoy"] = ystz
+            if sjltz is not None:
+                out["net_profit_yoy"] = sjltz
+            np_ = _as_float(r.get("PARENT_NETPROFIT"))  # 归母净利润(元)
+            if np_ is not None:
+                out["net_profit"] = np_
+            bps = _as_float(r.get("BPS"))            # 每股净资产
+            if bps is not None:
+                out["bps"] = bps
     except Exception:
         pass
-    # 商誉（资产负债表）：单独报表
+    # 2) 商誉（资产负债表）：旧源 RPT_FCI_BUSINESSASSET 2024 起 9501 留 fallback
     try:
         gurl = ("https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_FCI_BUSINESSASSET"
                 "&columns=ALL&filter=(SECURITY_CODE%3D%22" + code + "%22)&pageSize=2"
@@ -2018,7 +2056,11 @@ def _fetch_financials(code: str) -> dict | None:
         jg = _em_json(gurl)
         if jg and isinstance(jg.get("result"), dict) and jg["result"].get("data"):
             g = jg["result"]["data"][0]
-            out["goodwill"] = _as_float(g.get("GOOD_WILL"))             # 商誉(元)
+            gw = _as_float(g.get("GOOD_WILL"))             # 商誉(元)
+            if gw is not None:
+                out["goodwill"] = gw
+                if g.get("REPORT_DATE"):
+                    out["goodwill_date"] = str(g["REPORT_DATE"])[:10]
     except Exception:
         pass
     _FIN_CACHE[code] = out
@@ -2174,6 +2216,10 @@ def get_pool_track(code: str, db, position: dict | None = None, deadline: float 
       - operation_advice: 基于当前盘口生成的操作建议对象
       - src: 数据源标识(tencent/eastmoney/sina/demo),失败时为空
       - ts: 拉取时间戳(秒),供前端展示「X秒前」
+      - mkt(v137): 行情可信度标记 {q:日线0/1, s:实时盘口0/1, f:当日资金流0/1}, 0=读取异常。
+        约定：q=0 时由日线推导的价/均线/箱体/5日/缺口/振幅/评分/操作建议一律不产出
+        (只可能用真实源实时价兜底 price/change_pct), 前端对异常列显示【数据异常】,
+        绝不允许把演示/过期/0 等错误数值当真实行情展示。
 
     deadline(v118): 可选秒数预算。超过后跳过剩余「可选扩展阶段」(资金流/估值百分位/
     板块强度/事件风险标签/财报风险摘要)，只返回已算好的核心字段。列表页传 ~7s 让
@@ -2189,6 +2235,34 @@ def get_pool_track(code: str, db, position: dict | None = None, deadline: float 
     out: dict = {}
     # deadline 换算为单调时钟绝对时刻（None=不设限）
     _dl = (time.monotonic() + deadline) if deadline else None
+    # ===== v136: 财务/解禁字段 优先预取 + 同步赋值（外层 try 之前） =====
+    # 源稳定（东财 RPT_LICO_FN_CPD 新版）但耗时 0.3~1s，且块 9/10 的 deadline 守卫 raise _DeadlineHit
+    # 会跳到外层 except，导致原块 11 永远不执行——本块独立于外层 try 之前，财务日期/同比%
+    # 是用户决策关键字段，必须必跑（缓存 86400s 后无重发成本）。`is not None` 语义保留。
+    try:
+        v = _fetch_valuation(code) or {}
+        if v.get("pe_ttm") is not None:
+            out["pe_ttm"] = v["pe_ttm"]
+        if v.get("pb") is not None:
+            out["pb"] = v["pb"]
+        if v.get("pe_pct_3y") is not None:
+            out["pe_pct_3y"] = v["pe_pct_3y"]
+        fin = _fetch_financials(code) or {}
+        if fin.get("net_profit_yoy") is not None:
+            out["net_profit_yoy"] = fin["net_profit_yoy"]
+        if fin.get("revenue_yoy") is not None:
+            out["revenue_yoy"] = fin["revenue_yoy"]
+        if fin.get("report_date"):
+            out["report_date"] = fin["report_date"]
+        if fin.get("goodwill") is not None:
+            out["goodwill"] = fin["goodwill"]
+        unl = _fetch_unlock(code) or {}
+        if unl.get("next_date"):
+            out["next_date"] = unl["next_date"]
+        if unl.get("next_ratio") is not None:
+            out["next_ratio"] = unl["next_ratio"]
+    except Exception:
+        pass
     try:
         # ts 提前置位：deadline 中断跳过后端赋值时前端仍能显示「X秒前」
         out["ts"] = int(now)
@@ -2199,10 +2273,15 @@ def get_pool_track(code: str, db, position: dict | None = None, deadline: float 
         # 本表「现价」必须和 MA5/MA20 同源(都用日线前复权),否则会因为复权差异数学上"必错"。
         # 实时盘口仅用于「量比/换手」这种"日内活跃度"指标(与除权无关)。
         spot = _fetch_spot_direct(code)
+        spot_ok = bool(spot and (spot.get("price") or 0) > 0)
         if spot:
-            # 实时指标(日内活跃度,与除权无关)
-            out["vol_ratio"] = round(spot.get("vol_ratio", 0), 2)
-            out["turnover"] = round(spot.get("turnover", 0), 2)
+            # 实时指标(日内活跃度,与除权无关)：字段缺失(空串解析成 None)时宁可不写，
+            # 一不能把 None 交给 round()（会炸掉整行行情链路），二不能把 0 当真实值展示
+            _vr, _tr = spot.get("vol_ratio"), spot.get("turnover")
+            if _vr is not None:
+                out["vol_ratio"] = round(_vr, 2)
+            if _tr is not None:
+                out["turnover"] = round(_tr, 2)
             # 当天实时成交量(万手) 的填充移到「严格按交易时段」块(见下方 3)，
             # 盘前/非交易日一律留空(避免 spot 残留昨日量被误认为当日实时量)
             out["src"] = spot.get("src", "")
@@ -2216,14 +2295,44 @@ def get_pool_track(code: str, db, position: dict | None = None, deadline: float 
                 # T-1 全天累计成交量(万手) - 新增字段,口径在 _yesterday_volume_total docstring
                 out["yesterday_volume_total"] = round(yest_metrics["volume_total"] / 1e4, 2)
 
-        # 日线只取近 30 天足够(算 MA20/箱体)
-        quotes = ensure_quotes(code, days=60)
+        # 日线只取近 60 天足够(算 MA20/箱体)。_prov 记录本条日线的真实来源(live/fresh/cache/demo)
+        _prov: list = []
+        quotes = ensure_quotes(code, days=60, _prov=_prov)
+        _qsrc = _prov[0] if _prov else ""
         closes = [q.close for q in quotes if q.close]
-        if closes:
+        last_q = quotes[-1] if quotes else None
+        # 行情日线可信度 qbad(v137)：
+        #   live(本次直连真实源成功) → 可信
+        #   demo → 演示数字，绝不可信
+        #   fresh/cache(未直连) → 仅当实时盘口(真实源)能佐证最新收盘价(差异<50%)才可信；
+        #    否则宁判异常——避免把历史故障期遗留的演示价/过期价当现价展示
+        if _qsrc == "live":
+            qbad = False
+        elif _qsrc == "demo":
+            qbad = True
+        else:
+            _agree = bool(last_q and last_q.close and spot_ok
+                          and abs(spot["price"] - last_q.close) / last_q.close < 0.5)
+            qbad = not (_agree and len(closes) >= 2)
+        if last_q is None or not last_q.close:
+            qbad = True
+        out.setdefault("mkt", {})["q"] = 0 if qbad else 1   # 1=可信 0=异常
+        out["mkt"]["s"] = 1 if spot_ok else 0               # 1=实时盘口可用 0=异常
+        if qbad:
+            # 日线行情异常：整条由日线推导的展示链路(价/均线/箱体/5日涨幅/振幅/评分/建议)
+            # 一律不产出，避免把演示/过期数字当真实数据展示。
+            # 若实时盘口(真实源)可用，仅用它的现价/涨跌幅兜底并打上提示。
+            if spot_ok:
+                out["price"] = round(spot["price"], 3)
+                out["change_pct"] = round(spot.get("change_pct") or 0.0, 2)
+                out["price_note"] = "行情日线读取异常，暂用实时价"
+        else:
             # 现价/涨跌幅以「日线最新一根」(前复权)为准,跟 MA 系列同源同口径
-            last_q = quotes[-1]
             out["price"] = round(last_q.close, 3)
-            out["change_pct"] = round((last_q.close - (last_q.pre_close or last_q.close)) / (last_q.pre_close or last_q.close) * 100, 2) if last_q.pre_close else 0.0
+            _pc = last_q.pre_close
+            if _pc:
+                out["change_pct"] = round((last_q.close - _pc) / _pc * 100, 2)
+                # 昨收缺失的异常 K 线不产出 change_pct(以前会 fallback 0.0,展示假"平盘")
             out["price_date"] = last_q.date
             out["ma5"] = round(sum(closes[-5:]) / min(5, len(closes)), 3)
             out["ma20"] = round(sum(closes[-20:]) / min(20, len(closes)), 3)
@@ -2233,52 +2342,39 @@ def get_pool_track(code: str, db, position: dict | None = None, deadline: float 
             if out.get("price") and out["box_high"] != out["box_low"]:
                 pos = (out["price"] - out["box_low"]) / (out["box_high"] - out["box_low"])
                 out["box_pos"] = round(max(0.0, min(1.0, pos)), 2)
-            # 实时(未复权)价:返回但带可信度标记,前端按等级显示
-            #   ok: 差异 < 20% 正常(无除权/数据正常)
-            #   diverged: 差异 20-50% 可能除权,标黄提示
-            #   abnormal: 差异 > 50% 数据源异常(沙箱常见),标红警示
-            if spot and last_q.close > 0:
-                out["price_realtime_unadjusted"] = round(spot["price"], 3)
-                out["change_pct_realtime"] = round(spot.get("change_pct", 0), 2)
+            # 实时(未复权)价 与 日线(前复权)价交叉验证，防除权 / 源异常
+            if spot_ok and last_q.close > 0:
                 diff_ratio = abs(spot["price"] - last_q.close) / last_q.close
-                if diff_ratio < 0.2:
-                    out["realtime_confidence"] = "ok"
-                elif diff_ratio < 0.5:
-                    out["realtime_confidence"] = "diverged"
-                    out["realtime_diff_pct"] = round(diff_ratio * 100, 1)
-                else:
-                    out["realtime_confidence"] = "abnormal"
-                    out["realtime_diff_pct"] = round(diff_ratio * 100, 1)
-                    # 差异过大时,日线缓存极可能是演示/过期数据,而实时盘口仍来自真实源;
-                    # 此时用实时价覆盖「现价」,避免主价格显示一个明显错误的数字。
-                    # 注意:MA/箱体仍基于日线,因此同时标记 price_note 供前端提示口径不一致。
-                    if spot.get("src") not in ("demo",):
-                        out["price"] = out["price_realtime_unadjusted"]
-                        out["change_pct"] = out["change_pct_realtime"]
-                        out["price_note"] = "实时价(日线数据源异常 fallback)"
+                if diff_ratio >= 0.5 and spot.get("src") not in ("demo",):
+                    # 差异过大:实时盘口更可信(仍来自真实源),用它覆盖「现价」；
+                    # 但 MA/箱体仍基于日线,同时打 price_note 提示口径不一致
+                    out["price"] = round(spot["price"], 3)
+                    out["change_pct"] = round(spot.get("change_pct") or 0.0, 2)
+                    out["price_note"] = "实时价(日线数据源异常 fallback)"
         if out.get("price") is not None and out.get("ma5") is not None:
             out["above_ma5"] = out["price"] > out["ma5"]
         if out.get("price") is not None and out.get("ma20") is not None:
             out["above_ma20"] = out["price"] > out["ma20"]
-        # 短线可投池三类达标项打分
-        if quotes:
+        # 短线可投池三类达标项打分 + 操作建议：仅日线可信时产出——打分/MACD/振幅/建议
+        # 全部依赖日线，演示/过期日线会算出假的分数与建议（v137 用户强调不可展示错误数据）
+        if quotes and not qbad:
             _calc_pass_scores(code, out, quotes, spot, db)
-        # 基于 track 数据生成操作建议(结构同 t_analysis.section6)
-        out["operation_advice"] = _operation_advice_for_pool(out, position)
+            # 基于 track 数据生成操作建议(结构同 t_analysis.section6)
+            out["operation_advice"] = _operation_advice_for_pool(out, position)
 
         # ===== 可投池扩展指标（真实数据 + 可计算） =====
-        # 1) 5日涨跌幅(%)
+        # 1) 5日涨跌幅(%) —— qbad 时日线不可信，跳过（演示/过期收盘价算出的涨幅是假数据）
         try:
-            if len(closes) >= 2:
+            if len(closes) >= 2 and not qbad:
                 n = min(6, len(closes))
                 base = closes[-n]
                 if base:
                     out["pct_5d"] = round((closes[-1] - base) / base * 100, 2)
         except Exception:
             pass
-        # 2) 跳空缺口（今日开盘 vs 昨日高低）
+        # 2) 跳空缺口（今日开盘 vs 昨日高低）—— 同上，qbad 时跳过
         try:
-            if len(quotes) >= 2 and quotes[-1].open and quotes[-2].close:
+            if len(quotes) >= 2 and not qbad and quotes[-1].open and quotes[-2].close:
                 today_open = quotes[-1].open
                 y_high = quotes[-2].high
                 y_low = quotes[-2].low
@@ -2321,14 +2417,19 @@ def get_pool_track(code: str, db, position: dict | None = None, deadline: float 
                 if _fund and _fund.get("main_net") is not None:
                     _main_pct = _fund.get("main_pct")
                     _big_net = _fund.get("main_net")   # 对齐同花顺"大单流向"：超大单+大单
-                    if _main_pct is None:
+                    # 占比兜底依赖日线成交额做分母——qbad(日线不可信)时禁用，
+                    # 否则演示/过期成交额 ÷ 真实净流入 = 量级全错的百分比（v137）
+                    if _main_pct is None and not qbad:
                         _main_pct = _pct_of_amount(_fund.get("main_net"), quotes)
                 else:
                     # 盘后(push2 不可达/已停更时)回落日级报表：仅当该行是今日才可用
                     _cf = _fetch_capital_flow(code)
                     if _cf and _cf.get("trade_date") == _today and _cf.get("main_net") is not None:
-                        _main_pct = _pct_of_amount(_cf.get("main_net"), quotes)
                         _big_net = _cf.get("main_net")
+                        if not qbad:
+                            _main_pct = _pct_of_amount(_cf.get("main_net"), quotes)
+                # v137：交易时段内两路资金流源都取不到 → 标记 f=0，前端对三列显示【数据异常】
+                out.setdefault("mkt", {})["f"] = 0 if _main_pct is None else 1
                 if _main_pct is not None:
                     out["main_net_pct"] = round(_main_pct, 2)
                     out["big_order_net"] = round(_big_net / 1e4, 1) if _big_net is not None else None
@@ -2354,7 +2455,8 @@ def get_pool_track(code: str, db, position: dict | None = None, deadline: float 
                 # v118: PE 历史可用时不拉 750 天日线（省 ~1s/只，长日线仅为价格分位兜底用）
                 out["valuation_pct_3y"] = val["pe_pct_3y"]
                 out["valuation_basis"] = "pe"
-            else:
+            elif not qbad:
+                # qbad 时日线不可信，"近3年价格分位"同样会算出假分位 → 不产出(v137)
                 quotes_long = ensure_quotes(code, days=750)
                 closes_long = [q.close for q in quotes_long if q.close]
                 price_pct = None
@@ -2368,18 +2470,19 @@ def get_pool_track(code: str, db, position: dict | None = None, deadline: float 
             out["valuation_pb"] = (val or {}).get("pb")
         except Exception:
             pass
-        # 7) 板块强度（个股20日收益 vs 大盘）
+        # 7) 板块强度（个股20日收益 vs 大盘）—— 个股收益依赖日线,qbad 时不产出(v137)
         if _over_deadline(_dl): raise _DeadlineHit
         try:
-            stock_ret = _stock_return(quotes, 20)
-            mkt_ret = _market_return(20)
-            if stock_ret is not None and mkt_ret is not None:
-                diff = stock_ret - mkt_ret
-                out["sector_strength"] = {
-                    "diff": round(diff, 2),
-                    "level": "strong" if diff > 3 else ("weak" if diff < -3 else "sync"),
-                    "text": "强于大盘" if diff > 3 else ("弱于大盘" if diff < -3 else "同步"),
-                }
+            if not qbad:
+                stock_ret = _stock_return(quotes, 20)
+                mkt_ret = _market_return(20)
+                if stock_ret is not None and mkt_ret is not None:
+                    diff = stock_ret - mkt_ret
+                    out["sector_strength"] = {
+                        "diff": round(diff, 2),
+                        "level": "strong" if diff > 3 else ("weak" if diff < -3 else "sync"),
+                        "text": "强于大盘" if diff > 3 else ("弱于大盘" if diff < -3 else "同步"),
+                    }
         except Exception:
             pass
         # 9) 事件风险标签（真实源/启发式）
@@ -2465,58 +2568,102 @@ def get_pool_track(code: str, db, position: dict | None = None, deadline: float 
                 out["event_risk_tags"] = tags
         except Exception:
             pass
-        # 10) 财报风险快速标记（3-6字摘要 + 近5日新闻）
+        # 10) 财报风险快速标记（3-6字摘要 + 触发详情 + 按风险原因过滤的近5日新闻）
+        #    v144 改造：原版直接把 5 日全部新闻塞进 news，导致「盈利为负」summary 却展示
+        #    融资余额/股东户数等无关新闻，对不上账。改为：
+        #      - triggers: 每条 reason 携带具体触发值（净利润金额/同比/营收同比/商誉比等）,
+        #                 解决"为什么是利空"的明细诉求；
+        #      - news_keywords: 与触发原因对应的中文关键词集合；
+        #      - news: 优先用关键词从近 5 日新闻里筛出与本次风险相关的条目；
+        #              若过滤为空但确实有触发原因(说明近期东财未收录相关报道)，
+        #              降级展示近 5 日全部新闻 + 由前端提示"未匹配关键词"，
+        #              避免出现"完全对不上"的用户体验。
         if _over_deadline(_dl): raise _DeadlineHit
         try:
             fin = _fin1()
             summary = "无明显风险"
-            reasons = []
+            triggers: list[dict] = []
+            keyword_pool: list[str] = []
             if fin:
+                rd = (fin.get("report_date") or "")[:10]
+                # 1) 盈利为负（最严重）
                 if fin.get("net_profit") is not None and fin["net_profit"] < 0:
-                    reasons.append("盈利为负")
+                    np_ = fin["net_profit"]
+                    if abs(np_) >= 1e8:
+                        v_text = f"净利润 {np_/1e8:+.2f} 亿"
+                    else:
+                        v_text = f"净利润 {np_/1e4:+.0f} 万"
+                    triggers.append({"reason": "盈利为负", "text": v_text, "time": rd})
+                    keyword_pool += ["盈利", "净利", "净亏", "业绩", "预亏", "预减",
+                                     "减亏", "扭亏", "中报", "年报", "季报", "财报", "亏损"]
+                # 2) 盈利下滑（净利润同比为负，但本期可能仍为正）
                 elif fin.get("net_profit_yoy") is not None and fin["net_profit_yoy"] < 0:
-                    reasons.append("盈利下滑")
+                    triggers.append({
+                        "reason": "盈利下滑",
+                        "text": f"净利润同比 {fin['net_profit_yoy']:+.1f}%",
+                        "time": rd,
+                    })
+                    keyword_pool += ["盈利", "净利", "净亏", "业绩", "同比",
+                                     "中报", "年报", "季报", "下滑", "下降"]
+                # 3) 营收下滑
                 if fin.get("revenue_yoy") is not None and fin["revenue_yoy"] < 0:
-                    reasons.append("营收下滑")
+                    triggers.append({
+                        "reason": "营收下滑",
+                        "text": f"营收同比 {fin['revenue_yoy']:+.1f}%",
+                        "time": rd,
+                    })
+                    keyword_pool += ["营收", "营业", "收入", "同比",
+                                     "中报", "年报", "季报", "下滑", "下降"]
+                # 4) 商誉偏高（占净资产 > 30%）
                 if fin.get("goodwill") and fin.get("equity") and fin["equity"] > 0:
                     if fin["goodwill"] / fin["equity"] > 0.3:
-                        reasons.append("商誉偏高")
-            if reasons:
-                summary = "、".join(reasons)[:6]
-            news = _news1()
+                        ratio = round(fin["goodwill"] / fin["equity"] * 100, 1)
+                        triggers.append({
+                            "reason": "商誉偏高",
+                            "text": f"商誉占净资产 {ratio}% (>30%)",
+                            "time": rd,
+                        })
+                        keyword_pool += ["商誉", "减值"]
+            if triggers:
+                # summary 仍按用户原约定 3-6 字摘要
+                summary = "、".join(t["reason"] for t in triggers)[:6]
+            keywords = sorted(set(keyword_pool))
+            # 按关键词过滤近 5 日新闻
+            raw_news = _news1()
+            news_filtered: list[dict] = []
+            seen: set = set()
+            for n in raw_news:
+                t = str(n.get("title", ""))
+                if not t:
+                    continue
+                if any(k in t for k in keywords):
+                    key = (t, str(n.get("time", ""))[:10])
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    news_filtered.append({
+                        "title": t,
+                        "time": str(n.get("time", ""))[:10],
+                        "sentiment": n.get("sentiment", "neu"),
+                    })
+            # 兜底：若过滤为空但确实有触发原因 → 降级显示近 5 日全部新闻
+            # 前端根据 news_keywords 列表提示"未匹配关键词"以保持对账
+            news_for_modal = news_filtered if (news_filtered or not triggers) else raw_news
             out["finance_risk"] = {
                 "summary": summary,
                 "report_date": (fin or {}).get("report_date"),
-                "news": news,
+                "triggers": triggers,
+                "news_keywords": keywords,
+                "news_matched": len(news_filtered),
+                "news": news_for_modal,
             }
         except Exception:
             pass
 
-        # 11) #66 估值/财报/解禁字段直挂 track（供可投池表格 10 列读取）
-        #     本地走腾讯 qt / 东财 datacenter 免费源；云端沙箱白名单仅放行 kline 主机，
-        #     外部源被拦截→字段为 None，前端对 conditional 列自动整列隐藏（不显示 -）。
+        # 11) v136 已前移到外层 try 之前（_over_deadline 触发 _DeadlineHit 时本块必须必跑）。
+        #     保留空 try 占位以避免破坏既有「块 9 / 10 / 11」编号惯例；不在此重复赋值。
         try:
-            v = _fetch_valuation(code) or {}
-            if v.get("pe_ttm") is not None:
-                out["pe_ttm"] = v["pe_ttm"]
-            if v.get("pb") is not None:
-                out["pb"] = v["pb"]
-            if v.get("pe_pct_3y") is not None:
-                out["pe_pct_3y"] = v["pe_pct_3y"]
-            fin = _fetch_financials(code) or {}
-            if fin.get("net_profit_yoy") is not None:
-                out["net_profit_yoy"] = fin["net_profit_yoy"]
-            if fin.get("revenue_yoy") is not None:
-                out["revenue_yoy"] = fin["revenue_yoy"]
-            if fin.get("report_date"):
-                out["report_date"] = fin["report_date"]
-            if fin.get("goodwill") is not None:
-                out["goodwill"] = fin["goodwill"]
-            unl = _fetch_unlock(code) or {}
-            if unl.get("next_date"):
-                out["next_date"] = unl["next_date"]
-            if unl.get("next_ratio") is not None:
-                out["next_ratio"] = unl["next_ratio"]
+            pass
         except Exception:
             pass
 

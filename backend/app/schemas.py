@@ -118,6 +118,62 @@ class PoolOut(BaseModel):
     added_at: str
     tag_ids: list[int] = []
     tags: list[dict] = []  # [{id,name,color}, ...]
+    day_view: str = ""  # v135 旧字段,保留兼容,不再写新值
+    # v143：日初判断历史(从 day_view_log 派生)
+    day_view_today: str = ""  # 当日最后一条 trend(看涨/看跌/风险/-),空=今日无 log
+    day_view_log_count: int = 0  # 该 code 的总历史条数(便于判定「盯盘日志」按钮显示)
+
+
+class DayViewIn(BaseModel):
+    """日初判断更新。允许置空。"""
+    day_view: str = ""
+
+
+class DayViewLogIn(BaseModel):
+    """v143：日初判断修改记录。trend 看涨/看跌/风险/-；target_price 可空；target_note ≤20字。
+
+    trade_date 由前端传（YYYY-MM-DD），避免后端时区错位。
+    """
+    trade_date: str  # YYYY-MM-DD,前端传入
+    trend: str  # 看涨/看跌/风险/-
+    target_price: Optional[float] = None
+    target_note: str = ""  # ≤20字
+
+
+class DayViewLogOut(BaseModel):
+    """v143：日初判断修改记录返回。"""
+    id: int
+    code: str
+    trade_date: str
+    trend: str
+    target_price: Optional[float] = None
+    target_note: str = ""
+    operator: str = ""
+    operated_at: str = ""
+
+
+class WatchLogItem(BaseModel):
+    """v143：盯盘日志单日条目。已聚合当日最后一条 + 计算偏离度/原因。
+
+    deviation = (target_price - close) / target_price；target_price 缺失时为 None。
+    """
+    trade_date: str
+    open: Optional[float] = None
+    close: Optional[float] = None
+    intraday_avg: Optional[float] = None  # 分时均价 = 当日 amount/volume
+    trend: str = ""  # 当日最后一条 trend
+    target_price: Optional[float] = None
+    target_note: str = ""
+    deviation: Optional[float] = None  # (target - close) / target
+    deviation_pct: Optional[float] = None  # 同上,百分比形式,前端直接展示
+    deviation_reason: str = ""  # 按 trend × deviation 方向模板生成
+
+
+class WatchLogOut(BaseModel):
+    """v143：盯盘日志聚合。"""
+    code: str
+    name: Optional[str] = None
+    items: list[WatchLogItem] = []  # 按 trade_date desc
 
 
 class TConfigIn(BaseModel):
