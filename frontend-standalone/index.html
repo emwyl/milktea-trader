@@ -2995,7 +2995,13 @@ const app = createApp({
                {label:'过热', min:15, lt:null, score:3,  veto:false, after:true},
              ]},
             {id:'ma', dim:'B', label:'MA5/MA20 位置', unit:'-', max:15,
-             source:function getV(t){return (t.above_ma5===true&&t.above_ma20===true)?2:(t.above_ma5===true?1:0);},
+             // v157-fix: source 返回值必须与 bands.attr 字符串一致,否则 scoreInd 中 b.attr===v 永远 false
+             source:function getV(t){
+               if(t.above_ma5===true&&t.above_ma20===true) return '双上';
+               if(t.above_ma5===true) return '仅MA5上';
+               if(t.above_ma5===false&&t.above_ma20===false) return '双下';
+               return null;
+             },
              display:function getD(t){
                if(t.above_ma5===true&&t.above_ma20===true) return '双上';
                if(t.above_ma5===true) return '仅MA5上';
@@ -3151,6 +3157,37 @@ const app = createApp({
             }
           }
         });
+        // v157-fix: 无数据/未命中档位的指标不参与维度内权重分配;
+        // 已命中指标权重重新放大到100%,未命中指标 iw_eff=0
+        ['A','B','C'].forEach(function(d){
+          var list = indList.filter(function(x){return x.dim===d;});
+          var missList = list.filter(function(x){
+            var r = indResults.find(function(rr){return rr.id===x.id;});
+            return !r || r.bandLabel == null;
+          });
+          var validList = list.filter(function(x){
+            var r = indResults.find(function(rr){return rr.id===x.id;});
+            return r && r.bandLabel != null;
+          });
+          if(missList.length > 0){
+            missList.forEach(function(x){ indIwEff[x.id] = 0; });
+            if(validList.length > 0){
+              var validSum = validList.reduce(function(s,x){return s + (indIwEff[x.id]||0);}, 0);
+              if(validSum > 0){
+                var scale = 100 / validSum;
+                validList.forEach(function(x){ indIwEff[x.id] = +(indIwEff[x.id] * scale).toFixed(2); });
+              } else {
+                var even = +(100 / validList.length).toFixed(2);
+                validList.forEach(function(x){ indIwEff[x.id] = even; });
+              }
+            }
+            var missLabels = missList.map(function(x){ return x.label; }).join('、');
+            dimIwNorm[d] = dimIwNorm[d] || {mode:'ok', msg:''};
+            dimIwNorm[d].mode = 'prop';
+            dimIwNorm[d].msg = (dimIwNorm[d].msg ? dimIwNorm[d].msg + '；' : '') + missLabels + ' 无数据,权重已转移';
+          }
+        });
+
         // 维度加权计算: 维度得分 = Σ((ind.score/ind.max) × iw_eff) × 维度权重 ÷ 100
         var dimScore = {A:0,B:0,C:0};
         ['A','B','C'].forEach(function(d){
