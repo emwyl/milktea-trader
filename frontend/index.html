@@ -2966,6 +2966,7 @@ const app = createApp({
           indicators:[
             {id:'vol20', dim:'A', label:'日均成交量(20日)', unit:'万手', max:15,
              source:function getV(t){return t.avg_volume_20;},
+             valid:function isV(t){return t.avg_volume_20!=null && !isNaN(+t.avg_volume_20) && t.avg_volume_20>=0;},
              display:function getD(t){return t.avg_volume_20!=null ? (+t.avg_volume_20).toFixed(1)+'万手' : '无数据';},
              bands:[
                {label:'最优', min:40, lt:null, score:15, veto:false},
@@ -2976,6 +2977,7 @@ const app = createApp({
              ]},
             {id:'intra_amp', dim:'A', label:'日内振幅(5日均)', unit:'%', max:15,
              source:function getV(t){return t.intra_amplitude;},
+             valid:function isV(t){return t.intra_amplitude!=null && !isNaN(+t.intra_amplitude) && t.intra_amplitude>=0 && t.intra_amplitude<=30;},
              display:function getD(t){return t.intra_amplitude!=null ? (+t.intra_amplitude).toFixed(2)+'%' : '无数据';},
              bands:[
                {label:'最优', min:6, lt:null, score:15, veto:false},
@@ -2986,6 +2988,7 @@ const app = createApp({
              ]},
             {id:'turnover', dim:'A', label:'换手率', unit:'%', max:10,
              source:function getV(t){return t.turnover;},
+             valid:function isV(t){return t.turnover!=null && !isNaN(+t.turnover) && t.turnover>=0 && t.turnover<=50;},
              display:function getD(t){return t.turnover!=null ? (+t.turnover).toFixed(2)+'%' : '无数据';},
              bands:[
                {label:'最优', min:5,  lt:10,  score:10, veto:false},
@@ -3002,6 +3005,7 @@ const app = createApp({
                if(t.above_ma5===false&&t.above_ma20===false) return '双下';
                return null;
              },
+             valid:function isV(t){return t.above_ma5===true||t.above_ma5===false;},
              display:function getD(t){
                if(t.above_ma5===true&&t.above_ma20===true) return '双上';
                if(t.above_ma5===true) return '仅MA5上';
@@ -3015,6 +3019,7 @@ const app = createApp({
              ]},
             {id:'box_pos', dim:'B', label:'箱体位置', unit:'-', max:10,
              source:function getV(t){return t.box_pos;},
+             valid:function isV(t){return t.box_pos!=null && !isNaN(+t.box_pos) && t.box_pos>=0 && t.box_pos<=1;},
              display:function getD(t){return t.box_pos!=null ? ((+t.box_pos)*100).toFixed(0)+'%' : '无数据';},
              bands:[
                {label:'低吸', min:0.20, lt:0.50, score:10, veto:false},
@@ -3026,6 +3031,7 @@ const app = createApp({
              ]},
             {id:'macd', dim:'B', label:'MACD 状态', unit:'-', max:10,
              source:function getV(t){return t.macd_signal || '无数据';},
+             valid:function isV(t){var ok=['red_expand','red_shrink','green_shrink','green_expand','neutral']; return ok.indexOf(t.macd_signal)>=0;},
              display:function getD(t){
                var map={red_expand:'红柱放大',red_shrink:'红柱缩短',green_shrink:'绿柱缩短',green_expand:'绿柱放大',neutral:'中性',missing:'数据不足'};
                return map[t.macd_signal] || '无数据';
@@ -3038,6 +3044,8 @@ const app = createApp({
              ]},
             {id:'vol_ratio', dim:'C', label:'量比', unit:'-', max:10,
              source:function getV(t){return t.vol_ratio;},
+             // v158: 量比>20 视为异常脏数据,不计入评分
+             valid:function isV(t){return t.vol_ratio!=null && !isNaN(+t.vol_ratio) && t.vol_ratio>=0 && t.vol_ratio<=20;},
              display:function getD(t){return t.vol_ratio!=null ? (+t.vol_ratio).toFixed(2) : '无数据';},
              bands:[
                {label:'温和放量', min:1.0, lt:2.0, score:10, veto:false},
@@ -3049,12 +3057,19 @@ const app = createApp({
              ]},
             {id:'main_net', dim:'C', label:'主力资金净流入', unit:'%', max:8,
              source:function getV(t){return t.main_net_pct;},
+             // v158: 资金数据源异常(mkt.f===0)或 main_net_pct 缺失时视为无效,不计分
+             valid:function isV(t){return t.main_net_pct!=null && !isNaN(+t.main_net_pct) && t.mkt && t.mkt.f===1;},
              display:function getD(t){return t.main_net_pct!=null ? (+t.main_net_pct).toFixed(2)+'%' : '数据未接入';},
              bands:[
-               {label:'数据未接入', attr:'any', score:4, veto:false, neutral:true},
+               {label:'大幅流入', min:3,  lt:null, score:8, veto:false, after:true},
+               {label:'流入',     min:1,  lt:3,    score:6, veto:false},
+               {label:'均衡',     min:-1, lt:1,    score:4, veto:false},
+               {label:'流出',     min:-3, lt:-1,   score:2, veto:false},
+               {label:'大幅流出', min:null, lt:-3, score:0, veto:false},
              ]},
             {id:'sector', dim:'C', label:'板块共振', unit:'-', max:7,
              source:function getV(t){return t.sector_resonance;},
+             valid:function isV(t){var ok=['sector_strong_up','sector_up','sector_flat','sector_down_up','sector_down']; return ok.indexOf(t.sector_resonance)>=0;},
              display:function getD(t){
                var map={sector_strong_up:'板块强涨',sector_up:'板块涨',sector_flat:'板块平',sector_down_up:'板块跌个股涨',sector_down:'板块跌个股跌',missing:'无数据'};
                return map[t.sector_resonance] || '无数据';
@@ -3082,7 +3097,7 @@ const app = createApp({
           if(b.attr !== undefined){
             if(b.attr==='any' || b.attr===v) return b;
           } else {
-            var lo = +b.min;
+            var lo = (b.min===null||b.min===undefined) ? -Infinity : +b.min;
             var hi = b.lt===null ? Infinity : +b.lt;
             if(b.after){
               if(v >= lo) return b;
@@ -3098,13 +3113,16 @@ const app = createApp({
         var scoreIndFn = this.scoreInd;  // 捕获工具对象上的 scoreInd(map 回调内 this 丢失, 不可直接 this.scoreInd)
         var indResults = indList.map(function(ind){
           var v = ind.source ? ind.source(track||{}) : null;
-          var band = (v===null||v===undefined) ? null : scoreIndFn(v, ind);
-          var score = 0; var hit = null; var hitReason = '';
+          // v158: 数据有效性校验(未接入/异常值) → 无效指标不计分,权重转移给同维度有效指标
+          var isValid = ind.valid ? ind.valid(track||{}) : (v !== null && v !== undefined && v !== '');
+          var band = isValid ? scoreIndFn(v, ind) : null;
+          var score = 0; var hit = null; var hitReason = ''; var currentStr = '';
           if(band){
             score = band.score;
             hit = band.label;
+            currentStr = ind.display(track||{});
             if(band.attr){
-              hitReason = ind.label + '=' + ind.display(track) + ' (+' + score + ')';
+              hitReason = ind.label + '=' + currentStr + ' (+' + score + ')';
             } else {
               var lo = band.min, hi = band.lt;
               var loStr = (typeof lo === 'number') ? (ind.unit==='%' ? lo+'%' : lo) : lo;
@@ -3112,12 +3130,14 @@ const app = createApp({
               hitReason = (band.after ? '≥'+loStr : loStr + hiStr) + ' (+' + score + ')';
             }
           } else {
-            hitReason = '无数据/未命中(+0)';
+            currentStr = isValid ? ind.display(track||{}) : '数据无效';
+            hitReason = isValid ? '无数据/未命中(+0)' : '数据无效/未接入,不计入得分';
           }
           return {
             id:ind.id, label:ind.label, dim:ind.dim, max:ind.max,
-            current: v, currentStr: ind.display(track||{}),
+            current: v, currentStr: currentStr,
             bandLabel: hit, score: score, hitReason: hitReason, veto: band && band.veto,
+            invalid: !isValid,
           };
         });
         // ==== v155: 指标级权重归一(每个分类内独立 iw,默认均分) ====
@@ -3184,7 +3204,7 @@ const app = createApp({
             var missLabels = missList.map(function(x){ return x.label; }).join('、');
             dimIwNorm[d] = dimIwNorm[d] || {mode:'ok', msg:''};
             dimIwNorm[d].mode = 'prop';
-            dimIwNorm[d].msg = (dimIwNorm[d].msg ? dimIwNorm[d].msg + '；' : '') + missLabels + ' 无数据,权重已转移';
+            dimIwNorm[d].msg = (dimIwNorm[d].msg ? dimIwNorm[d].msg + '；' : '') + missLabels + ' 数据无效/未命中,权重已转移';
           }
         });
 
