@@ -642,6 +642,10 @@
   .sd-iw-norm .norm-even{background:#e0e7ff;color:#4338ca}
   /* v159: 列表综合评分列的小尾巴(实时分 vs 后端官方分) */
   .score-tail{font-size:11px;color:#64748b;font-weight:400;margin-left:4px}
+  /* v160: 统一可点击 cell 标识 — 蓝色加粗下划线(下划线色用单独属性,与 .up/.down 文字色不冲突) */
+  .clickable-link{cursor:pointer;text-decoration:underline;text-decoration-color:#2563eb;text-decoration-thickness:1.5px;text-underline-offset:3px;font-weight:600}
+  .clickable-link:hover{text-decoration-color:#1d4ed8;background:rgba(37,99,235,.06)}
+  .clickable-link.muted{color:#64748b}  /* muted 文字下也要蓝色下划线,避免弱化 */
   .sd-penalty-box{background:#fff7ed;border:1px solid #fed7aa;padding:10px 14px;border-radius:6px;margin-bottom:14px}
   .sd-penalty-list{margin-top:4px;font-size:12px}
   .sd-penalty-tag{display:inline-block;background:#dc2626;color:#fff;padding:2px 8px;border-radius:10px;font-weight:700;font-size:12px}
@@ -1050,7 +1054,7 @@
               <template v-else-if="col.key==='code_name'">
                 <b>{{p.name}}</b>
                 <span v-if="p.status==='archive'" class="pill" style="background:#f3f4f6;color:#6b7280;margin-left:3px" title="已从可投池移除(数据保留),点「恢复」可重新启用">已归档</span>
-                <div style="font-size:11px;color:#2563eb;text-decoration:underline;cursor:pointer" @click.stop="openAnalysis(p.code)">{{p.code}}</div>
+                <div class="clickable-link" style="font-size:11px" @click.stop="openAnalysis(p.code)">{{p.code}}</div>
               </template>
               <template v-else-if="col.key==='price'">
                 <div v-if="p.track.price!=null"><b>{{ui.fmt(p.track.price)}}</b></div>
@@ -1179,7 +1183,7 @@
                 <span v-else class="muted">无</span>
               </template>
               <template v-else-if="col.key==='finance_risk'">
-                <span v-if="p.track.finance_risk" class="finance-risk" @click.stop="openFinanceRisk(p)" :title="'点击查看近5日相关大事/新闻(利好红/利空绿/中性灰)'" style="cursor:pointer">
+                <span v-if="p.track.finance_risk" class="clickable-link" @click.stop="openFinanceRisk(p)" :title="'点击查看近5日相关大事/新闻(利好红/利空绿/中性灰)'">
                   <span class="pill" :class="p.track.finance_risk.summary==='无明显风险'?'ok':'risk'">{{p.track.finance_risk.summary}}</span>
                 </span>
                 <span v-else class="muted">-</span>
@@ -1233,36 +1237,35 @@
             <span v-else class="muted">-</span>
           </template>
           <template v-else-if="col.key==='net_profit_yoy'">
-            <span v-if="p.track.net_profit_yoy!=null" :class="ui.classOf(p.track.net_profit_yoy)" :title="'净利润同比(%) · 点击看财报明细'" style="cursor:pointer" @click.stop="openFinancial(p)">{{ui.fmtPctSigned(p.track.net_profit_yoy)}}</span>
-            <span v-else class="muted" @click.stop="openFinancial(p)" style="cursor:pointer">-</span>
+            <span v-if="p.track.net_profit_yoy!=null" class="clickable-link" :class="ui.classOf(p.track.net_profit_yoy)" :title="'净利润同比(%) · 点击看财报明细'" @click.stop="openFinancial(p)">{{ui.fmtPctSigned(p.track.net_profit_yoy)}}</span>
+            <span v-else class="clickable-link muted" @click.stop="openFinancial(p)">-</span>
           </template>
           <template v-else-if="col.key==='revenue_yoy'">
-            <span v-if="p.track.revenue_yoy!=null" :class="ui.classOf(p.track.revenue_yoy)" :title="'营收同比(%) · 点击看财报明细'" style="cursor:pointer" @click.stop="openFinancial(p)">{{ui.fmtPctSigned(p.track.revenue_yoy)}}</span>
-            <span v-else class="muted" @click.stop="openFinancial(p)" style="cursor:pointer">-</span>
+            <span v-if="p.track.revenue_yoy!=null" class="clickable-link" :class="ui.classOf(p.track.revenue_yoy)" :title="'营收同比(%) · 点击看财报明细'" @click.stop="openFinancial(p)">{{ui.fmtPctSigned(p.track.revenue_yoy)}}</span>
+            <span v-else class="clickable-link muted" @click.stop="openFinancial(p)">-</span>
           </template>
           <template v-else-if="col.key==='report_date'">
-            <span v-if="p.track.report_date" :title="'最新财报报告期 · 点击看财报明细'" style="cursor:pointer" @click.stop="openFinancial(p)">{{p.track.report_date}}</span>
-            <span v-else class="muted" @click.stop="openFinancial(p)" style="cursor:pointer">-</span>
+            <span v-if="p.track.report_date" class="clickable-link" :title="'最新财报报告期 · 点击看财报明细'" @click.stop="openFinancial(p)">{{p.track.report_date}}</span>
+            <span v-else class="clickable-link muted" @click.stop="openFinancial(p)">-</span>
           </template>
           <template v-else-if="col.key==='goodwill'">
-            <span v-if="p.track.goodwill!=null" :title="'商誉(亿元) · 点击看财报明细'" style="cursor:pointer" @click.stop="openFinancial(p)">{{(p.track.goodwill/1e8).toFixed(2)}}</span>
-            <span v-else class="muted" @click.stop="openFinancial(p)" style="cursor:pointer">-</span>
+            <span v-if="p.track.goodwill!=null" class="clickable-link" :title="'商誉(亿元) · 点击看财报明细'" @click.stop="openFinancial(p)">{{(p.track.goodwill/1e8).toFixed(2)}}</span>
+            <span v-else class="clickable-link muted" @click.stop="openFinancial(p)">-</span>
           </template>
           <template v-else-if="col.key==='next_ratio'">
-            <span v-if="p.track.next_ratio!=null" :class="p.track.next_ratio>5?'down':''" :title="'解禁占比(%) · 点击看解禁明细'" style="cursor:pointer" @click.stop="openUnlock(p)">{{ui.fmtPct(p.track.next_ratio)}}</span>
-            <span v-else class="muted" @click.stop="openUnlock(p)" style="cursor:pointer">-</span>
+            <span v-if="p.track.next_ratio!=null" class="clickable-link" :class="p.track.next_ratio>5?'down':''" :title="'解禁占比(%) · 点击看解禁明细'" @click.stop="openUnlock(p)">{{ui.fmtPct(p.track.next_ratio)}}</span>
+            <span v-else class="clickable-link muted" @click.stop="openUnlock(p)">-</span>
           </template>
           <template v-else-if="col.key==='next_date'">
-            <span v-if="p.track.next_date" :title="'解禁日期 · 点击看解禁明细'" style="cursor:pointer" @click.stop="openUnlock(p)">{{p.track.next_date}}</span>
-            <span v-else class="muted" @click.stop="openUnlock(p)" style="cursor:pointer">-</span>
+            <span v-if="p.track.next_date" class="clickable-link" :title="'解禁日期 · 点击看解禁明细'" @click.stop="openUnlock(p)">{{p.track.next_date}}</span>
+            <span v-else class="clickable-link muted" @click.stop="openUnlock(p)">-</span>
           </template>
           <template v-else-if="col.key==='total_score'">
             <span v-if="mktBad(p.track,'q')" class="bad-data" title="行情读取异常,未评分">数据异常</span>
-            <span v-else class="score-cell"
-                  :class="{'up':(p.user_score!=null ? p.user_score : (p.track.total_score||0))>=70,'down':(p.user_score!=null ? p.user_score : (p.track.total_score||0))<40}"
-                  :title="'点击查看评分详情与规则(可调权重/阈值,实时重算) · 列表显示实时重算分;后端官方分见小尾巴'"
-                  style="cursor:pointer;text-decoration:underline dotted #94a3b8"
-                  @click.stop="openScoreDetail(p)"><b>{{ p.user_score!=null ? p.user_score : (p.track.total_score!=null ? p.track.total_score : '-') }}</b><span v-if="p.user_score!=null && p.track && p.track.total_score!=null && p.user_score!==p.track.total_score" class="score-tail" :title="'后端官方分 ' + p.track.total_score">→后端{{ p.track.total_score }}</span></span>
+            <span v-else class="clickable-link"
+                  :class="(p.user_score!=null ? p.user_score : (p.track.total_score||0))>=70 ? 'up' : ((p.user_score!=null ? p.user_score : (p.track.total_score||0))<40 ? 'down' : '')"
+                  :title="'点击查看评分详情与规则(可调权重/阈值,实时重算) · 当前显示实时重算分'"
+                  @click.stop="openScoreDetail(p)"><b>{{ p.user_score!=null ? p.user_score : (p.track.total_score!=null ? p.track.total_score : '-') }}</b></span>
           </template>
           <template v-else-if="col.key==='position_qty'">{{p.position_qty!=null ? p.position_qty : '-'}}</template>
               <template v-else-if="col.key==='cost_price'">{{p.cost_price!=null ? ui.fmt(p.cost_price) : '-'}}</template>
@@ -1272,7 +1275,6 @@
                 <button class="ghost btn-sm" @click.stop="startEdit(p)">修改</button>
                 <!-- v143: 盯盘日志按钮,仅当该 code 至少有一条 day_view_log 时显示(避免误点空弹窗) -->
                 <button v-if="p.day_view_log_count > 0" class="ghost btn-sm day-view-watch-btn" @click.stop="openWatchLogModal(p)" :title="(p.name||p.code) + ' 盯盘日志(已记录 ' + p.day_view_log_count + ' 条)'">盯盘日志</button>
-                <button class="ghost btn-sm" @click.stop="removePool(p.code, p.name)">移除</button>
               </template>
             </td>
           </tr></tbody></table>
