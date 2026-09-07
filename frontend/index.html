@@ -640,6 +640,8 @@
   .sd-iw-norm .norm-prop{background:#fef3c7;color:#92400e}
   .sd-iw-norm .norm-scaled{background:#fee2e2;color:#dc2626}
   .sd-iw-norm .norm-even{background:#e0e7ff;color:#4338ca}
+  /* v159: 列表综合评分列的小尾巴(实时分 vs 后端官方分) */
+  .score-tail{font-size:11px;color:#64748b;font-weight:400;margin-left:4px}
   .sd-penalty-box{background:#fff7ed;border:1px solid #fed7aa;padding:10px 14px;border-radius:6px;margin-bottom:14px}
   .sd-penalty-list{margin-top:4px;font-size:12px}
   .sd-penalty-tag{display:inline-block;background:#dc2626;color:#fff;padding:2px 8px;border-radius:10px;font-weight:700;font-size:12px}
@@ -1255,12 +1257,12 @@
             <span v-else class="muted" @click.stop="openUnlock(p)" style="cursor:pointer">-</span>
           </template>
           <template v-else-if="col.key==='total_score'">
-            <span v-if="mktBad(p.track,'q')" class="bad-data" title="行情读取异常，未评分">数据异常</span>
+            <span v-if="mktBad(p.track,'q')" class="bad-data" title="行情读取异常,未评分">数据异常</span>
             <span v-else class="score-cell"
-                  :class="{'up':(p.track.total_score||0)>=70,'down':(p.track.total_score||0)<40}"
-                  :title="'点击查看评分详情与规则(可调权重/阈值,实时重算) · 后端官方分'"
+                  :class="{'up':(p.user_score!=null ? p.user_score : (p.track.total_score||0))>=70,'down':(p.user_score!=null ? p.user_score : (p.track.total_score||0))<40}"
+                  :title="'点击查看评分详情与规则(可调权重/阈值,实时重算) · 列表显示实时重算分;后端官方分见小尾巴'"
                   style="cursor:pointer;text-decoration:underline dotted #94a3b8"
-                  @click.stop="openScoreDetail(p)"><b>{{p.track.total_score!=null ? p.track.total_score : '-'}}</b></span>
+                  @click.stop="openScoreDetail(p)"><b>{{ p.user_score!=null ? p.user_score : (p.track.total_score!=null ? p.track.total_score : '-') }}</b><span v-if="p.user_score!=null && p.track && p.track.total_score!=null && p.user_score!==p.track.total_score" class="score-tail" :title="'后端官方分 ' + p.track.total_score">→后端{{ p.track.total_score }}</span></span>
           </template>
           <template v-else-if="col.key==='position_qty'">{{p.position_qty!=null ? p.position_qty : '-'}}</template>
               <template v-else-if="col.key==='cost_price'">{{p.cost_price!=null ? ui.fmt(p.cost_price) : '-'}}</template>
@@ -2220,7 +2222,7 @@
 
             <!-- 备注说明 -->
             <div class="sd-foot-note muted" style="font-size:11px;line-height:1.6;border-top:1px dashed var(--line);padding-top:8px;margin-top:12px">
-              <b>口径说明:</b>① 默认 9 项指标+3 维度权重的分档与后端一致,改值→前端实时重算 userScore(列表显示仍是后端官方分 total_score);
+              <b>口径说明:</b>① 默认 9 项指标+3 维度权重的分档与后端一致,改值→前端实时重算 userScore(列表显示已切到实时分,后端官方分以「→后端XX」小尾巴对照);
               ② 阈值编辑后,同档位自愈排序(数值型按 min 升序);attr 离散档不可编辑阈值;
               ③ 维度归一化: (该维度原始得分 ÷ 该维度满分) × 维度权重 = 用户维度得分,避免改满分错乱;
               ④ 扣分/一票否决由后端算好,弹窗内仅展示,不在前端重算;
@@ -3747,9 +3749,25 @@ const app = createApp({
       };
       this._ensureIndIwDefaults(this.scoreDetailModal.rules);
       this.recomputeUserScore();
+      // 打开任一详情 → 用当前规则把所有股票重算一遍(列表立刻显示实时分)
+      this.recomputeAllUserScores();
     },
     closeScoreDetail(){
       this.scoreDetailModal.show = false;
+    },
+    // v159: 全表批量按当前规则重算 userScore,写入 p.user_score(列表渲染优先用)
+    recomputeAllUserScores(){
+      const rules = this.userScoringRules || (this.scoreDetailModal && this.scoreDetailModal.rules) || this.mtscore.default();
+      if(!rules || !Array.isArray(rules.indicators)) return;
+      const pool = this.pool || [];
+      for(let i=0;i<pool.length;i++){
+        const t = pool[i] && pool[i].track;
+        if(!t || t.mkt && t.mkt.q===0) { pool[i].user_score = null; continue; }
+        try{
+          const r = this.mtscore.compute(t, rules);
+          pool[i].user_score = r && r.userScore != null ? r.userScore : null;
+        }catch(e){ pool[i].user_score = null; }
+      }
     },
     // v155: 给 rules.indicators 补 iw 默认值(每个分类内指标均分 100%)
     // 兜底 compute 内的 inline 默认,显式初始化让首次进入弹窗即看见均分数字
@@ -3770,6 +3788,7 @@ const app = createApp({
       this.userScoringRules = null;
       try{ localStorage.removeItem(this.scoreRulesLSKey); }catch(e){}
       this.recomputeUserScore();
+      this.recomputeAllUserScores();  // v159: 恢复默认后批量刷新列表
       this.showToast('评分规则已恢复默认');
     },
     // 保存当前规则到 localStorage(用户偏好持久化)
@@ -3778,6 +3797,8 @@ const app = createApp({
         localStorage.setItem(this.scoreRulesLSKey, JSON.stringify(this.scoreDetailModal.rules));
         this.userScoringRules = JSON.parse(JSON.stringify(this.scoreDetailModal.rules));
         this.showToast('评分规则已保存(本地)');
+        // v159: 保存后立刻用新规则刷新所有列表项
+        this.recomputeAllUserScores();
       }catch(e){
         this.showToast('保存失败:' + (e && e.message || '未知错误'));
       }
@@ -3792,6 +3813,9 @@ const app = createApp({
         const result = this.mtscore.compute(this.scoreDetailModal.track, this.scoreDetailModal.rules);
         // 直接挂到 modal 上,Vue 会重新渲染
         this.scoreDetailModal._result = result;
+        // v159: 同步回写当前 p.user_score,列表列立即切到实时分
+        const p = (this.pool||[]).find(x => x && x.code === m.code);
+        if(p) p.user_score = result && result.userScore != null ? result.userScore : null;
       }, 80);
     },
     // ==== 三维权重编辑 ====
@@ -5204,10 +5228,12 @@ const app = createApp({
       params.append('page_size', this.poolPageSize || 15);
       const r=await API('/pool?' + params.toString());
       const prevSelected = new Set(this.poolSelected);
-      // 每行归一化：track/day_view 缺失时兜底空对象，防止表格 cell 访问 p.track.xxx 抛 TypeError 导致整页白屏(v141)
+      // 每行归一化:track/day_view 缺失时兜底空对象,防止表格 cell 访问 p.track.xxx 抛 TypeError 导致整页白屏(v141)
       this.pool=(r.items || []).map(p=>({...p, track:(p&&p.track&&typeof p.track==='object')?p.track:{}, day_view:(p&&p.day_view&&typeof p.day_view==='object')?p.day_view:{}}));
       this.poolTotal=r.total || 0; this.poolCodes=this.pool.map(p=>p.code);
-      // 自动刷新时保留用户已勾选的记录（仅去掉已不在当前页的）
+      // v159: 加载后按当前用户规则批量算出 user_score,列表立刻显示实时分
+      try{ this.recomputeAllUserScores(); }catch(e){}
+      // 自动刷新时保留用户已勾选的记录(仅去掉已不在当前页的)
       this.poolSelected = this.pool.filter(p=>prevSelected.has(p.code)).map(p=>p.code);
       const totalPages = Math.ceil(this.poolTotal/this.poolPageSize)||1;
       if(this.poolPage>totalPages && this.poolTotal){ this.poolPage=totalPages; return this.loadPool(); }
