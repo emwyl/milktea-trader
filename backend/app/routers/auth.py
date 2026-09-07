@@ -29,7 +29,9 @@ def _require_admin(user: User) -> User:
 
 
 def _cleanup_guest_data(db, guest_id: int):
-    """清理游客工作区数据（每天第一个游客进入时触发）。保留全局 stocks/quotes/scheme_types/app_settings。"""
+    """清理游客工作区数据（由 scheduler 每周日 20:00 统一执行，不再在登录时清理）。
+    保留全局 stocks/quotes/scheme_types/app_settings。
+    v133: tracked_pool_tags 已加 user_id 列，可直接按 user_id 清理；同时用 pool_id 子查询兜底旧结构。"""
     tables = [
         "tracked_pool_tags",
         "tracked_pool",
@@ -50,6 +52,31 @@ def _cleanup_guest_data(db, guest_id: int):
             db.execute(text(f"DELETE FROM {t} WHERE user_id=:uid"), {"uid": guest_id})
         except Exception:
             pass
+    # 兜底：按 pool_id 子查询清理可能未迁移到 user_id 列的孤儿关联
+    try:
+        db.execute(text("""
+            DELETE FROM tracked_pool_tags
+            WHERE pool_id IN (SELECT id FROM tracked_pool WHERE user_id=:uid)
+        """), {"uid": guest_id})
+    except Exception:
+        pass
+
+
+def cleanup_guest_periodic() -> dict:
+    """供 scheduler 每周日 20:00 调用：清理唯一系统 guest 账号的数据。
+    返回清理结果摘要，便于日志追溯。"""
+    db = SessionLocal()
+    try:
+        guest = _get_guest_user_or_none(db)
+        if not guest:
+            return {"ok": True, "cleaned": False, "reason": "guest account not exists"}
+        _cleanup_guest_data(db, guest.id)
+        db.commit()
+        return {"ok": True, "cleaned": True, "guest_id": guest.id, "guest_username": guest.username}
+    except Exception as e:
+        return {"ok": False, "cleaned": False, "error": str(e)}
+    finally:
+        db.close()
 
 
 def _today_iso() -> str:
@@ -147,16 +174,12 @@ def register(request: Request, body: LoginIn):
 @router.post("/guest", response_model=LoginOut)
 def guest_login(request: Request):
     """方案 A：所有游客共用唯一系统账号 guest。
-    每天第一个游客进入时，惰性清理游客工作区残留数据（无需后台定时任务）。"""
+    v133: 游客数据不再在登录时清理，改为 scheduler 每周日 20:00 统一清理。"""
     db = SessionLocal()
     try:
         guest = _get_guest_user_or_none(db)
         if guest is None:
             guest = _ensure_guest_user(db, _client_ip(request))
-        elif _local_date(guest.last_login_at) != _today_iso():
-            # 当日首个游客进入 → 清理游客工作区（全局行情与正式账号数据不受影响）
-            _cleanup_guest_data(db, guest.id)
-            db.commit()
         guest.last_login_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
         guest.last_ip = _client_ip(request)
         db.add(AccessLog(ts=_now(), ip=_client_ip(request), ua=request.headers.get("User-Agent", ""),
@@ -314,8 +337,8 @@ def delete_user(uid: int, user: User = Depends(get_current_user)):
             raise HTTPException(status_code=400, detail="不能删除自己")
         # 级联清理该用户个人数据（全局 stocks/quotes 保留）
         from sqlalchemy import text
-        tables = ["tracked_pool", "screens", "position_rules", "signals",
-                  "user_profile", "notify_config", "notify_log", "stock_tconfig", "user_settings"]
+        tables = ["tracked_pool_tags", "tracked_pool", "pool_tags", "screens", "position_rules", "signals",
+                  "user_profile", "notify_config", "notify_log", "stock_tconfig", "user_settings", "access_logs"]
         for t in tables:
             try:
                 db.execute(text(f"DELETE FROM {t} WHERE user_id=:uid"), {"uid": uid})

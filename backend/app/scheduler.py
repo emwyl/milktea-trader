@@ -6,6 +6,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 
 from app.db import SessionLocal
 from app.models import NotifyConfig, NotifyLog, Signal, TrackedPool, User
+from app.routers.auth import cleanup_guest_periodic
 from app.routers.data import run_auto_backup
 from app.services.runner import run_engine
 from app.services.notifier import get_notifier
@@ -69,6 +70,9 @@ def start_scheduler() -> BackgroundScheduler:
     _sched.add_job(daily_review, "cron", hour=15, minute=30, day_of_week="mon-fri", id="daily_review")
     # 每个交易日 16:00 盘后自动预热全 A 日线(方案 C:每天盘后拉,第二天全市场可筛)
     _sched.add_job(start_warmup, "cron", hour=16, minute=0, day_of_week="mon-fri", id="daily_warmup")
+    # v133: 游客共享试用区每周日 20:00 统一清理（不再每次登录时清理，避免切换账号时数据串扰）
+    _sched.add_job(cleanup_guest_periodic, "cron", hour=20, minute=0, day_of_week="sun",
+                   id="weekly_guest_cleanup", misfire_grace_time=3600)
     # 每天 15:35（复盘任务之后）自动整库备份到 data/backups/，保留最近 14 份
     _sched.add_job(run_auto_backup, "cron", hour=15, minute=35, id="daily_backup",
                    misfire_grace_time=3600)

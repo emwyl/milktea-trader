@@ -183,12 +183,32 @@ def run_migrations(engine):
                 CREATE TABLE tracked_pool_tags (
                     pool_id INTEGER NOT NULL,
                     tag_id INTEGER NOT NULL,
+                    user_id INTEGER,
                     PRIMARY KEY (pool_id, tag_id),
                     FOREIGN KEY(pool_id) REFERENCES tracked_pool(id),
-                    FOREIGN KEY(tag_id) REFERENCES pool_tags(id)
+                    FOREIGN KEY(tag_id) REFERENCES pool_tags(id),
+                    FOREIGN KEY(user_id) REFERENCES users(id)
                 )
             """))
             conn.execute(text("CREATE INDEX ix_tracked_pool_tags_tag_id ON tracked_pool_tags(tag_id)"))
+            conn.execute(text("CREATE INDEX ix_tracked_pool_tags_user_id ON tracked_pool_tags(user_id)"))
+        else:
+            # v133: 给旧表补上 user_id 并回填，确保按账号清理关联不留孤儿记录
+            if not _has_col(conn, "tracked_pool_tags", "user_id"):
+                try:
+                    conn.execute(text("ALTER TABLE tracked_pool_tags ADD COLUMN user_id INTEGER"))
+                    conn.execute(text("CREATE INDEX ix_tracked_pool_tags_user_id ON tracked_pool_tags(user_id)"))
+                except Exception:
+                    pass
+            if _has_col(conn, "tracked_pool_tags", "user_id"):
+                try:
+                    conn.execute(text("""
+                        UPDATE tracked_pool_tags
+                        SET user_id = (SELECT user_id FROM tracked_pool WHERE tracked_pool.id = tracked_pool_tags.pool_id)
+                        WHERE user_id IS NULL
+                    """))
+                except Exception:
+                    pass
 
         # 旧版 tracked_pool.tag_id 单标签字段迁移到多对多关联表
         if _has_col(conn, "tracked_pool", "tag_id") and _has_table(conn, "tracked_pool_tags"):

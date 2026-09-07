@@ -107,10 +107,12 @@ class PoolTag(Base):
 
 
 class TrackedPoolTag(Base):
-    """可投池与标签的多对多关联表。"""
+    """可投池与标签的多对多关联表。增加 user_id 便于按账号级联清理。
+    新建/修改标签关联时由后端统一写入 pool 所属 user_id。"""
     __tablename__ = "tracked_pool_tags"
     pool_id: Mapped[int] = mapped_column(Integer, ForeignKey("tracked_pool.id"), primary_key=True)
     tag_id: Mapped[int] = mapped_column(Integer, ForeignKey("pool_tags.id"), primary_key=True)
+    user_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True, index=True)
 
 
 class PositionRule(Base):

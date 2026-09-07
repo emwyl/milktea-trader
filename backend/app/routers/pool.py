@@ -321,11 +321,12 @@ def add_to_pool(body: PoolIn, db: SessionLocal = Depends(get_db), user: User = D
     db.add(p)
     db.commit()
     db.refresh(p)
-    # 绑定标签（多对多）
+    # 绑定标签（多对多），显式写入关联表以带上 user_id 便于按账号清理
     if body.tag_ids:
         valid_tags = db.query(PoolTag).filter(PoolTag.user_id == user.id,
                                                PoolTag.id.in_(body.tag_ids)).all()
-        p.tags.extend(valid_tags)
+        for t in valid_tags:
+            db.add(TrackedPoolTag(pool_id=p.id, tag_id=t.id, user_id=user.id))
         db.commit()
         db.refresh(p)
     return _to_out(p, db)
@@ -393,7 +394,10 @@ def batch_set_tags(body: PoolBatchTagsIn, db: SessionLocal = Depends(get_db), us
         valid_tags = db.query(PoolTag).filter(PoolTag.user_id == user.id,
                                                PoolTag.id.in_(body.tag_ids)).all()
     for p in rows:
-        p.tags = list(valid_tags)
+        # 先清空旧关联再重建，确保 user_id 一致且不会残留孤儿记录
+        db.query(TrackedPoolTag).filter(TrackedPoolTag.pool_id == p.id).delete(synchronize_session=False)
+        for t in valid_tags:
+            db.add(TrackedPoolTag(pool_id=p.id, tag_id=t.id, user_id=user.id))
     db.commit()
     return {"ok": True, "updated": len(rows)}
 
@@ -624,7 +628,7 @@ def import_pool(
                     db.add(t)
                     db.flush()
                     tag_map[t.name] = t
-                db.add(TrackedPoolTag(pool_id=p.id, tag_id=t.id))
+                db.add(TrackedPoolTag(pool_id=p.id, tag_id=t.id, user_id=user.id))
         added.append({"code": code, "name": name})
     db.commit()
     return {"ok": True, "added": added, "failed": failed,
@@ -697,7 +701,10 @@ def update_pool(code: str, note: str = "", cost_price: float | None = None,
                 raise HTTPException(status_code=400, detail="标签参数必须是数字 ID")
         valid_tags = db.query(PoolTag).filter(PoolTag.user_id == user.id,
                                                PoolTag.id.in_(new_ids)).all() if new_ids else []
-        exists.tags = list(valid_tags)
+        # 清空旧关联后重建，显式写入 user_id
+        db.query(TrackedPoolTag).filter(TrackedPoolTag.pool_id == exists.id).delete(synchronize_session=False)
+        for t in valid_tags:
+            db.add(TrackedPoolTag(pool_id=exists.id, tag_id=t.id, user_id=user.id))
     db.commit()
     db.refresh(exists)
     return _to_out(exists, db)
@@ -746,7 +753,8 @@ def delete_tag(tid: int, db: SessionLocal = Depends(get_db), user: User = Depend
     t = db.query(PoolTag).filter(PoolTag.id == tid, PoolTag.user_id == user.id).first()
     if not t:
         raise HTTPException(status_code=404, detail="标签不存在")
-    db.query(TrackedPoolTag).filter(TrackedPoolTag.tag_id == tid).delete(synchronize_session=False)
+    db.query(TrackedPoolTag).filter(TrackedPoolTag.tag_id == tid,
+                                      TrackedPoolTag.user_id == user.id).delete(synchronize_session=False)
     db.delete(t)
     db.commit()
     return {"ok": True}
