@@ -136,6 +136,21 @@ class DayViewLog(Base):
     operated_at: Mapped[str] = mapped_column(String(32), default=_now)  # ISO8601 UTC,带时区
 
 
+class DayViewRecap(Base):
+    """v146: 偏离原因复盘(盯盘日志复盘文本,可编辑,按 (user,code,trade_date) 一行存最新)。
+    设计:每次保存都覆盖 update_at,仅保留最新一份;后续按 (user,trade_date) 聚合即可做月度复盘准确率统计。
+    """
+    __tablename__ = "day_view_recap"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    code: Mapped[str] = mapped_column(String(16), index=True)
+    trade_date: Mapped[str] = mapped_column(String(10), index=True)
+    recap: Mapped[str] = mapped_column(Text, default="")  # 用户编辑的复盘文本(可空,空=沿用模板话术)
+    operator: Mapped[str] = mapped_column(String(64), default="")
+    operator_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    updated_at: Mapped[str] = mapped_column(String(32), default=_now)  # 最后一次复盘更新时间
+
+
 class PositionRule(Base):
     """加减仓规则（SignalEngine 接口的参数化实例）。"""
     __tablename__ = "position_rules"

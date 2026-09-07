@@ -30,6 +30,8 @@
   .subnav button{padding:7px 16px;border-radius:9px 9px 0 0;font-size:14px;cursor:pointer;border:1px solid var(--line);border-bottom:0;background:#eff6ff;color:var(--tea-d)}
   .subnav button.active{background:var(--tea);color:#fff;border-color:var(--tea)}
   .subnav button.ghost{background:#eff6ff;color:var(--tea-d);border:1px solid var(--line);border-bottom:0}
+  .subnav button.pooltab-label{background:var(--tea);color:#fff;border-color:var(--tea);cursor:default}
+  .subnav button.pooltab-label:hover{background:var(--tea);color:#fff}
   main{padding:12px 16px;max-width:none;margin:0 auto}
   .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:12px;box-shadow:0 2px 8px rgba(30,64,175,.06)}
   .grid{display:grid;gap:14px}
@@ -325,8 +327,44 @@
   .tracktbl.pool-tbl thead th .resize-handle.active{background:rgba(59,130,246,.45)}
   @media(max-width:768px){ .tracktbl.pool-tbl thead th .resize-handle{display:none} }
   .tracktbl .pill{padding:1px 6px;font-size:11px}
+      /* v151: 外链样式(权威披露平台跳转 + 每条 trigger ↗) */
+      .extlink {
+        color: #2563eb;
+        text-decoration: none;
+        border-bottom: 1px dashed #93c5fd;
+        transition: color .15s, border-color .15s;
+      }
+      .extlink:hover {
+        color: #1d4ed8;
+        border-bottom-color: #2563eb;
+      }
+      .extlink-sm {
+        flex: 0 0 auto;
+        display: inline-block;
+        padding: 0 4px;
+        font-weight: 700;
+        border-bottom: none;
+        font-size: 13px;
+        line-height: 1;
+      }
+      .extlink-sm:hover {
+        border-bottom: none;
+        text-decoration: underline;
+      }
   /* 可投池事件风险/财报风险标签配色 */
   .pill.risk{background:#fee2e2;color:#b91c1c;border-color:#fca5a5}
+  /* v153: 财报明细顶部盈亏状态 banner */
+  .fin-state-banner{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;margin:8px 0 4px;font-size:13px;font-weight:600;line-height:1.5}
+  .fin-state-banner .fsb-icon{font-size:18px;line-height:1;flex-shrink:0}
+  .fin-state-banner .fsb-text{flex:1;min-width:0}
+  .fin-state-banner .fsb-sub{font-size:11px;font-weight:500;opacity:.85;margin-top:2px}
+  .fin-state-banner.loss{background:#fef2f2;color:#991b1b;border:1px solid #fecaca}
+  .fin-state-banner.profit{background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0}
+  .fin-state-banner.break_even{background:#f3f4f6;color:#374151;border:1px solid #d1d5db}
+  .fin-state-banner .yoy-pill{display:inline-block;padding:1px 8px;border-radius:99px;font-size:11px;font-weight:600;margin-left:6px}
+  .fin-state-banner.loss .yoy-pill{background:#fecaca;color:#7f1d1d}
+  .fin-state-banner.profit .yoy-pill{background:#d1fae5;color:#065f46}
+  .fin-state-banner.break_even .yoy-pill{background:#e5e7eb;color:#374151}
   .pill.ok{background:#dcfce7;color:#15803d;border-color:#86efac}
   .finance-risk .pill{cursor:pointer}
   .finance-risk .pill:hover{filter:brightness(.96)}
@@ -512,11 +550,16 @@
   .dv-field label{font-size:12px;color:#6b7280;font-weight:500}
   .dv-field input[type="text"],.dv-field input[type="number"],.dv-field input[type="date"]{padding:6px 8px;border:1px solid var(--line);border-radius:6px;font-size:13px;background:#fff;font-family:inherit}
   .dv-trend-chips{display:flex;gap:6px;flex-wrap:wrap}
-  .dv-chip{padding:5px 12px;border:1px solid var(--line);border-radius:6px;background:#fff;font-size:12px;cursor:pointer;font-weight:500;transition:all .15s}
-  .dv-chip.tag-看涨.active{background:#fff1f0;color:#dc2626;border-color:#dc2626}
-  .dv-chip.tag-看跌.active{background:#ecfdf5;color:#16a34a;border-color:#16a34a}
-  .dv-chip.tag-风险.active{background:#fef3c7;color:#b45309;border-color:#b45309}
-  .dv-chip.tag--.active{background:#f3f4f6;color:#374151;border-color:#6b7280}
+  .dv-chip{padding:5px 14px;border:1px solid var(--line);border-radius:6px;background:#fff;font-size:12px;cursor:pointer;font-weight:500;color:#374151;transition:all .15s}
+  .dv-chip:hover{background:#f3f4f6;border-color:#9ca3af}
+  .dv-chip.tag-看涨{color:#dc2626;border-color:#fca5a5}
+  .dv-chip.tag-看跌{color:#16a34a;border-color:#86efac}
+  .dv-chip.tag-风险{color:#b45309;border-color:#fcd34d}
+  .dv-chip.tag--{color:#6b7280;border-color:#d1d5db}
+  .dv-chip.tag-看涨.active{background:#fff1f0;border-color:#dc2626;font-weight:600}
+  .dv-chip.tag-看跌.active{background:#ecfdf5;border-color:#16a34a;font-weight:600}
+  .dv-chip.tag-风险.active{background:#fef3c7;border-color:#b45309;font-weight:600}
+  .dv-chip.tag--.active{background:#f3f4f6;border-color:#6b7280;font-weight:600}
   .dv-note-counter{font-size:11px;color:#9ca3af;text-align:right;margin-top:2px}
   .dv-note-counter.over{color:#dc2626;font-weight:600}
   .dv-history-tbl{width:100%;border-collapse:collapse;font-size:12px;margin-top:4px}
@@ -535,6 +578,74 @@
   .wl-detail-tbl{width:100%;border-collapse:collapse;font-size:12px;background:#fff;border-radius:6px;overflow:hidden}
   .wl-detail-tbl th,.wl-detail-tbl td{padding:5px 8px;border-bottom:1px solid var(--line);text-align:left}
   .wl-detail-tbl th{background:#f3f4f6;color:#6b7280;font-weight:500}
+  /* v146: 偏离原因复盘可编辑单元格 */
+  .wl-recap-cell{position:relative;min-width:200px;vertical-align:top}
+  .wl-recap-cell:hover{background:#f0f9ff;cursor:pointer}
+  .wl-recap-cell .wl-recap-text{display:inline}
+  .wl-recap-cell .wl-recap-tag{display:inline-block;margin-left:6px;padding:0 5px;border-radius:8px;font-size:10px;font-weight:600;line-height:14px;vertical-align:middle}
+  .wl-recap-tag-user{background:#0e7490;color:#fff}
+  .wl-recap-tag-tmpl{background:#f3f4f6;color:#6b7280;border:1px dashed #d1d5db}
+  .wl-recap-input{width:100%;min-height:32px;max-height:200px;padding:5px 8px;border:1px solid #38bdf8;border-radius:6px;font-size:13px;line-height:1.55;font-family:inherit;background:#fff;box-sizing:border-box;resize:vertical;transition:border-color .15s,box-shadow .15s}
+  .wl-recap-input:focus{outline:none;border-color:#0284c7;box-shadow:0 0 0 2px rgba(14,165,233,.15)}
+  .wl-recap-cell.wl-recap-dirty .wl-recap-input{border-color:#dc2626;background:#fff5f5}
+  /* v154: 保存按钮横条 spinner 动画 */
+  @keyframes wl-spin{to{transform:rotate(360deg)}}
+  .wl-recap-editbar{display:flex;align-items:center;gap:8px;margin-top:5px;flex-wrap:wrap}
+  .wl-recap-editbar .btn-sm{font-size:11px;padding:2px 9px}
+
+  /* v148: 综合评分详情+规则可调弹窗 */
+  .score-cell{transition:background-color .12s;border-radius:4px;padding:1px 4px}
+  .score-cell:hover{background:#eff6ff;color:#1d4ed8}
+  .sd-grade{display:inline-block;padding:2px 8px;border-radius:10px;font-weight:700;font-size:13px;margin-left:6px}
+  .grade-A{background:#16a34a;color:#fff}.grade-B{background:#3b82f6;color:#fff}.grade-C{background:#f59e0b;color:#fff}.grade-D{background:#dc2626;color:#fff}.grade-{background:#94a3b8;color:#fff}
+  .sd-veto-box{background:#fef2f2;border:1px solid #fecaca;border-left:4px solid #dc2626;padding:10px 14px;border-radius:6px;margin-bottom:14px}
+  .sd-veto-box ul{margin:6px 0 0 18px}
+  .sd-veto-box li{color:#dc2626;margin:2px 0;font-size:13px}
+  .sd-dim-row{display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding:10px 14px;background:#f8fafc;border-radius:6px;margin-bottom:14px}
+  .sd-dim-row label{display:flex;align-items:center;gap:6px;font-size:13px}
+  .sd-weight-input{width:54px;padding:4px 6px;border:1px solid #cbd5e1;border-radius:5px;text-align:center;font-weight:600;color:#1d4ed8}
+  .sd-dim-block{margin-bottom:18px}
+  .sd-dim-head{display:flex;align-items:center;gap:10px;padding:8px 12px;background:#1d4ed8;color:#fff;border-radius:6px 6px 0 0;font-size:13px}
+  .sd-dim-head b{flex-shrink:0}
+  .sd-dim-head .muted{color:#bfdbfe}
+  .sd-dim-score{color:#fbbf24;font-size:14px;font-weight:700;margin:0 4px}
+  .sd-ind-cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;background:#f9fafb;padding:10px;border-radius:0 0 6px 6px;border:1px solid #e2e8f0;border-top:none}
+  .sd-ind-card{background:#fff;border:1px solid #e2e8f0;border-radius:6px;padding:8px 10px;font-size:12px;min-width:0}
+  .sd-ind-head{display:flex;justify-content:space-between;align-items:flex-start;gap:6px;margin-bottom:6px;flex-wrap:wrap}
+  .sd-ind-label{flex:1;min-width:0}
+  .sd-ind-label b{font-size:13px}
+  .sd-ind-weight{display:inline-flex;align-items:center;gap:3px;margin-top:3px;font-size:11px;color:#475569;background:#f1f5f9;padding:2px 6px;border-radius:4px;border:1px solid #e2e8f0}
+  .sd-ind-weight input{width:42px;padding:1px 3px;border:1px solid #cbd5e1;border-radius:3px;text-align:center;font-size:11px;font-weight:600;color:#1d4ed8;background:#fff}
+  .sd-ind-weight .iw-eff{color:#16a34a;font-weight:700;margin-left:4px;font-size:11px}
+  .sd-ind-weight .iw-eff-auto{font-size:10px;color:#94a3b8;margin-left:2px}
+  .sd-ind-cur{display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+  .sd-ind-val{background:#eef2ff;padding:2px 6px;border-radius:4px;font-weight:600;font-size:12px}
+  .sd-ind-hit{background:#fef3c7;color:#92400e;padding:2px 6px;border-radius:10px;font-size:11px;font-weight:600}
+  .sd-hit-veto{background:#fee2e2;color:#dc2626}
+  .sd-ind-score{background:#16a34a;color:#fff;padding:2px 8px;border-radius:10px;font-size:12px;font-weight:700}
+  .sd-score-zero{background:#94a3b8}
+  .sd-bands-tbl{width:100%;border-collapse:collapse;font-size:11px;margin-top:4px;table-layout:auto}
+  .sd-bands-tbl th{padding:4px;text-align:center;background:#f1f5f9;border-bottom:1px solid #cbd5e1;font-weight:600;color:#475569;font-size:11px}
+  .sd-bands-tbl td{padding:3px 4px;text-align:center;border-bottom:1px dashed #e2e8f0;white-space:nowrap}
+  .sd-bands-tbl tr.sd-band-hit{background:#fef3c7}
+  .sd-band-label{display:inline-block;padding:1px 6px;border-radius:10px;font-size:11px;font-weight:600;background:#e2e8f0;color:#475569}
+  .sd-band-label.sd-veto{background:#dc2626;color:#fff}
+  .sd-band-score-badge{display:inline-block;background:#dcfce7;color:#16a34a;border:1px solid #86efac;padding:1px 6px;border-radius:8px;font-size:11px;font-weight:700;min-width:24px}
+  .sd-band-score-zero{background:#f1f5f9;color:#94a3b8;border-color:#cbd5e1}
+  .sd-thr-input{width:56px;padding:2px 4px;border:1px solid #cbd5e1;border-radius:4px;text-align:center;font-size:11px;box-sizing:border-box}
+  .sd-thr-input:focus{outline:none;border-color:#3b82f6;box-shadow:0 0 0 2px rgba(59,130,246,.2)}
+  .sd-score-input{width:44px;padding:2px 4px;border:1px solid #16a34a;border-radius:4px;text-align:center;font-weight:600;color:#16a34a;font-size:12px;box-sizing:border-box}
+  .sd-iw-norm{margin-top:6px;font-size:10px;color:#64748b;line-height:1.5;background:#f8fafc;padding:3px 6px;border-radius:3px;border:1px dashed #cbd5e1}
+  .sd-iw-norm .norm-tag{display:inline-block;padding:0 4px;border-radius:3px;font-weight:600;margin-right:2px}
+  .sd-iw-norm .norm-prop{background:#fef3c7;color:#92400e}
+  .sd-iw-norm .norm-scaled{background:#fee2e2;color:#dc2626}
+  .sd-iw-norm .norm-even{background:#e0e7ff;color:#4338ca}
+  .sd-penalty-box{background:#fff7ed;border:1px solid #fed7aa;padding:10px 14px;border-radius:6px;margin-bottom:14px}
+  .sd-penalty-list{margin-top:4px;font-size:12px}
+  .sd-penalty-tag{display:inline-block;background:#dc2626;color:#fff;padding:2px 8px;border-radius:10px;font-weight:700;font-size:12px}
+  .sd-grades-box{background:#f0f9ff;padding:10px 14px;border-radius:6px;margin-bottom:14px;font-size:12px;display:flex;align-items:center;flex-wrap:wrap;gap:8px}
+  .sd-grade-letter{display:inline-block;width:22px;text-align:center;border-radius:4px;font-weight:700;color:#fff;font-size:12px;padding:2px 0;margin-right:2px}
+  .sd-grade-input-wrap{display:inline-flex;align-items:center;gap:4px;margin-right:6px;font-weight:600}
   /* 宽指快览 v134：参考行业涨跌幅卡片——背景色直观反映涨跌方向，名称加粗 */
   .idx-head{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px}
   .idx-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
@@ -623,7 +734,7 @@
     <header>
       <h1>🧋 加油赚奶茶钱</h1>
       <span class="sub">个人学习用 · 先控风险再谈收益</span>
-      <span class="version" id="appVersion">v20260907144</span>
+      <span class="version" id="appVersion">v20260907156</span>
       <button class="ghost auto-refresh-btn" :class="{active:autoRefresh}" @click="toggleAutoRefresh" :title="autoRefresh?'自动刷新开启中，每5秒更新当前页面数据':'点击开启每5秒自动刷新'">
         {{autoRefresh?'⏸':'▶'}} 自动 5s
       </button>
@@ -843,7 +954,7 @@
                   <td><b>{{c.code}}</b></td>
                   <td>{{c.name}} <span v-if="poolCodes.includes(c.code)" class="pill" style="background:#d8f0e4;color:var(--ok);margin-left:4px">已在池</span></td>
                   <td>{{c.metrics.price}}</td>
-                  <td>{{c.metrics.avg_amplitude}}%</td>
+                  <td>{{ui.fmtPct(c.metrics.avg_amplitude)}}</td>
                   <td>
                     <details v-if="c.metrics && c.metrics.reason_pass && c.metrics.reason_pass.length" style="font-size:12px">
                       <summary style="color:var(--tea-d);cursor:pointer">✅ {{c.metrics.reason_pass.length}} 项符合</summary>
@@ -868,8 +979,7 @@
       <!-- 短线可投池 -->
       <div v-if="view==='pool'">
         <div class="row" style="margin-bottom:10px">
-          <button :class="poolTab==='manual'?'':'ghost'" @click="poolTab='manual'">手工筛选</button>
-          <button :class="poolTab==='recommend'?'':'ghost'" @click="poolTab='recommend';loadRecommendations()">智能筛选</button>
+          <button class="pooltab-label" type="button">手工筛选</button>
         </div>
 
         <!-- 手工筛选 -->
@@ -989,13 +1099,13 @@
                 <span v-else class="muted">-</span>
               </template>
               <template v-else-if="col.key==='turnover'">
-                <span v-if="p.track.turnover!=null" :class="(p.track.turnover>=3 && p.track.turnover<=8)?'up':''">{{p.track.turnover}}%</span>
+                <span v-if="p.track.turnover!=null" :class="(p.track.turnover>=3 && p.track.turnover<=8)?'up':''">{{ui.fmtPct(p.track.turnover)}}</span>
                 <span v-else-if="mktBad(p.track,'s')" class="bad-data" title="实时行情读取异常">数据异常</span>
                 <span v-else class="muted">-</span>
               </template>
               <template v-else-if="col.key==='intra_amplitude'">
                 <span v-if="p.track.intra_amplitude!=null" :class="(p.track.intra_amplitude>=3 && p.track.intra_amplitude<=7)?'up':''"
-                      :title="(p.track.intra_amplitude_source || '取自日线') + ' · '+p.track.intra_amplitude+'% · (最高-最低)/昨收'">{{p.track.intra_amplitude}}%</span>
+                      :title="(p.track.intra_amplitude_source || '取自日线') + ' · '+p.track.intra_amplitude+'% · (最高-最低)/昨收'">{{ui.fmtPct(p.track.intra_amplitude)}}</span>
                 <span v-else-if="mktBad(p.track,'q')" class="bad-data" title="行情读取异常">数据异常</span>
                 <span v-else class="muted">-</span>
               </template>
@@ -1026,7 +1136,7 @@
                 <span v-else class="muted">-</span>
               </template>
               <template v-else-if="col.key==='pct_5d'">
-                <span v-if="p.track.pct_5d!=null" :class="ui.classOf(p.track.pct_5d)" title="近5日累计涨跌幅"><b>{{p.track.pct_5d}}%</b></span>
+                <span v-if="p.track.pct_5d!=null" :class="ui.classOf(p.track.pct_5d)" title="近5日累计涨跌幅"><b>{{ui.fmtPctSigned(p.track.pct_5d)}}</b></span>
                 <span v-else-if="mktBad(p.track,'q')" class="bad-data" title="行情读取异常">数据异常</span>
                 <span v-else class="muted">-</span>
               </template>
@@ -1036,7 +1146,7 @@
                 <span v-else class="muted">-</span>
               </template>
               <template v-else-if="col.key==='main_net_pct'">
-                <span v-if="p.track.main_net_pct!=null" :class="ui.classOf(p.track.main_net_pct)" :title="'主力资金当日净流入占比(%)'">{{p.track.main_net_pct}}%</span>
+                <span v-if="p.track.main_net_pct!=null" :class="ui.classOf(p.track.main_net_pct)" :title="'主力资金当日净流入占比(%)'">{{ui.fmtPctSigned(p.track.main_net_pct)}}</span>
                 <span v-else-if="mktBad(p.track,'f')" class="bad-data" title="资金流数据读取异常">数据异常</span>
                 <span v-else class="muted">-</span>
               </template>
@@ -1051,7 +1161,7 @@
                 <span v-else class="muted">-</span>
               </template>
               <template v-else-if="col.key==='valuation_pct_3y'">
-                <span v-if="p.track.valuation_pct_3y!=null" :class="p.track.valuation_pct_3y<30?'up':(p.track.valuation_pct_3y>70?'down':'')" :title="'近3年分位 '+(p.track.valuation_basis==='price'?'（价格分位近似，PE历史接口暂不可用）':'（PE历史分位）')+(p.track.valuation_pe?(' · PE '+p.track.valuation_pe):'')+(p.track.valuation_pb?(' · PB '+p.track.valuation_pb):'')">{{p.track.valuation_pct_3y}}%</span>
+                <span v-if="p.track.valuation_pct_3y!=null" :class="p.track.valuation_pct_3y<30?'up':(p.track.valuation_pct_3y>70?'down':'')" :title="'近3年分位 '+(p.track.valuation_basis==='price'?'（价格分位近似，PE历史接口暂不可用）':'（PE历史分位）')+(p.track.valuation_pe?(' · PE '+p.track.valuation_pe):'')+(p.track.valuation_pb?(' · PB '+p.track.valuation_pb):'')+' · '+ui.fmtPct(p.track.valuation_pct_3y)">{{ui.fmtPct(p.track.valuation_pct_3y)}}</span>
                 <span v-else-if="mktBad(p.track,'q')" class="bad-data" title="行情读取异常">数据异常</span>
                 <span v-else class="muted">-</span>
               </template>
@@ -1117,15 +1227,15 @@
             <span :title="p.track.pb!=null?'市净率':'-'">{{p.track.pb!=null ? p.track.pb : '-'}}</span>
           </template>
           <template v-else-if="col.key==='pe_pct_3y'">
-            <span v-if="p.track.pe_pct_3y!=null" :class="p.track.pe_pct_3y<30?'up':(p.track.pe_pct_3y>70?'down':'')" :title="'PE近3年分位(%)：区别于「估值分位(价格)」'">{{p.track.pe_pct_3y}}%</span>
+            <span v-if="p.track.pe_pct_3y!=null" :class="p.track.pe_pct_3y<30?'up':(p.track.pe_pct_3y>70?'down':'')" :title="'PE近3年分位(%)：区别于「估值分位(价格)」'">{{ui.fmtPct(p.track.pe_pct_3y)}}</span>
             <span v-else class="muted">-</span>
           </template>
           <template v-else-if="col.key==='net_profit_yoy'">
-            <span v-if="p.track.net_profit_yoy!=null" :class="ui.classOf(p.track.net_profit_yoy)" :title="'净利润同比(%) · 点击看财报明细'" style="cursor:pointer" @click.stop="openFinancial(p)">{{p.track.net_profit_yoy>0?'+':''}}{{p.track.net_profit_yoy}}%</span>
+            <span v-if="p.track.net_profit_yoy!=null" :class="ui.classOf(p.track.net_profit_yoy)" :title="'净利润同比(%) · 点击看财报明细'" style="cursor:pointer" @click.stop="openFinancial(p)">{{ui.fmtPctSigned(p.track.net_profit_yoy)}}</span>
             <span v-else class="muted" @click.stop="openFinancial(p)" style="cursor:pointer">-</span>
           </template>
           <template v-else-if="col.key==='revenue_yoy'">
-            <span v-if="p.track.revenue_yoy!=null" :class="ui.classOf(p.track.revenue_yoy)" :title="'营收同比(%) · 点击看财报明细'" style="cursor:pointer" @click.stop="openFinancial(p)">{{p.track.revenue_yoy>0?'+':''}}{{p.track.revenue_yoy}}%</span>
+            <span v-if="p.track.revenue_yoy!=null" :class="ui.classOf(p.track.revenue_yoy)" :title="'营收同比(%) · 点击看财报明细'" style="cursor:pointer" @click.stop="openFinancial(p)">{{ui.fmtPctSigned(p.track.revenue_yoy)}}</span>
             <span v-else class="muted" @click.stop="openFinancial(p)" style="cursor:pointer">-</span>
           </template>
           <template v-else-if="col.key==='report_date'">
@@ -1137,7 +1247,7 @@
             <span v-else class="muted" @click.stop="openFinancial(p)" style="cursor:pointer">-</span>
           </template>
           <template v-else-if="col.key==='next_ratio'">
-            <span v-if="p.track.next_ratio!=null" :class="p.track.next_ratio>5?'down':''" :title="'解禁占比(%) · 点击看解禁明细'" style="cursor:pointer" @click.stop="openUnlock(p)">{{p.track.next_ratio}}%</span>
+            <span v-if="p.track.next_ratio!=null" :class="p.track.next_ratio>5?'down':''" :title="'解禁占比(%) · 点击看解禁明细'" style="cursor:pointer" @click.stop="openUnlock(p)">{{ui.fmtPct(p.track.next_ratio)}}</span>
             <span v-else class="muted" @click.stop="openUnlock(p)" style="cursor:pointer">-</span>
           </template>
           <template v-else-if="col.key==='next_date'">
@@ -1146,7 +1256,11 @@
           </template>
           <template v-else-if="col.key==='total_score'">
             <span v-if="mktBad(p.track,'q')" class="bad-data" title="行情读取异常，未评分">数据异常</span>
-            <span v-else :class="{'up':(p.track.total_score||0)>=70,'down':(p.track.total_score||0)<40}" :title="'AI选股综合评分(满分100)'"><b>{{p.track.total_score!=null ? p.track.total_score : '-'}}</b></span>
+            <span v-else class="score-cell"
+                  :class="{'up':(p.track.total_score||0)>=70,'down':(p.track.total_score||0)<40}"
+                  :title="'点击查看评分详情与规则(可调权重/阈值,实时重算) · 后端官方分'"
+                  style="cursor:pointer;text-decoration:underline dotted #94a3b8"
+                  @click.stop="openScoreDetail(p)"><b>{{p.track.total_score!=null ? p.track.total_score : '-'}}</b></span>
           </template>
           <template v-else-if="col.key==='position_qty'">{{p.position_qty!=null ? p.position_qty : '-'}}</template>
               <template v-else-if="col.key==='cost_price'">{{p.cost_price!=null ? ui.fmt(p.cost_price) : '-'}}</template>
@@ -1197,7 +1311,7 @@
                 <div><div class="k">20日均成交量</div><div class="v">{{p.track.avg_volume_20!=null?p.track.avg_volume_20:(mktBad(p.track,'q')?'数据异常':'-')}}</div></div>
                 <div><div class="k">量比 / 换手</div><div class="v"><span v-if="p.track.vol_ratio!=null && p.track.vol_ratio>0" :class="ui.volClass(p.track.vol_ratio)">{{p.track.vol_ratio}}</span><span v-else>{{mktBad(p.track,'s')?'数据异常':'-'}}</span> / <span :class="(p.track.turnover!=null && p.track.turnover>=3 && p.track.turnover<=8)?'up':''">{{p.track.turnover!=null ? p.track.turnover+'%' : (mktBad(p.track,'s')?'数据异常':'-')}}</span></div></div>
                 <div><div class="k">日内振幅</div><div class="v"><span :class="(p.track.intra_amplitude!=null && p.track.intra_amplitude>=3 && p.track.intra_amplitude<=7)?'up':''"
-                       :title="(p.track.intra_amplitude_source || '取自日线') + (p.track.intra_amplitude!=null ? ' · '+p.track.intra_amplitude+'%' : '') + ' · (最高-最低)/昨收'">{{p.track.intra_amplitude!=null ? p.track.intra_amplitude+'%' : (mktBad(p.track,'q')?'数据异常':'-')}}</span></div></div>
+                       :title="(p.track.intra_amplitude_source || '取自日线') + (p.track.intra_amplitude!=null ? ' · '+ui.fmtPct(p.track.intra_amplitude) : '') + ' · (最高-最低)/昨收'">{{p.track.intra_amplitude!=null ? ui.fmtPct(p.track.intra_amplitude) : (mktBad(p.track,'q')?'数据异常':'-')}}</span></div></div>
                 <div><div class="k">MA5 / MA20</div><div v-if="p.track.ma5!=null || p.track.ma20!=null" class="v"><span :class="p.track.above_ma5===true?'up':(p.track.above_ma5===false?'down':'')">{{ui.fmt(p.track.ma5)}}</span>{{p.track.above_ma5===true?'⬆':(p.track.above_ma5===false?'⬇':'—')}} / <span :class="p.track.above_ma20===true?'up':(p.track.above_ma20===false?'down':'')">{{ui.fmt(p.track.ma20)}}</span>{{p.track.above_ma20===true?'⬆':(p.track.above_ma20===false?'⬇':'—')}}</div><div v-else class="v">{{mktBad(p.track,'q')?'数据异常':'—'}}</div></div>
                 <div><div class="k">箱体位置</div><div class="v">{{p.track.box_pos!==undefined ? Math.round(p.track.box_pos*100)+'%' : (mktBad(p.track,'q')?'数据异常':'-')}}</div></div>
                 <div><div class="k">操作建议</div><div class="v"><button v-if="p.track.operation_advice" class="chip pool-card-advice" :class="{alert:p.track.operation_advice.key==='reduce', add:p.track.operation_advice.key==='buy'||p.track.operation_advice.key==='t', reduce:p.track.operation_advice.key==='sell', danger:p.track.operation_advice.key==='wait'}" @click.stop="openAdviceModal(p)" :title="p.track.operation_advice.summary">{{p.track.operation_advice.title}}</button><span v-else-if="mktBad(p.track,'q')" class="bad-data" title="行情读取异常，无法生成建议">数据异常</span><span v-else class="muted">-</span></div></div>
@@ -1227,30 +1341,6 @@
         </div>
         </div>
 
-        <!-- 智能筛选 -->
-        <div v-if="poolTab==='recommend'">
-          <div :class="['hintbar-cell', hintOpen==='recommend'?'is-open':'']" style="margin-bottom:10px">
-            <button class="hintbar-toggle" @click.stop="hintOpen = (hintOpen==='recommend'?'':'recommend')">{{hintOpen==='recommend'?'收起说明':'提示说明'}}</button>
-            <div class="hintbar">基于你的「偏好分析」结果，系统自动匹配方案并筛选全市场标的。已有持仓/已加入可投池的会自动过滤。</div>
-          </div>
-          <div class="card"><div class="row"><b>智能筛选</b>
-            <button @click="loadRecommendations">刷新筛选</button>
-            <span v-if="recommendations" class="muted">{{recommendations.msg}}</span>
-          </div></div>
-          <div class="card">
-            <div v-if="!recommendations" class="muted">点击上方「智能筛选」标签加载</div>
-            <div v-else-if="!recommendations.items.length" class="muted">暂无符合。可能原因：① 未完成偏好分析 ② 筛选条件过严 ③ 全市场暂无符合条件标的。可先去「偏好分析」或「选股模型」调整。</div>
-            <div v-for="c in recommendations.items" :key="c.code" style="padding:8px 0;border-bottom:1px dashed var(--line)">
-              <div class="kv" style="border-bottom:none">
-                <span><b>{{c.name}} {{c.code}}</b>
-                  <span v-if="c.industry" class="pill" style="background:#eff6ff;color:#1d4ed8;margin-left:4px">{{c.industry}}</span>
-                  <span class="muted" style="margin-left:6px" v-if="c.metrics && c.metrics.price">价{{ui.fmt(c.metrics.price)}} 振幅{{c.metrics.avg_amplitude}}%</span>
-                </span>
-                <span><button class="ghost btn-sm" @click="addRecToPool(c.code)">加入可投池</button></span>
-              </div>
-            </div>
-          </div>
-        </div>
       </div>
 
       <!-- 宽指快览：配置弹窗 v128 -->
@@ -1668,9 +1758,9 @@
         </div>
       </div>
 
-      <!-- 可投池事件风险标签详情弹窗 -->
+      <!-- v151: 可投池事件风险标签详情弹窗(加权威披露平台跳转链 + 每条 trigger ↗ 小链接) -->
       <div v-if="evtRiskModal.show" class="modal" @click.self="closeEvtRiskModal">
-        <div class="modal-box" style="max-width:640px">
+        <div class="modal-box" style="max-width:720px">
           <div class="modal-head">
             <h3>事件风险详情<span class="dtag">触发依据/公告</span></h3>
             <button type="button" class="close-x" @click="closeEvtRiskModal" aria-label="关闭">×</button>
@@ -1680,14 +1770,29 @@
               <span>{{evtRiskModal.name}} {{evtRiskModal.code}}</span>
               <b><span class="pill risk">{{evtRiskModal.tag}}</span></b>
             </div>
-            <div style="margin-top:14px; font-weight:600; color:#374151; margin-bottom:8px">详情 / 触发依据：</div>
+            <!-- v151: 顶部增加权威来源说明,告诉用户数据出处 -->
+            <div class="muted" style="margin-top:8px; font-size:12px; line-height:1.5">
+              「{{evtRiskModal.tag}}」的触发依据按以下规则生成:<br>
+              · 业绩亏损 / 预亏 / 商誉高 → 取自<a :href="evtRiskCninfoListUrl()" target="_blank" rel="noopener" class="extlink">巨潮资讯(定期报告)</a>的财报披露数据(报告期 {{evtRiskModal.details[0] && evtRiskModal.details[0].time || '—'}})<br>
+              · 大额减持 / 股东增持 / 异动 / 监管 / 质押 / 解禁 → 扫描<a :href="evtRiskEastmoneyUrl()" target="_blank" rel="noopener" class="extlink">东方财富 F10 大事提醒</a>近 5 日新闻标题<br>
+              · ST风险 / 名称含「退」→ 取证券简称字符匹配
+            </div>
+            <div style="margin-top:14px; font-weight:600; color:#374151; margin-bottom:8px">详情 / 触发依据(点 ↗ 直达权威披露原文):</div>
             <div v-for="(item, idx) in evtRiskModal.details" :key="idx" style="display:flex; gap:10px; margin:8px 0; line-height:1.55; align-items:flex-start">
               <span v-if="item.sentiment" :class="item.sentiment==='bull'?'up':(item.sentiment==='bear'?'down':'muted')" style="flex:0 0 auto; font-weight:700; min-width:32px">{{item.sentiment==='bull'?'利好':(item.sentiment==='bear'?'利空':'中性')}}</span>
-              <span style="color:#374151">{{item.text}} <small v-if="item.time" class="muted" style="margin-left:4px">（{{item.time}}）</small></span>
+              <span style="color:#374151; flex:1 1 auto">{{item.text}} <small v-if="item.time" class="muted" style="margin-left:4px">（{{item.time}}）</small></span>
+              <!-- v151: 每条 trigger ↗ 小图标,按财报/新闻分流跳 cninfo 全文搜索 -->
+              <a :href="evtRiskItemHref(item)" target="_blank" rel="noopener" class="extlink extlink-sm" :title="evtRiskItemTitle(item)">↗</a>
             </div>
             <div v-if="!evtRiskModal.details || !evtRiskModal.details.length" class="muted" style="margin-top:8px">暂无更详细的触发依据</div>
           </div>
-          <div class="modal-foot">
+          <div class="modal-foot" style="display:flex; flex-wrap:wrap; gap:8px; justify-content:space-between; align-items:center">
+            <div style="display:flex; flex-wrap:wrap; gap:6px">
+              <!-- v151: 权威披露平台跳转按钮(按该股代码拼接,新窗口打开) -->
+              <a :href="evtRiskCninfoListUrl()" target="_blank" rel="noopener" class="ghost extlink" title="巨潮资讯网 - 该股全部公告列表(深交所/上交所/北交所权威披露)">巨潮资讯 ↗</a>
+              <a :href="evtRiskEastmoneyUrl()" target="_blank" rel="noopener" class="ghost extlink" title="东方财富 - 该股公告列表 + F10 大事提醒">东财公告 ↗</a>
+              <a :href="evtRiskSinaUrl()" target="_blank" rel="noopener" class="ghost extlink" title="新浪财经 - 该股财务摘要 + 利润表/资产负债表">新浪财务 ↗</a>
+            </div>
             <button type="button" class="ghost" @click="closeEvtRiskModal">关闭</button>
           </div>
         </div>
@@ -1713,7 +1818,7 @@
         </div>
       </div>
 
-      <!-- 可投池财报明细弹窗 (#66) -->
+      <!-- 可投池财报明细弹窗 (#66 / v153:盈亏状态banner+多源跳链) -->
       <div v-if="financialModal.show" class="modal" @click.self="closeFinancialModal">
         <div class="modal-box" style="max-width:560px">
           <div class="modal-head">
@@ -1722,16 +1827,47 @@
           </div>
           <div class="modal-body">
             <div class="kv" style="margin-top:0"><span>{{financialModal.name}} {{financialModal.code}}</span></div>
+            <!-- v153: 本期盈亏状态 banner(核心防误判,严防亏损被染红"up"误读) -->
+            <div v-if="financialModal.profit_state" :class="['fin-state-banner', financialModal.profit_state]">
+              <span class="fsb-icon">
+                <template v-if="financialModal.profit_state==='loss'">⚠</template>
+                <template v-else-if="financialModal.profit_state==='profit'">✓</template>
+                <template v-else>–</template>
+              </span>
+              <div class="fsb-text">
+                <div>
+                  <template v-if="financialModal.profit_state==='loss'">本期<strong>亏损</strong> {{(financialModal.net_profit/1e8).toFixed(2)}} 亿</template>
+                  <template v-else-if="financialModal.profit_state==='profit'">本期<strong>盈利</strong> {{(financialModal.net_profit/1e8).toFixed(2)}} 亿</template>
+                  <template v-else>本期<strong>盈亏平衡</strong></template>
+                  <span v-if="financialModal.yoy_label" class="yoy-pill">{{financialModal.yoy_label}} {{ui.fmtPctSigned(financialModal.net_profit_yoy)}}</span>
+                </div>
+                <div v-if="financialModal.profit_state==='loss' && financialModal.net_profit_yoy!=null && financialModal.net_profit_yoy>0" class="fsb-sub">
+                  数据源同比为正数,实际是【亏损扩大】(东财对亏损基期取绝对值做分母),不要误读为扭亏。
+                </div>
+              </div>
+            </div>
             <div class="kv"><span>报告期</span><b>{{financialModal.report_date||'暂无'}}</b></div>
-            <div class="kv"><span>净利润(亿)</span><b :class="financialModal.net_profit_yoy>0?'up':'down'">{{financialModal.net_profit!=null ? (financialModal.net_profit/1e8).toFixed(2) : '暂无'}}</b></div>
-            <div class="kv"><span>净利润同比</span><b :class="financialModal.net_profit_yoy>0?'up':'down'">{{financialModal.net_profit_yoy!=null ? (financialModal.net_profit_yoy>0?'+':'')+financialModal.net_profit_yoy+'%' : '暂无'}}</b></div>
-            <div class="kv"><span>营收同比</span><b :class="financialModal.revenue_yoy>0?'up':'down'">{{financialModal.revenue_yoy!=null ? (financialModal.revenue_yoy>0?'+':'')+financialModal.revenue_yoy+'%' : '暂无'}}</b></div>
-            <div class="kv"><span>EPS(元)</span><b>{{financialModal.eps!=null ? financialModal.eps : '暂无'}}</b></div>
+            <div class="kv"><span>净利润(亿)</span><b :class="financialModal.net_profit!=null ? (financialModal.net_profit>=0?'up':'down') : ''">{{financialModal.net_profit!=null ? (financialModal.net_profit/1e8).toFixed(2) : '暂无'}}</b></div>
+            <!-- v153 染色修正:净利为负时(亏损/亏损扩大)染警示色,不再用 yoy 误导 -->
+            <div class="kv"><span>净利润同比</span><b :class="financialModal.net_profit!=null ? (financialModal.net_profit>=0 ? (financialModal.net_profit_yoy>0?'up':'down') : (financialModal.net_profit_yoy>0?'down':'down')) : ''">{{ui.fmtPctSigned(financialModal.net_profit_yoy)}}</b></div>
+            <div class="kv"><span>营收同比</span><b :class="financialModal.revenue_yoy!=null ? (financialModal.revenue_yoy>=0?'up':'down') : ''">{{ui.fmtPctSigned(financialModal.revenue_yoy)}}</b></div>
+            <div class="kv"><span>EPS(元)</span><b :class="financialModal.eps!=null ? (financialModal.eps>=0?'up':'down') : ''">{{financialModal.eps!=null ? financialModal.eps.toFixed(4) : '暂无'}}</b></div>
+            <!-- v153: 去年同期对比(由 yoy 反推,仅约数) -->
+            <div v-if="financialModal.last_year_net_profit!=null" class="kv"><span>去年同期净利(约)</span><b :class="financialModal.last_year_net_profit>=0?'up':'down'" :title="'基于本期净利和同比百分比反推的约数。真实值以原年报为准(东财对亏损基期取绝对值做分母,反推精度有限)'">{{(financialModal.last_year_net_profit/1e8).toFixed(2)}}</b></div>
             <div class="kv"><span>股东权益(亿)</span><b>{{financialModal.equity!=null ? (financialModal.equity/1e8).toFixed(2) : '暂无'}}</b></div>
             <div class="kv"><span>商誉(亿)</span><b :class="financialModal.goodwill>0?'down':''">{{financialModal.goodwill!=null ? (financialModal.goodwill/1e8).toFixed(2) : '暂无'}}</b></div>
-            <div class="muted" style="margin-top:10px">商誉越高、占净资产比越大，减值风险越高。</div>
+            <div class="muted" style="margin-top:10px">商誉越高、占净资产比越大,减值风险越高。</div>
+            <div class="muted" style="margin-top:6px;font-size:11px">
+              数据源:东方财富上市公司业绩报表(中转自交易所,与巨潮披露同源)。财务数值 <strong>最终以公司公告原件为准</strong>,必要时请人工对照查看下方权威披露平台。
+            </div>
           </div>
-          <div class="modal-foot">
+          <div class="modal-foot" style="display:flex; flex-wrap:wrap; gap:8px; justify-content:space-between; align-items:center">
+            <div style="display:flex; flex-wrap:wrap; gap:6px">
+              <!-- v153: 多源权威披露平台跳转(按本期报告期日期范围限定) -->
+              <a v-if="financialModal.code" :href="financialCninfoFulltextUrl()" target="_blank" rel="noopener" class="ghost extlink" :title="'巨潮资讯 - 本期'+ (financialModal.report_date||'') +'前后该股公告全文搜索,定位报告原件'">巨潮全文 ↗</a>
+              <a v-if="financialModal.code" :href="financialEastmoneyF10Url()" target="_blank" rel="noopener" class="ghost extlink" title="东方财富 F10 - 该股主要财务指标/利润表/资产负债表/现金流量表全表查询">东财F10 ↗</a>
+              <a v-if="financialModal.code" :href="financialSinaUrl()" target="_blank" rel="noopener" class="ghost extlink" title="新浪财经 - 该股主要财务指标 + 利润表 + 资产负债表">新浪财务 ↗</a>
+            </div>
             <button type="button" class="ghost" @click="closeFinancialModal">关闭</button>
           </div>
         </div>
@@ -1739,7 +1875,7 @@
 
       <!-- v143: 日初判断录入弹窗 — 上半录入(趋势/价位/依据) + 下半当日历史 -->
       <div v-if="dayViewModal.show" class="modal" @click.self="closeDayViewModal">
-        <div class="modal-box" style="max-width:640px">
+        <div class="modal-box" style="max-width:780px">
           <div class="modal-head">
             <h3>日初判断录入 — {{ dayViewModal.name }} {{ dayViewModal.code }}</h3>
             <button type="button" class="close-x" @click="closeDayViewModal" aria-label="关闭">×</button>
@@ -1841,7 +1977,21 @@
                     <td :class="(it.deviation!=null && it.deviation>0) ? 'up' : ((it.deviation!=null && it.deviation<0) ? 'down' : '')">
                       {{ it.deviation_pct != null ? (it.deviation_pct>0?'+':'') + it.deviation_pct + '%' : '-' }}
                     </td>
-                    <td :title="it.deviation_reason || ''">{{ it.deviation_reason || '-' }}</td>
+                    <td class="wl-recap-cell" :class="{ 'wl-recap-dirty': !!it._recapDirty }" :data-date="it.trade_date">
+                      <textarea class="wl-recap-input" rows="1" maxlength="500"
+                        placeholder="一行短句记下偏离原因(默认留空,最长 500 字)"
+                        v-model="it._recapDraft"
+                        @click.stop
+                        @input="onRecapInput(it)"
+                      ></textarea>
+                      <div class="wl-recap-meta muted" style="font-size:11px;margin-top:4px;line-height:1.4">
+                        <span>{{ (it._recapDraft||'').length }}/500</span>
+                        <span v-if="it._saving" style="color:#0ea5e9;margin-left:8px;font-weight:600">⏳ 保存中...</span>
+                        <span v-else-if="it._recapDirty" style="color:#dc2626;margin-left:8px;font-weight:600">● 未保存</span>
+                        <span v-else-if="it._recapDraft && it.recap" style="color:#16a34a;margin-left:8px">✓ 已保存于 {{ fmtDateShort(it.recap_updated_at) }} · {{ it.recap_user || '-' }}</span>
+                        <span v-else style="margin-left:8px">默认留空 · 输入后点右下「保存」入库</span>
+                      </div>
+                    </td>
                   </tr>
                   <tr v-if="it._expanded" class="wl-detail-row">
                     <td colspan="10">
@@ -1867,8 +2017,221 @@
             </table>
           </div>
           <div class="modal-foot">
-            <span class="muted" style="font-size:12px;margin-right:auto">偏离度 = (目标价位 − 收盘) / 目标价位;同交易日多次修改,取最后一条作为复盘输入</span>
-            <button type="button" class="ghost" @click="closeWatchLogModal">关闭</button>
+            <span class="muted" style="font-size:12px;margin-right:auto;line-height:1.5;flex:1;min-width:240px">
+              <b>算法口径:</b>分时均价 = 当日成交额 ÷ (成交量 × 100),单位 元/股,跨价位股票可比;
+              偏离度 = (目标价位 − 收盘价) ÷ 收盘价,
+              <span class="up">正值</span>=收盘低于目标(未达目标位),
+              <span class="down">负值</span>=收盘高于目标(突破目标位);
+              同一交易日多次修改取最后一条;「偏离原因复盘」默认可编辑(默认留空,不预填后端模板话术),改完后点下方「保存」统一入库。
+            </span>
+            <!-- v154: 保存过程的状态反馈横条 -->
+            <span v-if="watchLogModal.saving" style="font-size:13px;color:#0ea5e9;font-weight:600;margin-right:8px;display:inline-flex;align-items:center;gap:4px">
+              <span style="display:inline-block;width:12px;height:12px;border:2px solid #0ea5e9;border-top-color:transparent;border-radius:50%;animation:wl-spin 0.8s linear infinite"></span>
+              正在保存...
+            </span>
+            <span v-else-if="watchLogModal.justSaved" style="font-size:13px;color:#16a34a;font-weight:600;margin-right:8px">✓ 已保存 {{ watchLogModal.justSavedCount }} 条</span>
+            <span v-if="watchLogModal.dirtyCount>0" style="font-size:12px;color:#dc2626;font-weight:600;margin-right:8px">{{ watchLogModal.dirtyCount }} 条未保存</span>
+            <button type="button" class="ghost"
+                    @click="saveWatchLogRecaps"
+                    :disabled="watchLogModal.saving || watchLogModal.dirtyCount===0"
+                    :title="watchLogModal.dirtyCount===0 ? '无修改内容' : '保存所有行的复盘修改'">
+              {{ watchLogModal.saving ? '保存中...' : '保存' }}
+            </button>
+            <button type="button" @click="closeWatchLogModal">关闭</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- v148: 综合评分详情+规则可调弹窗 -->
+      <div v-if="scoreDetailModal.show" class="modal" @click.self="closeScoreDetail" data-modal="scoreDetail">
+        <div class="modal-box" style="max-width:1280px">
+          <div class="modal-head">
+            <h3>综合评分详情 — {{ scoreDetailModal.name }} <span class="muted">{{ scoreDetailModal.code }}</span>
+              <span style="float:right;font-size:13px">
+                <span style="margin-right:14px"><span class="muted">后端官方分</span>
+                  <b :class="(scoreDetailModal._result && scoreDetailModal._result.officialScore>=70)?'up':(scoreDetailModal._result && scoreDetailModal._result.officialScore<40?'down':'')"
+                     style="font-size:18px;color:#1d4ed8">{{ (scoreDetailModal._result && scoreDetailModal._result.officialScore!=null) ? scoreDetailModal._result.officialScore : '-' }}</b>
+                </span>
+                <span><span class="muted">当前实时分</span>
+                  <b :class="(scoreDetailModal._result && scoreDetailModal._result.userScore>=70)?'up':(scoreDetailModal._result && scoreDetailModal._result.userScore<40?'down':'')"
+                     style="font-size:20px">{{ (scoreDetailModal._result && scoreDetailModal._result.userScore!=null) ? scoreDetailModal._result.userScore : '-' }}</b>
+                  <span class="sd-grade" v-if="scoreDetailModal._result && scoreDetailModal._result.userGrade"
+                        :class="'grade-' + scoreDetailModal._result.userGrade">{{ scoreDetailModal._result.userGrade }}</span>
+                  <span class="sd-grade grade-" v-if="scoreDetailModal._result && scoreDetailModal._result.officialGrade">→后端{{ scoreDetailModal._result.officialGrade }}</span>
+                </span>
+              </span>
+            </h3>
+            <button type="button" class="close-x" @click="closeScoreDetail" aria-label="关闭">×</button>
+          </div>
+
+          <div class="modal-body" style="max-height:70vh;overflow-y:auto">
+            <!-- 一票否决提示(后端已算好,直接展示) -->
+            <div v-if="scoreDetailModal._result && scoreDetailModal._result.officialVetos && scoreDetailModal._result.officialVetos.length" class="sd-veto-box">
+              <b>⚠ 一票否决命中(总分强制为 0):</b>
+              <ul><li v-for="(v,vi) in scoreDetailModal._result.officialVetos" :key="vi">{{ v }}</li></ul>
+              <div class="muted" style="margin-top:4px;font-size:11px">提示:否决项是硬性筛选标准,与下方分项独立生效</div>
+            </div>
+
+            <!-- 三维度权重编辑 -->
+            <div class="sd-dim-row">
+              <span class="muted" style="font-weight:600">维度权重(可调,默认 A40+B35+C25=100):</span>
+              <label>A 流动性/波动
+                <input type="number" min="0" max="100" step="1"
+                       :value="scoreDetailModal.rules.weights.A"
+                       @input="onChangeDimWeight('A', $event.target.value)" class="sd-weight-input" />
+              </label>
+              <label>B 趋势/位置
+                <input type="number" min="0" max="100" step="1"
+                       :value="scoreDetailModal.rules.weights.B"
+                       @input="onChangeDimWeight('B', $event.target.value)" class="sd-weight-input" />
+              </label>
+              <label>C 资金/板块
+                <input type="number" min="0" max="100" step="1"
+                       :value="scoreDetailModal.rules.weights.C"
+                       @input="onChangeDimWeight('C', $event.target.value)" class="sd-weight-input" />
+              </label>
+              <span class="muted" style="font-size:11px">权重=0 该维度失分,不归零总分</span>
+            </div>
+
+            <!-- 9 项指标 - 按维度分组 -->
+            <template v-for="dimKey in ['A','B','C']" :key="dimKey">
+              <div class="sd-dim-block">
+                <div class="sd-dim-head">
+                  <b>{{ dimKey === 'A' ? 'A. 流动性与波动' : dimKey === 'B' ? 'B. 趋势与位置' : 'C. 资金与板块' }}</b>
+                  <span class="muted">(维度权重 {{ scoreDetailModal.rules.weights[dimKey] }}, 当前维度得分
+                    <b :class="'sd-dim-score'">
+                      {{ scoreDetailModal._result && scoreDetailModal._result.userDimScore ? scoreDetailModal._result.userDimScore[dimKey] : 0 }}
+                    </b>
+                    / {{ scoreDetailModal.rules.weights[dimKey] }})
+                  </span>
+                  <span class="sd-iw-norm" v-if="scoreDetailModal._result && scoreDetailModal._result.dimIwNorm && scoreDetailModal._result.dimIwNorm[dimKey]">
+                    <template v-if="scoreDetailModal._result.dimIwNorm[dimKey].mode==='ok'">
+                      <span class="norm-tag" style="background:#dcfce7;color:#16a34a">✓ 100%</span>该分类指标权重正好填满,无自动调整
+                    </template>
+                    <template v-else-if="scoreDetailModal._result.dimIwNorm[dimKey].mode==='prop'">
+                      <span class="norm-tag norm-prop">△ 按比例均摊</span>{{ scoreDetailModal._result.dimIwNorm[dimKey].msg }}
+                    </template>
+                    <template v-else-if="scoreDetailModal._result.dimIwNorm[dimKey].mode==='scaled'">
+                      <span class="norm-tag norm-scaled">⚠ 等比缩放</span>{{ scoreDetailModal._result.dimIwNorm[dimKey].msg }}
+                    </template>
+                    <template v-else>
+                      <span class="norm-tag norm-even">○ 均匀分配</span>{{ scoreDetailModal._result.dimIwNorm[dimKey].msg }}
+                    </template>
+                  </span>
+                </div>
+                <div class="sd-ind-cards">
+                  <div v-for="ind in scoreDetailModal.rules.indicators.filter(x=>x.dim===dimKey)"
+                       :key="ind.id" class="sd-ind-card">
+                    <div class="sd-ind-head">
+                      <span class="sd-ind-label">
+                        <b>{{ ind.label }}</b>
+                        <span class="muted" style="font-weight:normal">· 满分 {{ ind.max }}</span>
+                      </span>
+                      <span class="sd-ind-cur" v-if="scoreDetailModal._result && scoreDetailModal._result.indicators">
+                        <span class="sd-ind-val">{{ scoreDetailModal._result.indicators.find(r=>r.id===ind.id).currentStr }}</span>
+                        <span class="sd-ind-hit"
+                              :class="{'sd-hit-veto': scoreDetailModal._result.indicators.find(r=>r.id===ind.id).veto}"
+                              v-if="scoreDetailModal._result.indicators.find(r=>r.id===ind.id).bandLabel">
+                          命中「{{ scoreDetailModal._result.indicators.find(r=>r.id===ind.id).bandLabel }}」
+                        </span>
+                        <span class="sd-ind-score"
+                              :class="{'sd-score-zero': (scoreDetailModal._result.indicators.find(r=>r.id===ind.id).score===0)}">
+                          +{{ scoreDetailModal._result.indicators.find(r=>r.id===ind.id).score }}
+                        </span>
+                      </span>
+                    </div>
+                    <!-- v155: 指标权重(分类内指标级独立权重,默认均分;用户可调,累计=100% 剩余按比例均摊 / >100% 等比缩放) -->
+                    <div class="sd-ind-weight">
+                      <span>权重</span>
+                      <input type="number" min="0" max="100" step="1"
+                             :value="ind.iw != null ? ind.iw : 0"
+                             @input="onChangeIndWeight(ind.id, $event.target.value)" />%
+                      <span class="iw-eff">实算 {{ (scoreDetailModal._result && scoreDetailModal._result.indIwEff && scoreDetailModal._result.indIwEff[ind.id] != null) ? scoreDetailModal._result.indIwEff[ind.id].toFixed(1) : '0.0' }}%</span>
+                      <span class="iw-eff-auto" v-if="scoreDetailModal._result && scoreDetailModal._result.indIwEff && scoreDetailModal._result.indIwEff[ind.id] != null && scoreDetailModal._result.indIwEff[ind.id] !== ind.iw">(自动)</span>
+                    </div>
+                    <!-- 阈值编辑 -->
+                    <div class="sd-bands-tbl-wrap">
+                      <table class="sd-bands-tbl">
+                        <thead>
+                          <tr>
+                            <th style="width:62px">分档</th>
+                            <th style="width:178px">区间(≥/&lt;)</th>
+                            <th style="width:62px">该档得分</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr v-for="(b, bi) in ind.bands" :key="bi"
+                              :class="{'sd-band-hit': (scoreDetailModal._result && scoreDetailModal._result.indicators && scoreDetailModal._result.indicators.find(r=>r.id===ind.id) && scoreDetailModal._result.indicators.find(r=>r.id===ind.id).bandLabel===b.label)}">
+                            <td>
+                              <span class="sd-band-label" :class="{'sd-veto': b.veto}">{{ b.label }}</span>
+                            </td>
+                            <td>
+                              <template v-if="b.attr !== undefined">
+                                <span class="muted" style="font-size:11px">{{ b.attr === 'any' ? '任意(中性)' : b.attr }}</span>
+                              </template>
+                              <template v-else>
+                                <input type="number" :value="b.min" step="0.01"
+                                       @input="onChangeBandMin(ind.id, bi, $event.target.value)"
+                                       class="sd-thr-input" />&nbsp;~&nbsp;
+                                <input type="number" :value="b.lt === null ? '' : b.lt" step="0.01" placeholder="∞"
+                                       @input="onChangeBandLt(ind.id, bi, $event.target.value)"
+                                       class="sd-thr-input" />
+                              </template>
+                            </td>
+                            <td>
+                              <input type="number" :value="b.score" min="0" step="1"
+                                     @input="onChangeBandScore(ind.id, b.label, $event.target.value)"
+                                     class="sd-score-input" />
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                      <div class="muted" style="font-size:11px;margin-top:4px" v-if="scoreDetailModal._result && scoreDetailModal._result.indicators">
+                        {{ scoreDetailModal._result.indicators.find(r=>r.id===ind.id).hitReason }}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </template>
+
+            <!-- 扣分项(展示来源,不可编辑) -->
+            <div class="sd-penalty-box">
+              <b style="color:#dc2626">扣分项(后端计算,不可编辑):</b>
+              <div v-if="scoreDetailModal._result && scoreDetailModal._result.officialPenalty > 0" class="sd-penalty-list">
+                <span class="sd-penalty-tag">总扣分 -{{ scoreDetailModal._result.officialPenalty }}</span>
+                <span class="muted" style="margin-left:8px">来源:接近前高且缩量 或 近期大阴线≤-8%</span>
+              </div>
+              <div v-else class="muted">无扣分项触发</div>
+            </div>
+
+            <!-- 等级阈值 -->
+            <div class="sd-grades-box">
+              <b>等级分档:</b>
+              <span v-for="(g,gi) in scoreDetailModal.rules.grades" :key="gi" class="sd-grade-input-wrap">
+                <span class="sd-grade-letter" :class="'grade-' + g.grade">{{ g.grade }}</span>≥
+                <input type="number" :value="g.min" step="1" min="0" max="100"
+                       @input="onChangeGradeMin(gi, $event.target.value)"
+                       class="sd-thr-input" style="width:54px" />
+                <span v-if="gi < scoreDetailModal.rules.grades.length - 1" class="muted">/</span>
+              </span>
+              <span class="muted" style="font-size:11px;margin-left:8px">当前实时分 → {{ scoreDetailModal._result ? scoreDetailModal._result.userGrade : '-' }}级</span>
+            </div>
+
+            <!-- 备注说明 -->
+            <div class="sd-foot-note muted" style="font-size:11px;line-height:1.6;border-top:1px dashed var(--line);padding-top:8px;margin-top:12px">
+              <b>口径说明:</b>① 默认 9 项指标+3 维度权重的分档与后端一致,改值→前端实时重算 userScore(列表显示仍是后端官方分 total_score);
+              ② 阈值编辑后,同档位自愈排序(数值型按 min 升序);attr 离散档不可编辑阈值;
+              ③ 维度归一化: (该维度原始得分 ÷ 该维度满分) × 维度权重 = 用户维度得分,避免改满分错乱;
+              ④ 扣分/一票否决由后端算好,弹窗内仅展示,不在前端重算;
+              ⑤ 修改后可点「保存为我的权重」→ localStorage 持久化,下次打开仍生效(清浏览器数据会重置)。
+            </div>
+
+          </div>
+          <div class="modal-foot">
+            <button type="button" class="ghost" @click="resetScoringRules">恢复默认</button>
+            <button type="button" class="ghost" @click="saveScoringRules">保存为我的权重</button>
+            <button type="button" @click="closeScoreDetail">关闭</button>
           </div>
         </div>
       </div>
@@ -2223,10 +2586,10 @@
             <div class="grid g4" style="margin-top:10px">
             <div class="kv"><span>实时价</span><b :style="t.data.realtime.change_pct>=0?'color:var(--up)':'color:var(--down)'">{{t.data.section1.price}}
               <span v-if="t.data.section1.realtime_confidence !== 'ok'" :class="{'warn':t.data.section1.realtime_confidence==='adjusted' || t.data.section1.realtime_confidence==='diverged','red':t.data.section1.realtime_confidence==='abnormal'}" style="font-size:10px;font-weight:normal;display:block;margin-top:2px">
-                ⚠️ 实时盘口为未复权价，已按日线前复权修正（差异 {{t.data.section1.realtime_diff_pct}}%）
+                ⚠️ 实时盘口为未复权价，已按日线前复权修正（差异 {{ui.fmtPct(t.data.section1.realtime_diff_pct)}}）
               </span>
             </b></div>
-            <div class="kv"><span>涨跌额/幅</span><b :style="t.data.realtime.change_pct>=0?'color:var(--up)':'color:var(--down)'">{{t.data.section1.change}} / {{t.data.section1.change_pct}}%</b></div>
+            <div class="kv"><span>涨跌额/幅</span><b :style="t.data.realtime.change_pct>=0?'color:var(--up)':'color:var(--down)'">{{t.data.section1.change}} / {{ui.fmtPctSigned(t.data.section1.change_pct)}}</b></div>
               <div class="kv"><span>今高/今低</span><b>{{t.data.section1.today_high}} / {{t.data.section1.today_low}}</b></div>
               <div class="kv"><span>分时均价(黄线)</span><b>{{t.data.section1.avg_price}}</b></div>
             </div>
@@ -2267,7 +2630,7 @@
               <div class="sub-title">量能</div>
               <div class="kv"><span>量比</span><b>{{t.data.section2.vol_ratio}} — {{t.data.section2.vol_ratio_text}}</b></div>
               <div class="kv"><span>成交量对比</span><b>今日 {{fmtVol(t.data.section2.today_volume)}} 万手 vs 上一交易日{{t.data.section2.prev_date?'('+t.data.section2.prev_date+')':''}} {{fmtVol(t.data.section2.prev_volume)}} 万手 → {{t.data.section2.amount_cmp}}</b></div>
-              <div class="kv"><span>换手率</span><b>{{t.data.section2.turnover}}% — {{t.data.section2.turnover_text}}</b></div>
+              <div class="kv"><span>换手率</span><b>{{ui.fmtPct(t.data.section2.turnover)}} — {{t.data.section2.turnover_text}}</b></div>
               <div class="kv"><span>5日线对比</span><b>{{t.data.section4.ma5_signal}}（MA5={{t.data.section4.ma5}}）</b></div>
               <div class="kv"><span>量价匹配</span><b :style="t.data.section4.vp_level==='risk'?'color:var(--danger)':(t.data.section4.vp_level==='ok'?'color:var(--ok)':'')">{{t.data.section4.vp_text}}</b></div>
             </div>
@@ -2322,7 +2685,7 @@
               <i class="info" :title="enh.confidence.note">i</i>
             </h3>
             <div class="row" style="margin-bottom:8px">
-              <span class="tag">ATR(14) = {{enh.atr}}（日均波幅 {{enh.atr_pct}}%）</span>
+              <span class="tag">ATR(14) = {{enh.atr}}（日均波幅 {{ui.fmtPct(enh.atr_pct)}}）</span>
               <span class="tag">{{enh.is_intraday?'交易时段·价位随现价动态刷新':'非交易时段·价位以最新价推算'}}</span>
             </div>
             <!-- 口径说明：放在表格上方，更显眼（amber 警示色，与 ⚠️ 语义一致） -->
@@ -2335,7 +2698,7 @@
                   <td>{{tr.conf_label}}<div class="muted">现价 ± {{tr.c}}×ATR</div></td>
                   <td><b style="color:var(--up)">{{tr.sell}}</b><span v-if="tr.sell_trig" class="trig">已触发</span></td>
                   <td><b style="color:var(--down)">{{tr.buy}}</b><span v-if="tr.buy_trig" class="trig">已触发</span></td>
-                  <td class="muted">高抛 +{{tr.sell_dist}}% ／ 低吸 −{{tr.buy_dist}}%</td>
+                  <td class="muted">高抛 +ui.fmtPct(tr.sell_dist) ／ 低吸 -ui.fmtPct(tr.buy_dist)</td>
                 </tr>
               </tbody>
             </table>
@@ -2372,15 +2735,15 @@
               <div><span>高</span><b class="up">{{ui.fmt(lastDay.high)}}</b></div>
               <div><span>低</span><b class="down">{{ui.fmt(lastDay.low)}}</b></div>
               <div><span>收</span><b :class="dailyChangeClass">{{ui.fmt(lastDay.close)}}</b></div>
-              <div><span>涨跌</span><b :class="dailyChangeClass">{{(dailyChangePct>=0?'+':'')+dailyChangePct.toFixed(2)}}%</b></div>
+              <div><span>涨跌</span><b :class="dailyChangeClass">{{ui.fmtPctSigned(dailyChangePct)}}</b></div>
               <div><span>成交量</span><b>{{fmtVol(lastDay.volume)}} 万手</b></div>
               <div><span>MA5/10/20</span><b style="font-size:12px;color:#374151">{{fmtMa(5)}}／{{fmtMa(10)}}／{{fmtMa(20)}}</b></div>
             </div>
             <div v-else-if="chartView==='intraday' && chartIntradayOk" class="chart-kpi">
               <div><span>现价</span><b>{{ui.fmt(intraLastPrice)}}</b></div>
               <div><span>均价</span><b style="color:#d97706">{{ui.fmt(intra.vwap && intra.vwap.length ? intra.vwap[intra.vwap.length-1]:0)}}</b></div>
-              <div><span>偏离均价</span><b :class="intra.deviation>0?'up':(intra.deviation<0?'down':'flat')">{{(intra.deviation>=0?'+':'')+intra.deviation.toFixed(2)}}%</b></div>
-              <div><span>均价斜率</span><b :class="intra.vwap_slope>0?'up':(intra.vwap_slope<0?'down':'flat')">{{intra.vwap_slope>0?'+':''}}{{intra.vwap_slope.toFixed(2)}}%</b></div>
+              <div><span>偏离均价</span><b :class="intra.deviation>0?'up':(intra.deviation<0?'down':'flat')">{{ui.fmtPctSigned(intra.deviation)}}</b></div>
+              <div><span>均价斜率</span><b :class="intra.vwap_slope>0?'up':(intra.vwap_slope<0?'down':'flat')">{{ui.fmtPctSigned(intra.vwap_slope)}}</b></div>
               <div><span>采样</span><b>{{intra.prices.length}} 分钟</b></div>
               <div v-if="intra.tags && intra.tags.length"><span style="color:#374151;font-weight:600">标签</span><b style="font-size:11px;color:#6d28d9">{{intra.tags.join(' · ')}}</b></div>
             </div>
@@ -2512,12 +2875,14 @@ async function API(p, opt={}) {
 const app = createApp({
   data(){return{
     token:localStorage.getItem('tk')||'', me:{username:'',role:'',is_guest:false}, view:'dash', err:'',
-    authMode:'login', reg:{u:'',p:'',p2:''}, users:[], adminTab:'users', accessLogs:[], accessPage:1, accessTotal:0, accessLoading:false,
+    authMode:'login', reg:{u:'',p:'',p2:''}, users:[], adminTab:'users', accessLogs:[], accessPage:1, accessTotal:0, accessPageSize:10, accessLoading:false,
     poolErr:null, tagsErr:null, accessErr:null,  // 各数据视图的加载错误（null 或 {msg,retry}），绝不允许静默空白
     login:{u:'',p:''}, dash:{market_env:{}, recent_signals:[]}, dashMsg:'',
     ui:{ // 格式化/样式工具(避免与个股分析状态 t 冲突)
       fmt(v){ return (v===undefined||v===null)?'-':(+v).toFixed(3); },
       fmtPct(v){ return (v===undefined||v===null)?'-':((+v).toFixed(2)+'%'); },
+      // v146 全局统一: 百分比带正负号(同比/涨跌幅/偏离/斜率),null/undefined 返回 '-'
+      fmtPctSigned(v){ if(v===undefined||v===null)return '-'; const n=+v; if(!isFinite(n))return '-'; return (n>0?'+':'')+n.toFixed(2)+'%'; },
       classOf(v){ if(v===undefined||v===null)return ''; return v>0?'up':(v<0?'down':'flat'); },
       volClass(v){ if(v===undefined||v===null)return ''; if(v>=1.5)return 'up'; return ''; }
     },
@@ -2534,7 +2899,7 @@ const app = createApp({
     industries:[],  // 申万一级行业列表(后端返回,前端 chip 多选)
     seedingInd:false,  // 行业补全按钮 loading
     pool:[], poolFilter:{q:'',tag:''}, poolPage:1, poolPageSize:15, poolTotal:0, rules:[], nr:{name:'',scope:'all',action:'reduce',conditions:'{"logic":"AND","conditions":[{"type":"below_ma","ma":20,"days":3}]}'},
-    poolTab:'manual',  // 可投池页 tab: manual|recommend
+    poolTab:'manual',  // v152: 短线可投池下仅保留手工筛选;选股/筛选逻辑请到一级 nav「选股模型」
     poolSelected:[],  // 可投池表格当前勾选中的 code
     poolSort:{key:null, dir:null},  // 可投池表格列排序状态：{key, dir} dir=asc|desc；null=按后端原序
     resizedWidths: JSON.parse(localStorage.getItem('poolColWidths')||'{}'),  // 用户拖拽调整后的可投池列宽 {key:px}
@@ -2545,12 +2910,11 @@ const app = createApp({
     chartTip:null,  // 走势分析 hover tooltip {x,y,html}
     poolTags:[],  // 当前用户的可投池自定义标签列表
     showRulesModal:false,  // 加减仓规则弹窗显隐
-    recommendations:null,  // {items,msg,archetype,scheme,source}
     questionnaire:[], indicators:[], answers:{}, focus:[], prefDone:false, pref:{},
     ai:{key:'',base:'',model:''}, nt:{channel:'console',config:'',cron:'30 15 * * 1-5'},
     poolCodes:[],  // 当前可投池中的 code 集合(每次 loadPool 后更新),用于选股结果页判「已在池」
     poolMsg:'',  // 短线可投池页面顶部轻量提示(如「已彻底删除」),2.5s 自动消失
-    hintOpen:'',  // 移动端说明折叠:空串=全收起；非空=当前展开的 hintbar key(pool|screens|recommend)
+    hintOpen:'',  // 移动端说明折叠:空串=全收起；非空=当前展开的 hintbar key(pool|screens)
     backups:[], backing:false,  // admin 自动备份列表 / 备份按钮 loading
     cosStatus:{enabled:false,bucket:'',region:'',prefix:''},  // 腾讯云 COS 连接状态
     cosBks:[], cosBusy:false,  // COS 云端备份列表 / 同步按钮 loading
@@ -2566,11 +2930,263 @@ const app = createApp({
     financeRiskModal:{show:false, code:'', name:'', summary:'', report_date:'', triggers:[], news_keywords:[], news_matched:0, news_fallback:false, news:[]},  // 可投池财报风险弹窗(v144: 触发明细+关键词过滤)
     evtRiskModal:{show:false, code:'', name:'', tag:'', details:[]},  // 可投池事件风险标签详情弹窗(v117)
     unlockModal:{show:false, code:'', name:'', next_date:'', next_amount:null, next_ratio:null},  // 可投池解禁明细弹窗(#66)
-    financialModal:{show:false, code:'', name:'', report_date:'', net_profit:null, net_profit_yoy:null, revenue_yoy:null, eps:null, equity:null, goodwill:null},  // 可投池财报明细弹窗(#66)
+    financialModal:{show:false, code:'', name:'', report_date:'', net_profit:null, net_profit_yoy:null, revenue_yoy:null, eps:null, equity:null, goodwill:null,
+      // v153 派生:基于 net_profit/yoy 计算的盈亏状态
+      profit_state:'', last_year_net_profit:null, yoy_label:''
+    },  // 可投池财报明细弹窗(#66 / v153:盈亏状态banner+多源跳链)
     // v143: 日初判断录入弹窗(上半录入 + 下半当日历史)
     dayViewModal:{show:false, code:'', name:'', trade_date:'', trend:'-', target_price:null, target_note:'', history:[], saving:false},
     // v143: 盯盘日志弹窗(每日复盘 + 行可展开当日多次修改)
-    watchLogModal:{show:false, code:'', name:'', items:[], loading:false},
+    watchLogModal:{show:false, code:'', name:'', items:[], loading:false, saving:false, dirtyCount:0, _dirtyAlerted:false, justSaved:false, justSavedCount:0, _justSavedTimer:null},
+    // v148: 综合评分详情+规则可调弹窗(用户实时调整权重/阈值,前端实时重算 user_score)
+    scoreDetailModal:{show:false, code:'', name:'', track:{}, loading:false, saving:false},
+    // v148: 用户自定义评分规则(阈值/权重),启动时从 localStorage 读,默认走现行 9 项指标(后端 _calc_pass_scores 一致)
+    userScoringRules: (function(){
+      const KEY = 'milktea_scoring_rules_v1';
+      try{
+        const raw = localStorage.getItem(KEY);
+        if(raw){ return JSON.parse(raw); }
+      }catch(e){ /* 解析失败走默认 */ }
+      return null;  // null=mtscore 默认规则(首次进弹窗自动载入)
+    })(),
+    scoreRulesLSKey: 'milktea_scoring_rules_v1',
+    // v148: mtscore 评分工具集(放在 data() 而非 methods(),避免 Vue 3 prod 对嵌套方法对象的处理陷阱)
+    mtscore: {
+      // ==== 默认规则(与后端 data_fetcher.py:_calc_pass_scores 对齐) ====
+      default: function defaultRules(){
+        return {
+          version:'v155-default',  // v155: 加指标级权重(iw),compute 内 inline 自动均分 + 按比例归一
+          weights:{A:40, B:35, C:25},
+          grades:[
+            {min:80,grade:'A'},
+            {min:65,grade:'B'},
+            {min:50,grade:'C'},
+            {min:0, grade:'D'},
+          ],
+          indicators:[
+            {id:'vol20', dim:'A', label:'日均成交量(20日)', unit:'万手', max:15,
+             source:function getV(t){return t.avg_volume_20;},
+             display:function getD(t){return t.avg_volume_20!=null ? (+t.avg_volume_20).toFixed(1)+'万手' : '无数据';},
+             bands:[
+               {label:'最优', min:40, lt:null, score:15, veto:false},
+               {label:'次优', min:20, lt:40,  score:12, veto:false},
+               {label:'次差', min:10, lt:20,  score:9,  veto:false},
+               {label:'差',   min:5,  lt:10,  score:5,  veto:false},
+               {label:'否决', min:0,  lt:5,   score:0,  veto:true},
+             ]},
+            {id:'intra_amp', dim:'A', label:'日内振幅(5日均)', unit:'%', max:15,
+             source:function getV(t){return t.intra_amplitude;},
+             display:function getD(t){return t.intra_amplitude!=null ? (+t.intra_amplitude).toFixed(2)+'%' : '无数据';},
+             bands:[
+               {label:'最优', min:6, lt:null, score:15, veto:false},
+               {label:'次优', min:4, lt:6,    score:12, veto:false},
+               {label:'次差', min:3, lt:4,    score:9,  veto:false},
+               {label:'差',   min:2, lt:3,    score:5,  veto:false},
+               {label:'否决', min:0, lt:2,    score:0,  veto:true},
+             ]},
+            {id:'turnover', dim:'A', label:'换手率', unit:'%', max:10,
+             source:function getV(t){return t.turnover;},
+             display:function getD(t){return t.turnover!=null ? (+t.turnover).toFixed(2)+'%' : '无数据';},
+             bands:[
+               {label:'最优', min:5,  lt:10,  score:10, veto:false},
+               {label:'次优', min:3,  lt:5,   score:8,  veto:false},
+               {label:'中性', min:10, lt:15,  score:7,  veto:false},
+               {label:'偏冷', min:1,  lt:3,   score:4,  veto:false},
+               {label:'过热', min:15, lt:null, score:3,  veto:false, after:true},
+             ]},
+            {id:'ma', dim:'B', label:'MA5/MA20 位置', unit:'-', max:15,
+             source:function getV(t){return (t.above_ma5===true&&t.above_ma20===true)?2:(t.above_ma5===true?1:0);},
+             display:function getD(t){
+               if(t.above_ma5===true&&t.above_ma20===true) return '双上';
+               if(t.above_ma5===true) return '仅MA5上';
+               if(t.above_ma5===false&&t.above_ma20===false) return '双下';
+               return '无数据';
+             },
+             bands:[
+               {label:'最优', attr:'双上',    score:15, veto:false},
+               {label:'次优', attr:'仅MA5上', score:8,  veto:false},
+               {label:'差',   attr:'双下',    score:0,  veto:false},
+             ]},
+            {id:'box_pos', dim:'B', label:'箱体位置', unit:'-', max:10,
+             source:function getV(t){return t.box_pos;},
+             display:function getD(t){return t.box_pos!=null ? ((+t.box_pos)*100).toFixed(0)+'%' : '无数据';},
+             bands:[
+               {label:'低吸', min:0.20, lt:0.50, score:10, veto:false},
+               {label:'操作', min:0.50, lt:0.70, score:7,  veto:false},
+               {label:'下沿', min:0.10, lt:0.20, score:6,  veto:false},
+               {label:'偏高', min:0.70, lt:0.90, score:3,  veto:false},
+               {label:'高位', min:0.90, lt:null, score:0,  veto:false, after:true},
+               {label:'极低', min:0,    lt:0.10, score:10, veto:false},
+             ]},
+            {id:'macd', dim:'B', label:'MACD 状态', unit:'-', max:10,
+             source:function getV(t){return t.macd_signal || '无数据';},
+             display:function getD(t){
+               var map={red_expand:'红柱放大',red_shrink:'红柱缩短',green_shrink:'绿柱缩短',green_expand:'绿柱放大',neutral:'中性',missing:'数据不足'};
+               return map[t.macd_signal] || '无数据';
+             },
+             bands:[
+               {label:'最优', attr:'red_expand',   score:10, veto:false},
+               {label:'次优', attr:'red_shrink',   score:7,  veto:false},
+               {label:'中性', attr:'green_shrink', score:4,  veto:false},
+               {label:'否决', attr:'green_expand', score:0,  veto:true},
+             ]},
+            {id:'vol_ratio', dim:'C', label:'量比', unit:'-', max:10,
+             source:function getV(t){return t.vol_ratio;},
+             display:function getD(t){return t.vol_ratio!=null ? (+t.vol_ratio).toFixed(2) : '无数据';},
+             bands:[
+               {label:'温和放量', min:1.0, lt:2.0, score:10, veto:false},
+               {label:'略缩量',   min:0.8, lt:1.0, score:7,  veto:false},
+               {label:'放量过猛', min:2.0, lt:3.0, score:6,  veto:false},
+               {label:'明显缩量', min:0.5, lt:0.8, score:3,  veto:false},
+               {label:'异常放量', min:3.0, lt:null, score:2, veto:false, after:true},
+               {label:'无量',     min:0,   lt:0.5, score:0,  veto:false},
+             ]},
+            {id:'main_net', dim:'C', label:'主力资金净流入', unit:'%', max:8,
+             source:function getV(t){return t.main_net_pct;},
+             display:function getD(t){return t.main_net_pct!=null ? (+t.main_net_pct).toFixed(2)+'%' : '数据未接入';},
+             bands:[
+               {label:'数据未接入', attr:'any', score:4, veto:false, neutral:true},
+             ]},
+            {id:'sector', dim:'C', label:'板块共振', unit:'-', max:7,
+             source:function getV(t){return t.sector_resonance;},
+             display:function getD(t){
+               var map={sector_strong_up:'板块强涨',sector_up:'板块涨',sector_flat:'板块平',sector_down_up:'板块跌个股涨',sector_down:'板块跌个股跌',missing:'无数据'};
+               return map[t.sector_resonance] || '无数据';
+             },
+             bands:[
+               {label:'共振强', attr:'sector_strong_up', score:7, veto:false},
+               {label:'板块涨', attr:'sector_up',        score:5, veto:false},
+               {label:'板块平', attr:'sector_flat',      score:3, veto:false},
+               {label:'逆势涨', attr:'sector_down_up',   score:1, veto:false},
+               {label:'共跌',   attr:'sector_down',      score:0, veto:false},
+             ]},
+          ],
+          penalties:[
+            {id:'near_high_shrink', label:'接近前高且缩量(-10)', score:-10},
+            {id:'big_yin',           label:'近期大阴线≤-8%(-10)', score:-10},
+          ],
+          vetos:[
+            '日均成交量<5万手', '日内振幅长期<2%', 'MA5/MA20 下方且 MACD 绿柱放大',
+          ],
+        };
+      },
+      scoreInd: function scoreBand(v, ind){
+        for(var i=0;i<ind.bands.length;i++){
+          var b = ind.bands[i];
+          if(b.attr !== undefined){
+            if(b.attr==='any' || b.attr===v) return b;
+          } else {
+            var lo = +b.min;
+            var hi = b.lt===null ? Infinity : +b.lt;
+            if(b.after){
+              if(v >= lo) return b;
+            } else {
+              if(v >= lo && v < hi) return b;
+            }
+          }
+        }
+        return null;
+      },
+      compute: function scoreCompute(track, rules){
+        var indList = rules.indicators;
+        var scoreIndFn = this.scoreInd;  // 捕获工具对象上的 scoreInd(map 回调内 this 丢失, 不可直接 this.scoreInd)
+        var indResults = indList.map(function(ind){
+          var v = ind.source ? ind.source(track||{}) : null;
+          var band = (v===null||v===undefined) ? null : scoreIndFn(v, ind);
+          var score = 0; var hit = null; var hitReason = '';
+          if(band){
+            score = band.score;
+            hit = band.label;
+            if(band.attr){
+              hitReason = ind.label + '=' + ind.display(track) + ' (+' + score + ')';
+            } else {
+              var lo = band.min, hi = band.lt;
+              var loStr = (typeof lo === 'number') ? (ind.unit==='%' ? lo+'%' : lo) : lo;
+              var hiStr = hi===null? '' : (ind.unit==='%' ? '-'+hi+'%' : '-'+hi);
+              hitReason = (band.after ? '≥'+loStr : loStr + hiStr) + ' (+' + score + ')';
+            }
+          } else {
+            hitReason = '无数据/未命中(+0)';
+          }
+          return {
+            id:ind.id, label:ind.label, dim:ind.dim, max:ind.max,
+            current: v, currentStr: ind.display(track||{}),
+            bandLabel: hit, score: score, hitReason: hitReason, veto: band && band.veto,
+          };
+        });
+        // ==== v155: 指标级权重归一(每个分类内独立 iw,默认均分) ====
+        // 三种模式:
+        //   Σ=100 → 不动;  Σ<100 → 剩余按用户已设比例均摊(全 0 走均匀);  Σ>100 → 等比缩放至 100
+        var self = this;
+        var dimIwNorm = {};
+        var indIwEff = {};
+        ['A','B','C'].forEach(function(d){
+          var list = indList.filter(function(x){return x.dim===d;});
+          // 缺 iw 字段则按该 dim 下指标数均分(首次进入容错)
+          var n = list.length;
+          var even = n>0 ? +(100/n).toFixed(2) : 0;
+          list.forEach(function(x){ if(x.iw == null) x.iw = even; });
+          var sum = list.reduce(function(a,b){return a + (b.iw||0);}, 0);
+          var sumStr = sum.toFixed(1);
+          // 容差比较:100/3=33.33×3=99.99,默认均分态应识别为 ok
+          if(Math.abs(sum - 100) < 0.1){
+            list.forEach(function(x){ indIwEff[x.id] = +x.iw.toFixed(2); });
+            dimIwNorm[d] = {mode:'ok', msg:'该分类指标权重正好填满,无自动调整'};
+          } else if(sum > 100){
+            var scale = 100 / sum;
+            list.forEach(function(x){ indIwEff[x.id] = +(x.iw * scale).toFixed(2); });
+            dimIwNorm[d] = {mode:'scaled', msg:'Σ='+sumStr+'% 已自动等比缩放至 100%'};
+          } else {
+            var remain = 100 - sum;
+            var ratioSum = list.reduce(function(a,b){return a + (b.iw>0?b.iw:0);}, 0);
+            if(ratioSum === 0){
+              list.forEach(function(x){ indIwEff[x.id] = +even.toFixed(2); });
+              dimIwNorm[d] = {mode:'even', msg:'Σ=0% 已自动均匀分配 '+even.toFixed(1)+'%×'+n};
+            } else {
+              list.forEach(function(x){
+                var add = remain * (x.iw > 0 ? x.iw : 0) / ratioSum;
+                indIwEff[x.id] = +(x.iw + add).toFixed(2);
+              });
+              dimIwNorm[d] = {mode:'prop', msg:'Σ='+sumStr+'% 剩余 '+remain.toFixed(1)+'% 已按比例均摊'};
+            }
+          }
+        });
+        // 维度加权计算: 维度得分 = Σ((ind.score/ind.max) × iw_eff) × 维度权重 ÷ 100
+        var dimScore = {A:0,B:0,C:0};
+        ['A','B','C'].forEach(function(d){
+          var contribSum = 0;  // 该维度所有指标加权贡献(百分比形式)
+          indResults.forEach(function(r){
+            if(r.dim !== d) return;
+            var eff = indIwEff[r.id] != null ? indIwEff[r.id] : 0;
+            var ratio = (r.max > 0) ? (r.score / r.max) : 0;  // 该指标命中档得分比 (0~1)
+            contribSum += ratio * eff;
+          });
+          dimScore[d] = +(contribSum * rules.weights[d] / 100).toFixed(2);
+        });
+        var total = +(dimScore.A + dimScore.B + dimScore.C).toFixed(2);
+        var penalty = +(track && track.penalty) || 0;
+        total = +(total + penalty).toFixed(2);
+        if(total < 0) total = 0;
+        if(total > 100) total = 100;
+        var grade = 'D';
+        for(var i=0;i<rules.grades.length;i++){ if(total >= rules.grades[i].min){ grade = rules.grades[i].grade; break; } }
+        return {
+          officialScore: track && track.total_score != null ? track.total_score : null,
+          officialGrade: track && track.ai_grade || null,
+          officialVetos: track && track.veto_reasons || [],
+          officialPenalty: track && track.penalty || 0,
+          userScore: +total.toFixed(0),
+          userDimRaw: {A:0,B:0,C:0},  // 兼容旧 UI(无权重时代),保留 key 但不再使用
+          userDimMax: {A:0,B:0,C:0},
+          userDimScore: dimScore,
+          userPenalty: penalty,
+          userGrade: grade,
+          indicators: indResults,
+          dimIwNorm: dimIwNorm,
+          indIwEff: indIwEff,
+        };
+      },
+    },
     columnSettings: (()=>{
       const currentVer = '20260907-04';  // v143: 日初判断列从下拉改成弹窗按钮 → 重置列配置缓存,避免旧宽度/可见性冲突
       const savedVer = localStorage.getItem('columnSettingsVersion');
@@ -2799,6 +3415,8 @@ const app = createApp({
   mounted(){ if(this.token){ this.loadMe(); this.loadDash(); }
     // 宽指快览：登录即拉一次快照与日线(v128)
     if(this.token && this.indexes.length){ this.loadIdxQuotes(); this.loadIdxKlines(); }
+    // 显式上报一次页面访问，解决静态首页 GET 无法带 token 导致 access_logs 大量 username=NULL 的问题
+    if(this.token){ this.recordVisit(); }
     // 全局自动刷新：默认开启，每 5 秒根据当前页面刷新对应数据
     if(this.autoRefresh) this.startAutoRefresh();
     // ESC 关闭弹窗
@@ -3060,6 +3678,175 @@ const app = createApp({
       if(!t || !t.mkt || t.mkt[g]===undefined) return false;
       return t.mkt[g]===0;
     },
+    // v148: 综合评分详情 + 规则可调
+    async openScoreDetail(p){
+      this.scoreDetailModal = {
+        show:true, code:p.code, name:p.name||p.code,
+        track: p.track || {},
+        // 加载用户规则(空则用默认)
+        rules: this.userScoringRules ? JSON.parse(JSON.stringify(this.userScoringRules)) : this.mtscore.default(),
+        computeTimer: null,
+        saving:false,
+      };
+      this._ensureIndIwDefaults(this.scoreDetailModal.rules);
+      this.recomputeUserScore();
+    },
+    closeScoreDetail(){
+      this.scoreDetailModal.show = false;
+    },
+    // v155: 给 rules.indicators 补 iw 默认值(每个分类内指标均分 100%)
+    // 兜底 compute 内的 inline 默认,显式初始化让首次进入弹窗即看见均分数字
+    _ensureIndIwDefaults(rules){
+      if(!rules || !Array.isArray(rules.indicators)) return;
+      ['A','B','C'].forEach(d => {
+        const list = rules.indicators.filter(x => x.dim === d);
+        const n = list.length;
+        if(n <= 0) return;
+        const even = +(100 / n).toFixed(2);
+        list.forEach(x => { if(x.iw == null) x.iw = even; });
+      });
+    },
+    // 重置规则(默认)
+    resetScoringRules(){
+      this.scoreDetailModal.rules = this.mtscore.default();
+      this._ensureIndIwDefaults(this.scoreDetailModal.rules);
+      this.userScoringRules = null;
+      try{ localStorage.removeItem(this.scoreRulesLSKey); }catch(e){}
+      this.recomputeUserScore();
+      this.showToast('评分规则已恢复默认');
+    },
+    // 保存当前规则到 localStorage(用户偏好持久化)
+    saveScoringRules(){
+      try{
+        localStorage.setItem(this.scoreRulesLSKey, JSON.stringify(this.scoreDetailModal.rules));
+        this.userScoringRules = JSON.parse(JSON.stringify(this.scoreDetailModal.rules));
+        this.showToast('评分规则已保存(本地)');
+      }catch(e){
+        this.showToast('保存失败:' + (e && e.message || '未知错误'));
+      }
+    },
+    // 重算总分(debounced 实时计算)
+    recomputeUserScore(){
+      const m = this.scoreDetailModal;
+      if(!m || !m.show || !m.rules) return;
+      if(m.computeTimer) clearTimeout(m.computeTimer);
+      m.computeTimer = setTimeout(()=>{
+        if(!this.scoreDetailModal.show) return;
+        const result = this.mtscore.compute(this.scoreDetailModal.track, this.scoreDetailModal.rules);
+        // 直接挂到 modal 上,Vue 会重新渲染
+        this.scoreDetailModal._result = result;
+      }, 80);
+    },
+    // ==== 三维权重编辑 ====
+    onChangeDimWeight(dim, val){
+      const n = +val;
+      if(isNaN(n) || n < 0 || n > 100) return;
+      this.scoreDetailModal.rules.weights[dim] = n;
+      this.recomputeUserScore();
+    },
+    // ==== 等级阈值编辑 ====
+    onChangeGradeMin(idx, val){
+      const n = +val;
+      if(isNaN(n)) return;
+      const arr = this.scoreDetailModal.rules.grades;
+      if(idx === 0){ /* 第一档 >=X, X 任意 */ }
+      else if(idx < arr.length - 1){
+        // 不能大于上一档(min)
+        if(n > arr[idx-1].min) return;
+      }
+      arr[idx].min = n;
+      this.recomputeUserScore();
+    },
+    // ==== 单指标 score 档改分 ====
+    onChangeBandScore(indId, bandLabel, val){
+      const n = +val;
+      if(isNaN(n) || n < 0) return;
+      const ind = this.scoreDetailModal.rules.indicators.find(x=>x.id===indId);
+      if(!ind) return;
+      const b = ind.bands.find(x=>x.label===bandLabel);
+      if(b) b.score = n;
+      this.recomputeUserScore();
+    },
+    // ==== 单指标阈值编辑(min / lt) ====
+    onChangeBandMin(indId, bandIdx, val){
+      const n = +val;
+      if(isNaN(n)) return;
+      const ind = this.scoreDetailModal.rules.indicators.find(x=>x.id===indId);
+      if(!ind) return;
+      const b = ind.bands[bandIdx];
+      b.min = n;
+      // 自愈: 该 indicator 内 bands 按 min 升序
+      this._sortBands(ind);
+      this.recomputeUserScore();
+    },
+    onChangeBandLt(indId, bandIdx, val){
+      const n = val==='' ? null : +val;
+      if(n!==null && isNaN(n)) return;
+      const ind = this.scoreDetailModal.rules.indicators.find(x=>x.id===indId);
+      if(!ind) return;
+      const b = ind.bands[bandIdx];
+      b.lt = n;
+      this._sortBands(ind);
+      this.recomputeUserScore();
+    },
+    _sortBands(ind){
+      // bands 按 min 升序重排(不破坏 attr 型档次序)
+      const numBands = ind.bands.filter(b=>b.attr===undefined && !b.after);
+      const attrBands = ind.bands.filter(b=>b.attr!==undefined);
+      const afterBands = ind.bands.filter(b=>b.after);
+      numBands.sort((a,b)=>+a.min - +b.min);
+      // 校验覆盖: 最优档 at-front, 末档 after=true
+      ind.bands = [...numBands, ...attrBands, ...afterBands];
+    },
+    // ==== v155: 单分类内「指标级权重」改分 ====
+    // 用户输入一个 iw,系统按 Σ vs 100% 自动归一:
+    //   - Σ=100% → 不动
+    //   - Σ<100% → 剩余按用户已设比例均摊(若全 0 则均匀分配)
+    //   - Σ>100% → 等比缩放至 100%(用户输入过大被压缩)
+    // 该分类下每个 indicator 的 iw_eff 写入 result 供计算与展示
+    onChangeIndWeight(indId, val){
+      const n = +val;
+      if(isNaN(n) || n < 0 || n > 100) return;
+      const ind = this.scoreDetailModal.rules.indicators.find(x=>x.id===indId);
+      if(!ind) return;
+      ind.iw = n;
+      this.recomputeUserScore();
+    },
+    // 在 dim 下做指标权重归一,返回 {indIwEff:{id:pct}, norm:{mode,msg}}
+    _normalizeDimIndWeights(d, rules){
+      const list = rules.indicators.filter(x=>x.dim===d);
+      // 缺 iw 字段则补默认均分
+      list.forEach(i => { if(i.iw == null) i.iw = 0; });
+      const sum = list.reduce((a,b)=>a + (b.iw||0), 0);
+      const sumStr = sum.toFixed(1);
+      const indIwEff = {};
+      // 容差比较:100/3=33.33×3=99.99,默认均分态应识别为 ok
+      if(Math.abs(sum - 100) < 0.1){
+        list.forEach(i => indIwEff[i.id] = +i.iw.toFixed(2));
+        return { indIwEff: indIwEff, norm: {mode:'ok', msg:'该分类指标权重正好填满,无自动调整'} };
+      }
+      if(sum > 100){
+        // 等比缩放至 100
+        const scale = 100 / sum;
+        list.forEach(i => indIwEff[i.id] = +(i.iw * scale).toFixed(2));
+        return { indIwEff: indIwEff, norm: {mode:'scaled', msg:`Σ=${sumStr}% 已自动等比缩放至 100%`} };
+      }
+      // sum < 100
+      const remain = 100 - sum;
+      // 按"用户已设 iw>0 的比例"分摊剩余(全 0 走均匀)
+      const ratioSum = list.reduce((a,b)=>a + (b.iw>0 ? b.iw : 0), 0);
+      if(ratioSum === 0){
+        const n = list.length;
+        const even = 100 / n;
+        list.forEach(i => indIwEff[i.id] = +even.toFixed(2));
+        return { indIwEff: indIwEff, norm: {mode:'even', msg:`Σ=0% 已自动均匀分配 ${even.toFixed(1)}%×${n}`} };
+      }
+      list.forEach(i => {
+        const add = remain * (i.iw > 0 ? i.iw : 0) / ratioSum;
+        indIwEff[i.id] = +(i.iw + add).toFixed(2);
+      });
+      return { indIwEff: indIwEff, norm: {mode:'prop', msg:`Σ=${sumStr}% 剩余 ${remain.toFixed(1)}% 已按比例均摊`} };
+    },
     // v143: 改弹窗录入 — openDayViewModal / submitDayViewLog / openWatchLogModal
     async openDayViewModal(p){
       // 取今天(本地时区)作为 trade_date
@@ -3120,19 +3907,124 @@ const app = createApp({
       this.dayViewModal.show = false;
     },
     async openWatchLogModal(p){
-      this.watchLogModal = {show:true, code:p.code, name:p.name||p.code, items:[], loading:true};
+      this.watchLogModal = {show:true, code:p.code, name:p.name||p.code, items:[], loading:true, saving:false, dirtyCount:0, _dirtyAlerted:false, justSaved:false, justSavedCount:0, _justSavedTimer:null};
       try{
         const data = await API(`/pool/${p.code}/watch-log`);
-        this.watchLogModal.items = (data && data.items) || [];
+        const rawItems = (data && data.items) || [];
+        // v149: 偏离原因复盘 — 用户原话"我希望自己手改,默认留空就行"。
+        // 即便后端 it.recap 有值(可能是模板话术),这里也强制空串,不再预填回显。
+        this.watchLogModal.items = rawItems.map(function(it){
+          return Object.assign({}, it, {
+            _recapDraft: '',
+            _recapInitial: '',
+            _recapDirty: false,
+          });
+        });
+        this.recalcWatchLogDirty();
       }catch(e){
         this.showAlert('加载盯盘日志失败:' + (e && e.message || '网络错误'));
         this.watchLogModal.items = [];
+        this.watchLogModal.dirtyCount = 0;
       }finally{
         this.watchLogModal.loading = false;
       }
     },
-    closeWatchLogModal(){
-      this.watchLogModal.show = false;
+    closeWatchLogModal(force){
+      const m = this.watchLogModal;
+      if(!m) return;
+      const dirty = Array.isArray(m.items) ? m.items.filter(function(it){return !!it._recapDirty;}).length : 0;
+      if(!force && dirty>0){
+        // v149: 用户原话"如果没用先点击保存就点击关闭,系统自动提示下我要记得先保存再关闭"
+        // 第一次按关闭 → 弹提示(单按钮 showAlert),弹窗继续开着不关,引导用户先去点右下「保存」
+        // 用户点掉提示后若仍执意要关,再按一次关闭按钮(m._dirtyAlerted=true)就真关
+        if(!m._dirtyAlerted){
+          m._dirtyAlerted = true;
+          this.showAlert(
+            '当前还有 ' + dirty + ' 条「偏离原因复盘」未保存。\n\n' +
+            '请先回到弹窗,点右下「保存」入库(留空也算保存 = 不记录)。\n\n' +
+            '如确实要放弃刚才的输入,再点一次「关闭」即可。',
+            '先保存再关闭'
+          );
+          return;
+        }
+        // 二次确认:真关闭(_dirtyAlerted 复位)
+        m._dirtyAlerted = false;
+        // v154: 真关闭时清掉保存状态横条和计时器
+        if(m._justSavedTimer){ clearTimeout(m._justSavedTimer); m._justSavedTimer = null; }
+        m.justSaved = false; m.justSavedCount = 0;
+        m.show = false;
+        return;
+      }
+      // 无 dirty 或 force=true:直接关闭
+      if(m._justSavedTimer){ clearTimeout(m._justSavedTimer); m._justSavedTimer = null; }
+      m.justSaved = false; m.justSavedCount = 0;
+      m.show = false;
+    },
+    // v154: textarea @input 触发 - 实时算 dirty + 重算底部 dirtyCount,让"X 条未保存"实时刷新
+    onRecapInput(it){
+      it._recapDirty = ((it._recapDraft||'') !== (it._recapInitial||''));
+      this.recalcWatchLogDirty();
+    },
+    // v149: 重算 dirtyCount,给「保存」按钮可用状态与底部未保存提示
+    recalcWatchLogDirty(){
+      const m = this.watchLogModal;
+      if(!m || !Array.isArray(m.items)) return;
+      m.dirtyCount = m.items.filter(function(it){return !!it._recapDirty;}).length;
+    },
+    async saveWatchLogRecaps(){
+      const m = this.watchLogModal;
+      if(!m || m.saving) return;
+      const dirty = (m.items || []).filter(it => !!it._recapDirty);
+      if(!dirty.length){
+        if(this.showToast) this.showToast('无可保存内容');
+        return;
+      }
+      m.saving = true;
+      m.justSaved = false;
+      // v154: 每个待保存行加 _saving 标记,行内实时显示「⏳ 保存中...」
+      dirty.forEach(it => { it._saving = true; });
+      let okCount=0, failList=[];
+      for(let i=0; i<dirty.length; i++){
+        const it = dirty[i];
+        const txt = (it._recapDraft || '').slice(0, 500);
+        try{
+          const r = await API(`/pool/${m.code}/watch-log/${encodeURIComponent(it.trade_date)}/recap`, {
+            method: 'POST',
+            body: JSON.stringify({ recap: txt }),
+          });
+          it.recap = txt;
+          it.recap_user = (r && r.user) || it.recap_user || '';
+          it.recap_updated_at = (r && r.updated_at) || it.recap_updated_at || new Date().toISOString();
+          it._recapInitial = txt;
+          it._recapDirty = false;
+          okCount++;
+        }catch(e){
+          failList.push({date: it.trade_date, msg: (e && e.message) || '网络错误'});
+        }finally{
+          // v154: 无论成败,行内 _saving 都得清掉,否则一直显示「保存中...」
+          it._saving = false;
+        }
+      }
+      m.saving = false;
+      this.recalcWatchLogDirty();
+      // v154 反馈增强:成功显示 3 秒底部绿色横条 + toast;失败走 alert 兜底
+      if(okCount>0 && failList.length===0){
+        if(m._justSavedTimer){ clearTimeout(m._justSavedTimer); }
+        m.justSaved = true;
+        m.justSavedCount = okCount;
+        m._justSavedTimer = setTimeout(() => {
+          m.justSaved = false;
+          m._justSavedTimer = null;
+        }, 3000);
+        if(this.showToast) this.showToast('已保存 ' + okCount + ' 条复盘');
+      }else if(okCount>0 && failList.length>0){
+        m.justSaved = false;
+        if(this.showToast) this.showToast('已保存 ' + okCount + ' 条,' + failList.length + ' 条失败');
+        if(this.showAlert) this.showAlert('保存失败的日期:\n' + failList.map(f => f.date+': '+f.msg).join('\n'));
+      }else{
+        m.justSaved = false;
+        if(this.showAlert) this.showAlert('保存失败: ' + ((failList[0] && failList[0].msg) || '网络错误'));
+      }
     },
     // 复盘表行展开:按 trade_date 拉该日全部修改明细
     async toggleWatchLogExpand(item){
@@ -3149,6 +4041,8 @@ const app = createApp({
         console.warn('load day-view-log details failed', e);
       }
     },
+    // v146 旧:startEditRecap / cancelEditRecap / commitEditRecap 已废弃,由 v149 saveWatchLogRecaps 接管(批量保存)。
+    // v146 旧:cancelEditRecap / commitEditRecap 已废弃,由 v149 saveWatchLogRecaps 接管(批量保存)。
     fmtTimeShort(iso){
       if(!iso) return '-';
       try{
@@ -3280,6 +4174,89 @@ const app = createApp({
       this.evtRiskModal = {show:true, code:(p&&p.code)||'', name:(p&&p.name)||'', tag:tagKey||'', details};
     },
     closeEvtRiskModal(){ this.evtRiskModal={show:false, code:'', name:'', tag:'', details:[]}; },
+    // v151: 事件风险详情弹窗 — 权威披露平台 URL 拼接(模板用)
+    evtRiskCninfoListUrl(){
+      // 巨潮资讯网 - 该股全部公告列表(权威披露)
+      // plate 自动按 code 前缀判断(6/9 开头沪市, 0/3 开头深市, 8/4 开头北交所)
+      const code = (this.evtRiskModal && this.evtRiskModal.code) || '';
+      const c = String(code);
+      let plate = 'szse';
+      if (/^(6|9)/.test(c)) plate = 'sse';
+      else if (/^(8|4)/.test(c)) plate = 'bse';
+      return 'http://www.cninfo.com.cn/new/disclosure/stock?stockCode=' + c + '&orgId=&plate=' + plate;
+    },
+    evtRiskEastmoneyUrl(){
+      // 东方财富 - 该股公告列表 + F10 大事提醒
+      const code = (this.evtRiskModal && this.evtRiskModal.code) || '';
+      let mkt = 'SZ';
+      if (/^(6|9)/.test(String(code))) mkt = 'SH';
+      else if (/^(8|4)/.test(String(code))) mkt = 'BJ';
+      return 'http://data.eastmoney.com/notices/stock/' + code + '.html';
+    },
+    evtRiskSinaUrl(){
+      // 新浪财经 - 该股财务摘要 + 利润表/资产负债表
+      const code = (this.evtRiskModal && this.evtRiskModal.code) || '';
+      return 'https://vip.stock.finance.sina.com.cn/corp/go.php/vFD_FinancialGuideLine/stockid/' + code + '.phtml';
+    },
+    evtRiskItemHref(item){
+      // 单条 trigger ↗ 链接:财报类(无 sentiment)跳 cninfo 全文搜索(按 code + time 限定日期);
+      // 新闻类(有 sentiment)跳东财全文搜索(按 code)
+      const code = (this.evtRiskModal && this.evtRiskModal.code) || '';
+      const t = String((item && item.time) || '').slice(0, 10);
+      if (item && item.sentiment) {
+        // 新闻类 → 东财全文搜索(code + 日期范围)
+        if (t) {
+          return 'http://so.eastmoney.com/web/s?keyword=' + encodeURIComponent(code + ' ' + t);
+        }
+        return 'http://so.eastmoney.com/web/s?keyword=' + encodeURIComponent(code);
+      }
+      // 财报类 → cninfo 全文搜索(code + 该期日期)
+      if (t) {
+        return 'http://www.cninfo.com.cn/new/fulltextSearch/full?searchkey=' + encodeURIComponent(code) + '&sdate=' + t + '&edate=' + t + '&isfulltext=false&sortName=pubdate&sortType=desc&pageNum=1';
+      }
+      return this.evtRiskCninfoListUrl();
+    },
+    // v153: 财报明细弹窗 - 巨潮全文搜索(限定本期报告期前后 90 天,覆盖财报披露原件)
+    financialCninfoFulltextUrl(){
+      const code = (this.financialModal && this.financialModal.code) || '';
+      if (!code) return '';
+      const rd = String((this.financialModal && this.financialModal.report_date) || '').slice(0, 10);
+      let plate = 'szse';
+      if (/^(6|9)/.test(String(code))) plate = 'sse';
+      else if (/^(8|4)/.test(String(code))) plate = 'bse';
+      if (!rd) {
+        // 没报告期日期就降级到全部公告列表
+        return 'http://www.cninfo.com.cn/new/disclosure/stock?stockCode=' + code + '&orgId=&plate=' + plate;
+      }
+      const s = rd;
+      const d = new Date(rd);
+      if (isNaN(d.getTime())) return '';
+      const e = new Date(d.getTime() + 90*24*3600*1000);
+      const ed = e.getFullYear() + '-' + String(e.getMonth()+1).padStart(2,'0') + '-' + String(e.getDate()).padStart(2,'0');
+      return 'http://www.cninfo.com.cn/new/fulltextSearch/full?searchkey=' + encodeURIComponent(code) + '&sdate=' + s + '&edate=' + ed + '&isfulltext=false&sortName=pubdate&sortType=desc&pageNum=1';
+    },
+    // v153: 财报明细弹窗 - 东方财富 F10 主要财务指标/全表
+    financialEastmoneyF10Url(){
+      const code = (this.financialModal && this.financialModal.code) || '';
+      if (!code) return '';
+      let mkt = 'SZ';
+      if (/^(6|9)/.test(String(code))) mkt = 'SH';
+      else if (/^(8|4)/.test(String(code))) mkt = 'BJ';
+      return 'https://emweb.securities.eastmoney.com/PC_HSF10/NewFinanceAnalysis/Index?type=web&code=' + mkt + code;
+    },
+    // v153: 财报明细弹窗 - 新浪财务(主要财务指标 + 利润表 + 资产负债表)
+    financialSinaUrl(){
+      const code = (this.financialModal && this.financialModal.code) || '';
+      if (!code) return '';
+      return 'https://vip.stock.finance.sina.com.cn/corp/go.php/vFD_FinancialGuideLine/stockid/' + code + '.phtml';
+    },
+    evtRiskItemTitle(item){
+      const t = String((item && item.time) || '').slice(0, 10);
+      if (item && item.sentiment) {
+        return t ? ('东财搜索:' + t + ' 与该股相关公告/新闻') : '东财搜索:该股相关公告/新闻';
+      }
+      return t ? ('巨潮全文搜索:' + t + ' 该股定期报告/公告') : '巨潮资讯:该股全部公告列表';
+    },
     openUnlock(p){
       const t = (p && p.track) || {};
       this.unlockModal = {show:true, code:(p&&p.code)||'', name:(p&&p.name)||'', next_date:t.next_date||'', next_amount:t.next_amount!=null?t.next_amount:null, next_ratio:t.next_ratio!=null?t.next_ratio:null};
@@ -3287,9 +4264,35 @@ const app = createApp({
     closeUnlockModal(){ this.unlockModal={show:false, code:'', name:'', next_date:'', next_amount:null, next_ratio:null}; },
     openFinancial(p){
       const t = (p && p.track) || {};
-      this.financialModal = {show:true, code:(p&&p.code)||'', name:(p&&p.name)||'', report_date:t.report_date||'', net_profit:t.net_profit!=null?t.net_profit:null, net_profit_yoy:t.net_profit_yoy!=null?t.net_profit_yoy:null, revenue_yoy:t.revenue_yoy!=null?t.revenue_yoy:null, eps:t.eps!=null?t.eps:null, equity:t.equity!=null?t.equity:null, goodwill:t.goodwill!=null?t.goodwill:null};
+      const np  = t.net_profit!=null ? t.net_profit : null;
+      const yoy = t.net_profit_yoy!=null ? t.net_profit_yoy : null;
+      // v153 派生:本期盈亏状态 + 同比方向(防止亏损/盈利+同比扩张的"红+号"误导)
+      let st = '', last = null, yoyLbl = '';
+      if (np !== null && np < 0) st = 'loss';
+      else if (np !== null && np > 0) st = 'profit';
+      else if (np !== null && np === 0) st = 'break_even';
+      if (np !== null && yoy !== null) {
+        // 约数反推(东财对负基期用|基期|做分母,这里只用 yoy /(1+分母×100)做粗算,仅供参考)
+        last = np / (1 + yoy/100);
+        if (np < 0 && yoy > 0) yoyLbl = '亏损同比扩大';
+        else if (np < 0 && yoy < 0) yoyLbl = '亏损同比收窄';
+        else if (np > 0 && yoy > 0) yoyLbl = '盈利同比增长';
+        else if (np > 0 && yoy < 0) yoyLbl = '盈利同比下滑';
+        else if (np === 0 && yoy !== 0) yoyLbl = yoy > 0 ? '由亏转盈(本期为零)' : '由盈转亏(本期为零)';
+        else if (yoy === 0) yoyLbl = '同比持平';
+      }
+      this.financialModal = {
+        show:true,
+        code:(p&&p.code)||'', name:(p&&p.name)||'',
+        report_date:t.report_date||'',
+        net_profit:np, net_profit_yoy:yoy,
+        revenue_yoy:t.revenue_yoy!=null?t.revenue_yoy:null,
+        eps:t.eps!=null?t.eps:null, equity:t.equity!=null?t.equity:null,
+        goodwill:t.goodwill!=null?t.goodwill:null,
+        profit_state:st, last_year_net_profit:last, yoy_label:yoyLbl
+      };
     },
-    closeFinancialModal(){ this.financialModal={show:false, code:'', name:'', report_date:'', net_profit:null, net_profit_yoy:null, revenue_yoy:null, eps:null, equity:null, goodwill:null}; },
+    closeFinancialModal(){ this.financialModal={show:false, code:'', name:'', report_date:'', net_profit:null, net_profit_yoy:null, revenue_yoy:null, eps:null, equity:null, goodwill:null, profit_state:'', last_year_net_profit:null, yoy_label:''}; },
     colSettingDrop(idx){
       const from = this._dragColIdx;
       if(from==null || from===idx) return;
@@ -3299,7 +4302,6 @@ const app = createApp({
       this._dragColIdx = null;
     },
 
-    go(v){ this.view=v; if(v==='dash')this.loadDash(); if(v==='screens'){this.loadScreens();this.loadIndustries();this.refreshCounts();this.checkWarmup();this.loadPref();} if(v==='pool'){this.loadPool(); this.loadPoolTags(); if(this.poolTab==='recommend') this.loadRecommendations();} if(v==='pref')this.loadPref(); if(v==='settings'){this.loadSettings(); if(this.me.role==='admin'){this.loadUsers(); this.loadBackups(); this.loadCosStatus();}} if(v==='t')this.loadT(); },
 
     // ===== 全局自动刷新 =====
     toggleAutoRefresh(){
@@ -3315,6 +4317,7 @@ const app = createApp({
       this.autoRefreshTimer = setInterval(()=> this.refreshCurrentView(), 5000);
     },
     stopAutoRefresh(){ if(this.autoRefreshTimer){ clearInterval(this.autoRefreshTimer); this.autoRefreshTimer=null; } },
+    go(v){ this.view=v; if(v==='dash')this.loadDash(); if(v==='screens'){this.loadScreens();this.loadIndustries();this.refreshCounts();this.checkWarmup();this.loadPref();} if(v==='pool'){this.loadPool(); this.loadPoolTags();} if(v==='pref')this.loadPref(); if(v==='settings'){this.loadSettings(); if(this.me.role==='admin'){this.loadUsers(); this.loadBackups(); this.loadCosStatus();}} if(v==='t')this.loadT(); },
     refreshCurrentView(){
       if(!this.token) return;
       // 有弹窗打开时跳过本次刷新，避免干扰用户当前操作
@@ -3328,7 +4331,6 @@ const app = createApp({
       else if(v==='pool'){
         this.loadPool();
         this.loadPoolTags();
-        if(this.poolTab==='recommend') this.loadRecommendations();
       }
       else if(v==='t' && this.t.code) this.loadT(true);
       else if(v==='screens'){ this.loadScreens(); this.loadIndustries(); this.refreshCounts(); this.loadPref(); }
@@ -3647,6 +4649,8 @@ const app = createApp({
     async doGuest(){ this.err=''; const r=await API('/auth/guest',{method:'POST'}); if(r.token){ localStorage.setItem('tk',r.token); location.reload(); } else this.err=(r.detail||'游客登录失败'); },
     logout(){ localStorage.removeItem('tk'); location.reload(); },
     async loadMe(){ const r=await API('/auth/me'); this.me=r; },
+    // v156: 应用加载后显式上报访问，让 access-logs 能正确关联到当前登录用户/游客
+    async recordVisit(){ try{ await API('/auth/visit',{method:'POST'}); }catch(e){ /* 静默失败，不影响主流程 */ } },
     async loadUsers(){ const r=await API('/auth/users'); if(Array.isArray(r)) this.users=r; },
     // ===== 数据加载错误统一处理（杜绝「静默空白」）=====
     // key: 'poolErr'|'tagsErr'|'accessErr'；值为 null 或 {msg, retry}
@@ -3661,13 +4665,21 @@ const app = createApp({
       this.accessLoading = true;
       try{
         const pg = Math.max(1, parseInt(page||1, 10));
-        const d = await API('/auth/access-logs?page='+pg+'&page_size='+this.accessPageSize);
+        const ps = Math.max(1, parseInt(this.accessPageSize||10, 10));
+        const d = await API('/auth/access-logs?page='+pg+'&page_size='+ps);
         this.accessLogs = d.items || [];
         this.accessTotal = d.total || 0;
         this.accessPage = d.page || pg;
-        this.accessPageSize = d.page_size || this.accessPageSize;
+        this.accessPageSize = d.page_size || ps;
         this._clrErr('accessErr');
-      }catch(e){ this._setErr('accessErr','访问记录加载失败：'+(e.message||'网络错误')+'，点击重试', ()=>this.fetchAccessLogs(this.accessPage)); }
+      }catch(e){
+        let msg = (e && e.message) || '网络错误';
+        // v156: 后端 422/500 返回的 detail 可能是数组或对象，避免显示 [object Object]
+        if(typeof msg === 'string' && msg.indexOf('[object Object]') !== -1 && e && e.detail){
+          try{ msg = JSON.stringify(e.detail).slice(0,120); }catch(_){}
+        }
+        this._setErr('accessErr','访问记录加载失败：'+msg+'，点击重试', ()=>this.fetchAccessLogs(this.accessPage));
+      }
       finally{ this.accessLoading = false; }
     },
     // 把 API 路径翻译成中文页面名（含静态资源与未登录访客首次访问兜底）
@@ -4209,8 +5221,6 @@ const app = createApp({
       this.closeAddPoolModal();
       this.addPoolModal.saving=false;
     },
-    async loadRecommendations(){ const r=await API('/pool/recommendations'); this.recommendations=r; },
-    async addRecToPool(code){ try{ await API('/pool',{method:'POST',body:JSON.stringify({code})}); this.loadPool(); this.loadRecommendations(); }catch(e){ this.showAlert('加入失败：'+(e.message||'请重试')); } },
     // —— 可投池表格「持仓/成本」整行编辑(点保存才提交,避免鼠标移动即误保存) ——
     startEdit(p){ this.editModal={show:true, code:p.code, name:p.name, qty:(p.position_qty??''), cost:(p.cost_price??''), note:(p.note??''), tag_ids:(p.tag_ids||[]).slice(), saving:false}; },
     async saveRow(){

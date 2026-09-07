@@ -153,24 +153,34 @@ class DayViewLogOut(BaseModel):
 
 
 class WatchLogItem(BaseModel):
-    """v143：盯盘日志单日条目。已聚合当日最后一条 + 计算偏离度/原因。
-
-    deviation = (target_price - close) / target_price；target_price 缺失时为 None。
+    """v143:盯盘日志单日条目。已聚合当日最后一条 + 计算偏离度/原因;
+    v146 扩展:recap_user_text/recap_user/recap_updated_at——用户编辑的偏离原因复盘文本,优先展示。
     """
     trade_date: str
     open: Optional[float] = None
     close: Optional[float] = None
-    intraday_avg: Optional[float] = None  # 分时均价 = 当日 amount/volume
+    intraday_avg: Optional[float] = None  # 分时均价=amount/(volume*100),单位 元/股
     trend: str = ""  # 当日最后一条 trend
     target_price: Optional[float] = None
     target_note: str = ""
-    deviation: Optional[float] = None  # (target - close) / target
-    deviation_pct: Optional[float] = None  # 同上,百分比形式,前端直接展示
-    deviation_reason: str = ""  # 按 trend × deviation 方向模板生成
+    deviation: Optional[float] = None  # (target - close) / close
+    deviation_pct: Optional[float] = None  # 百分比
+    deviation_reason: str = ""  # 默认模板话术(按 trend × deviation 方向)
+    # v146: 用户编辑的偏离原因复盘
+    recap: str = ""  # 用户编辑的文本;空=沿用模板话术
+    recap_user: str = ""  # 最后一次编辑者用户名
+    recap_updated_at: str = ""  # 最后一次编辑时间 ISO8601 (UTC, 毫秒)
+
+
+class RecapIn(BaseModel):
+    """v146: 保存单条偏离原因复盘 upsert 入参(按 (user,code,trade_date) 唯一)。
+    trade_date 走路径参数,body 仅含 recap。空字符串=清除(降级为模板话术)。
+    """
+    recap: str = ""
 
 
 class WatchLogOut(BaseModel):
-    """v143：盯盘日志聚合。"""
+    """v143:盯盘日志聚合。"""
     code: str
     name: Optional[str] = None
     items: list[WatchLogItem] = []  # 按 trade_date desc

@@ -2248,12 +2248,16 @@ def get_pool_track(code: str, db, position: dict | None = None, deadline: float 
         if v.get("pe_pct_3y") is not None:
             out["pe_pct_3y"] = v["pe_pct_3y"]
         fin = _fetch_financials(code) or {}
+        if fin.get("net_profit") is not None:
+            out["net_profit"] = fin["net_profit"]            # v153 补:前端财报明细弹窗需要绝对值判断盈亏
         if fin.get("net_profit_yoy") is not None:
             out["net_profit_yoy"] = fin["net_profit_yoy"]
         if fin.get("revenue_yoy") is not None:
             out["revenue_yoy"] = fin["revenue_yoy"]
         if fin.get("report_date"):
             out["report_date"] = fin["report_date"]
+        if fin.get("eps") is not None:
+            out["eps"] = fin["eps"]
         if fin.get("goodwill") is not None:
             out["goodwill"] = fin["goodwill"]
         unl = _fetch_unlock(code) or {}

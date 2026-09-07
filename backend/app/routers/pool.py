@@ -14,10 +14,10 @@ from typing import Optional
 
 from app.db import SessionLocal, get_db
 from app.deps import get_current_user
-from app.models import DailyQuote, DayViewLog, PoolTag, SchemeType, Stock, TrackedPool, TrackedPoolTag, User, UserProfile, _now
+from app.models import DailyQuote, DayViewLog, DayViewRecap, PoolTag, SchemeType, Stock, TrackedPool, TrackedPoolTag, User, UserProfile, _now
 from app.schemas import (
     DayViewIn, DayViewLogIn, DayViewLogOut, PoolBatchDeleteIn, PoolBatchTagsIn, PoolImportIn, PoolIn, PoolOut,
-    TagIn, TagOut, WatchLogItem, WatchLogOut,
+    RecapIn, TagIn, TagOut, WatchLogItem, WatchLogOut,
 )
 from app.services.data_fetcher import ensure_stock_name, get_pool_track, _fetch_intraday_fund, _market_return
 from app.services.preference import match_scheme
@@ -841,7 +841,7 @@ def list_day_view_log(code: str, trade_date: str = Query("", description="可选
 def _deviation_reason(trend: str, dev: float | None) -> str:
     """v143: 偏离原因复盘——按 trend × deviation 方向生成纯模板话术。
 
-    deviation = (target_price - close) / target_price:
+    deviation = (target_price - close) / close:
       · dev > 0 → 收盘价 < 目标位(价格没到目标)
       · dev < 0 → 收盘价 > 目标位(价格已超过目标)
     """
@@ -873,6 +873,15 @@ def watch_log(code: str, limit: int = Query(60, ge=1, le=500),
               db: SessionLocal = Depends(get_db), user: User = Depends(get_current_user)):
     """v143: 盯盘日志——按 trade_date desc 聚合,每交易日取当日最后一条 log 作为复盘输入,
     结合 daily_quotes(open/close/分时均价)计算偏离度与复盘原因。
+
+    v146:每行的偏离原因复盘可被用户编辑,join day_view_recap 取最新用户编辑内容。
+
+    偏离度算法口径（前端备注同步）:
+        deviation = (target_price - close) / close
+        正值(dev > 0):收盘低于目标位 → 未达目标
+        负值(dev < 0):收盘高于目标位 → 突破目标
+        target_price 为空:deviation=None,reason=「目标价位缺失,无法评估偏离」
+    分时均价:amount(元)/(volume*100),volume 单位=手;若 amount=0 用 volume*close*100 兜底
     """
     name = _name(code, db)
     # 1) 拉所有 log(按 trade_date desc, operated_at desc)
@@ -890,7 +899,7 @@ def watch_log(code: str, limit: int = Query(60, ge=1, le=500),
             last_by_date[r.trade_date] = r
 
     dates = list(last_by_date.keys())[:limit]
-    # 3) 一次性取这些日期的日线(收盘/开盘/均价=amount/volume)
+    # 3) 一次性取这些日期的日线(收盘/开盘/均价=amount/(volume*100))
     quotes = {}
     if dates:
         qrows = (db.query(DailyQuote)
@@ -899,6 +908,16 @@ def watch_log(code: str, limit: int = Query(60, ge=1, le=500),
         for q in qrows:
             quotes[q.date] = q
 
+    # 3.5) v146:批量取这些日期的复盘编辑(user 隔离,只存最新一份)
+    recaps_by_date: dict[str, DayViewRecap] = {}
+    if dates:
+        rrows = (db.query(DayViewRecap)
+                 .filter(DayViewRecap.user_id == user.id, DayViewRecap.code == code,
+                         DayViewRecap.trade_date.in_(dates))
+                 .all())
+        for r in rrows:
+            recaps_by_date[r.trade_date] = r
+
     items: list[WatchLogItem] = []
     for d in dates:
         lg = last_by_date[d]
@@ -906,16 +925,25 @@ def watch_log(code: str, limit: int = Query(60, ge=1, le=500),
         open_p = q.open if q and q.open else None
         close_p = q.close if q and q.close else None
         intraday_avg = None
-        if q and q.volume and q.volume > 0 and q.amount:
+        # v146:amount 单位=元、volume 单位=手(1手=100股)→均价=元/股 = amount/(volume*100)
+        #   兜底:若 amount=0(腾讯日线无成交额),用 volume*close*100 估算(与 data_fetcher 一致),
+        #   至少保证分时均价有值,不显示 null
+        if q and q.volume and q.volume > 0 and q.close:
             try:
-                intraday_avg = round(q.amount / q.volume, 3)
+                amt = q.amount if (q.amount and q.amount > 0) else (q.volume * q.close * 100.0)
+                intraday_avg = round(amt / (q.volume * 100.0), 3)
             except Exception:
                 intraday_avg = None
         deviation = None
         deviation_pct = None
         if lg.target_price and lg.target_price > 0 and close_p:
-            deviation = round((lg.target_price - close_p) / lg.target_price, 4)
+            deviation = round((lg.target_price - close_p) / close_p, 4)
             deviation_pct = round(deviation * 100, 2)
+        # v146:用户编辑的复盘优先;否则用模板话术
+        rec = recaps_by_date.get(d)
+        recap_text = (rec.recap or "") if rec else ""
+        recap_user = (rec.operator or "") if rec else ""
+        recap_at = (rec.updated_at or "") if rec else ""
         items.append(WatchLogItem(
             trade_date=d,
             open=open_p, close=close_p, intraday_avg=intraday_avg,
@@ -923,8 +951,50 @@ def watch_log(code: str, limit: int = Query(60, ge=1, le=500),
             target_note=lg.target_note or "",
             deviation=deviation, deviation_pct=deviation_pct,
             deviation_reason=_deviation_reason(lg.trend or "-", deviation),
+            recap=recap_text,
+            recap_user=recap_user,
+            recap_updated_at=recap_at,
         ))
     return WatchLogOut(code=code, name=name, items=items).model_dump()
+
+
+@router.post("/{code}/watch-log/{trade_date}/recap")
+def save_watch_log_recap(code: str, trade_date: str, body: RecapIn,
+                          db: SessionLocal = Depends(get_db), user: User = Depends(get_current_user)):
+    """v146:upsert 单条偏离原因复盘，按 (user, code, trade_date) 唯一覆盖,更新 updated_at。
+    便于事后按 (user, trade_date range) 聚合做月度预判-复盘准确率统计。
+    """
+    if not _CODE_RE.match(code or ""):
+        raise HTTPException(status_code=400, detail="代码格式必须为 6 位数字")
+    if not _RE_DATE.match(trade_date or ""):
+        raise HTTPException(status_code=400, detail="交易日格式必须为 YYYY-MM-DD")
+    # 允许空字符串(=清除,降级回模板话术),但限制最大长度防滥用
+    recap_text = (body.recap or "").strip()
+    if len(recap_text) > 500:
+        raise HTTPException(status_code=400, detail="复盘内容不超过 500 字")
+    row = (db.query(DayViewRecap)
+           .filter(DayViewRecap.user_id == user.id, DayViewRecap.code == code,
+                   DayViewRecap.trade_date == trade_date)
+           .first())
+    if row:
+        row.recap = recap_text
+        row.operator = user.username
+        row.operator_id = user.id
+        row.updated_at = _now()
+    else:
+        row = DayViewRecap(
+            user_id=user.id, code=code, trade_date=trade_date,
+            recap=recap_text,
+            operator=user.username, operator_id=user.id,
+            updated_at=_now(),
+        )
+        db.add(row)
+    db.commit()
+    return {"ok": True, "code": code, "trade_date": trade_date,
+            "recap": recap_text, "user": user.username,
+            "updated_at": row.updated_at}
+
+
 @router.get("/tags")
 def list_tags(db: SessionLocal = Depends(get_db), user: User = Depends(get_current_user)):
     """列出当前用户的可投池自定义标签。"""

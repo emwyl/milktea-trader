@@ -254,3 +254,27 @@ def run_migrations(engine):
                 conn.execute(text("CREATE INDEX ix_day_view_log_user_id ON day_view_log(user_id)"))
             except Exception:
                 pass
+
+        # v146: 偏离原因复盘表(day_view_recap)。
+        #   每 (user, code, trade_date) 一行,只存最新一份;双击单元格保存时覆盖更新 updated_at。
+        #   便于后续按 (user, date_range) 聚合做月度预判-复盘准确率统计。
+        if not _has_table(conn, "day_view_recap"):
+            try:
+                conn.execute(text("""
+                    CREATE TABLE day_view_recap (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        user_id INTEGER,
+                        code VARCHAR(16),
+                        trade_date VARCHAR(10),
+                        recap TEXT DEFAULT '',
+                        operator VARCHAR(64) DEFAULT '',
+                        operator_id INTEGER,
+                        updated_at VARCHAR(32) DEFAULT '',
+                        FOREIGN KEY(user_id) REFERENCES users(id)
+                    )
+                """))
+                conn.execute(text("CREATE UNIQUE INDEX uq_day_view_recap_user_code_date ON day_view_recap(user_id, code, trade_date)"))
+                conn.execute(text("CREATE INDEX ix_day_view_recap_code ON day_view_recap(code)"))
+                conn.execute(text("CREATE INDEX ix_day_view_recap_user_date ON day_view_recap(user_id, trade_date)"))
+            except Exception:
+                pass

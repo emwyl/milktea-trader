@@ -196,20 +196,19 @@ def guest_login(request: Request):
 
 @router.get("/access-logs")
 def list_access_logs(page: int = 1, page_size: int = 10, user: User = Depends(get_current_user)):
-    """访问记录（含游客/已注册用户），仅管理员可见。按用户的最后登录时间倒序分页（默认10条/页）。每行展示一个用户最近一次活动信息（含最新访问页面路径，供前端展示中文名）。"""
+    """访问记录（含游客/已注册用户/未登录访客），仅管理员可见。按用户最近活动时间倒序分页（默认10条/页）。每行展示一个用户/访客最近一次活动信息（含最新访问页面路径，供前端展示中文名）。"""
     _require_admin(user)
     db = SessionLocal()
     try:
         page = max(1, int(page))
         page_size = min(max(1, int(page_size)), 200)
 
-        # 1) 先按 last_login_at 倒序分页取用户（SQLite DESC 默认把 NULL 放最后 → 未登录用户自然排到末尾）
-        users_q = db.query(User).order_by(User.last_login_at.desc(), User.id.desc())
-        total = users_q.count()
-        users_page = users_q.offset((page - 1) * page_size).limit(page_size).all()
-        usernames = [u.username for u in users_page]
+        # 统一构造一个用户/访客行
+        rows: dict[str, dict] = {}
 
-        # 2) 只为这页用户查一次"最新一条访问记录"，避免每行一次 N+1
+        # 1) 先按 last_login_at 倒序取所有用户（含游客），并关联其最新一条访问记录
+        users_all = db.query(User).order_by(User.last_login_at.desc().nullslast(), User.id.desc()).all()
+        usernames = [u.username for u in users_all]
         latest_map: dict[str, AccessLog] = {}
         if usernames:
             latest_id_sq = (
@@ -226,15 +225,14 @@ def list_access_logs(page: int = 1, page_size: int = 10, user: User = Depends(ge
                        .all()):
                 latest_map[ev.username] = ev
 
-        items = []
-        for u in users_page:
+        for u in users_all:
             ev = latest_map.get(u.username)
             last_ts = (ev.ts if ev is not None else None) or u.last_login_at or u.created_at
             last_event_type = (ev.event_type if ev is not None else None) or ("login" if u.last_login_at else None)
             last_path = (ev.path if ev is not None else None)
             last_ip = (ev.ip if ev is not None else None) or u.last_ip
             last_ua = (ev.ua if ev is not None else None)
-            items.append({
+            rows[u.username] = {
                 "username": u.username,
                 "role": u.role,
                 "is_guest": u.is_guest,
@@ -246,13 +244,83 @@ def list_access_logs(page: int = 1, page_size: int = 10, user: User = Depends(ge
                 "last_path": last_path,
                 "last_ip": last_ip,
                 "last_ua": last_ua,
-            })
+            }
+
+        # 2) Fallback / 增强：把 access_logs 中出现过、但不在 users 表里的 username（含 NULL=未登录访客）也聚合进来
+        #    避免"用户表被重置/为空"或"旧日志 username 未回填"时访问记录一片空白
+        since_ts = (datetime.now(timezone.utc) - timedelta(days=90)).isoformat()
+        anon_id_sq = (
+            db.query(
+                AccessLog.username.label("u"),
+                func.max(AccessLog.id).label("max_id"),
+            )
+            .filter(AccessLog.ts >= since_ts)
+            .group_by(AccessLog.username)
+            .subquery()
+        )
+        for ev in (db.query(AccessLog)
+                   .join(anon_id_sq, AccessLog.id == anon_id_sq.c.max_id)
+                   .all()):
+            uname = ev.username
+            key = uname if uname else "__anonymous__"
+            if key in rows:
+                # 已用 users 表信息展示，无需覆盖；但可以用 access_log 更新最后活动时间
+                existing = rows[key]
+                if ev.ts and (not existing["last_ts"] or ev.ts > existing["last_ts"]):
+                    existing["last_ts"] = ev.ts
+                    existing["last_event_type"] = ev.event_type
+                    existing["last_path"] = ev.path
+                    existing["last_ip"] = ev.ip or existing["last_ip"]
+                    existing["last_ua"] = ev.ua
+                continue
+            rows[key] = {
+                "username": uname or "未登录访客",
+                "role": "anonymous",
+                "is_guest": True,
+                "is_active": True,
+                "last_login_at": None,
+                "created_at": ev.ts,
+                "last_ts": ev.ts,
+                "last_event_type": ev.event_type,
+                "last_path": ev.path,
+                "last_ip": ev.ip,
+                "last_ua": ev.ua,
+            }
+
+        # 3) 按最后活动时间倒序排列并分页
+        items = sorted(rows.values(), key=lambda x: x["last_ts"] or "", reverse=True)
+        total = len(items)
+        start = (page - 1) * page_size
+        items_page = items[start:start + page_size]
+
         return {
             "total": total,
             "page": page,
             "page_size": page_size,
-            "items": items,
+            "items": items_page,
         }
+    finally:
+        db.close()
+
+
+@router.post("/visit")
+def record_visit(request: Request, user: User = Depends(get_current_user)):
+    """前端应用加载后显式上报一次访问（带 token），解决静态首页 GET 请求无法携带 Authorization 头导致访问记录大量 username=NULL 的问题。"""
+    db = SessionLocal()
+    try:
+        db.add(AccessLog(
+            ts=_now(),
+            ip=_client_ip(request),
+            ua=(request.headers.get("User-Agent", "") or "")[:512],
+            path=request.headers.get("Referer", "/"),
+            method="POST",
+            username=user.username,
+            user_id=user.id,
+            is_guest=bool(user.is_guest),
+            event_type="page",
+        ))
+        db.commit()
+        return {"ok": True}
     finally:
         db.close()
 
