@@ -242,6 +242,11 @@
   .red{color:var(--danger);font-weight:600}
   main{padding-bottom:52px}
   .fixfoot{position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid var(--line);padding:9px 16px;font-size:12px;color:var(--danger);text-align:center;z-index:50}
+  /* v161：部署环境无持久盘提醒条（可关闭） */
+  .env-warn{background:#fef3c7;border-bottom:1px solid #f59e0b;color:#92400e;font-size:13px;padding:8px 16px;display:flex;align-items:center;gap:10px;justify-content:center;position:relative;flex-wrap:wrap}
+  .env-warn b{color:#92400e;font-weight:700}
+  .env-warn a{color:#1d4ed8;text-decoration:underline;cursor:pointer}
+  .env-warn button.x{position:absolute;right:10px;top:50%;transform:translateY(-50%);background:transparent;border:0;color:#92400e;font-size:18px;cursor:pointer;padding:0 6px;line-height:1}
   .g4 .kv{display:block;border-bottom:0} .g4 .kv span{color:#6b7280;font-size:12px}
   .seg{display:flex;gap:8px;flex-wrap:wrap}
   .seg button{padding:5px 14px;border:1px solid #d1d5db;background:#fff;color:#374151;border-radius:6px;cursor:pointer;font-size:13px;line-height:1.5}
@@ -740,13 +745,19 @@
     <header>
       <h1>🧋 加油赚奶茶钱</h1>
       <span class="sub">个人学习用 · 先控风险再谈收益</span>
-      <span class="version" id="appVersion">v20260907156</span>
+      <span class="version" id="appVersion">v20260907161</span>
       <button class="ghost auto-refresh-btn" :class="{active:autoRefresh}" @click="toggleAutoRefresh" :title="autoRefresh?'自动刷新开启中，每5秒更新当前页面数据':'点击开启每5秒自动刷新'">
         {{autoRefresh?'⏸':'▶'}} 自动 5s
       </button>
       <span class="sub">你好，{{me.username}} <span v-if="me.role==='admin'" class="pill">admin</span><span v-if="me.is_guest" class="pill">游客</span></span>
       <button class="ghost" @click="logout">退出</button>
     </header>
+    <!-- v161：部署环境数据不持久警告条（仅环境变量 SHOWED 之后；用户可见） -->
+    <div v-if="envWarn.show" class="env-warn">
+      <span><b>⚠ 数据不持久：</b>当前部署环境（workbuddy 沙箱）每次重启/重新部署都会清空数据库，您添加到「短线可投池」的自选股、标签、规则、盯盘日志等都会丢失。</span>
+      <a @click="go('settings'); $nextTick(()=>{ const el=[...document.querySelectorAll('h3')].find(h=>h.textContent.includes('数据迁移')); if(el) el.scrollIntoView({behavior:'smooth',block:'start'}); })">→ 到设置页导出备份</a>
+      <button class="x" @click="envWarn.show=false" title="本次会话不再提示">×</button>
+    </div>
     <!-- 全局轻量 Toast -->
     <div v-if="toast.show" class="toast show">{{toast.message}}</div>
     <nav>
@@ -2916,6 +2927,7 @@ const app = createApp({
     showRulesModal:false,  // 加减仓规则弹窗显隐
     questionnaire:[], indicators:[], answers:{}, focus:[], prefDone:false, pref:{},
     ai:{key:'',base:'',model:''}, nt:{channel:'console',config:'',cron:'30 15 * * 1-5'},
+    envWarn:{show:true},  // v161 部署环境不持久警告条（默认显示，用户可点 × 关闭）
     poolCodes:[],  // 当前可投池中的 code 集合(每次 loadPool 后更新),用于选股结果页判「已在池」
     poolMsg:'',  // 短线可投池页面顶部轻量提示(如「已彻底删除」),2.5s 自动消失
     hintOpen:'',  // 移动端说明折叠:空串=全收起；非空=当前展开的 hintbar key(pool|screens)
