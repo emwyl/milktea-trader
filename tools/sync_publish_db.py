@@ -2,31 +2,35 @@
 """把本地 db 的精简版同步到 publish/backend/data/app.db，部署时 sandbox 启动会用这份数据。
 
 为什么不直接拷整个 db?
-  - data/app.db ~86MB，daily_quotes 占 48MB（行情缓存，可由 warmup 异步重建）
-  - 部署包过大，平台可能拒收；且 daily_quotes 隔天就过期，没必要打包
+  - data/app.db ~86MB，daily_quotes 占 48MB（全量行情缓存）
+  - 部署包过大，平台可能拒收；且 access_logs 隔天就过期，没必要打包
   - publish/backend/data/ 当前是 v119 时代的旧 40 只股 db，每次发版后用户线上数据被冲掉
 
-精简后 publish/backend/data/app.db ≈ 350KB，涵盖：
+精简后 publish/backend/data/app.db ≈ 18-20MB，涵盖：
   - users（含 admin 密码）
   - stocks 全 A 股 5549 只（300377 等都在）
   - tracked_pool + pool_tags + tracked_pool_tags（用户选股池+标签）
   - position_rules / screens / signals / scheme_types / user_profile / user_settings
   - notify_config / notify_log / app_settings
+  - daily_quotes 最近 60 天日线缓存（保证线上 sandbox 网络受限时，MA/箱体/评分等仍可用，
+    避免整页“数据异常”）
 
 用法:
   python tools/sync_publish_db.py                # 默认从 data/app.db 同步到 publish/backend/data/app.db
   python tools/sync_publish_db.py --src X.db --dst Y.db
   python tools/sync_publish_db.py --dry-run       # 只打印统计，不写文件
 """
-import sqlite3, os, shutil, argparse, sys
+import sqlite3, os, shutil, argparse, sys, datetime
 
 KEEP_TABLES = [
     'users', 'stocks', 'screens', 'tracked_pool', 'position_rules',
     'signals', 'scheme_types', 'user_profile', 'notify_config',
     'notify_log', 'app_settings', 'screen_results', 'user_settings',
     'stock_tconfig', 'pool_tags', 'tracked_pool_tags',
+    'daily_quotes',  # 打包最近 N 天缓存，防止线上无网时日线全异常
 ]
-# daily_quotes (48MB 行情缓存) + access_logs (访问日志) 不打包
+# access_logs（访问日志/衍生日志）不打包；daily_quotes 全量 48MB 太大，只打包最近 60 天
+DAILY_QUOTES_DAYS = 60
 
 
 def sync(src_path: str, dst_path: str, dry_run: bool = False) -> dict:
@@ -62,7 +66,22 @@ def sync(src_path: str, dst_path: str, dry_run: bool = False) -> dict:
                 if not dry_run:
                     dst.execute(sql)
                 cur3 = src.cursor()
-                cur3.execute(f'SELECT * FROM {name}')
+                # daily_quotes 只打包最近 N 天，避免 publish db 暴涨
+                if name == 'daily_quotes':
+                    cur3.execute('SELECT MAX(date) FROM daily_quotes')
+                    max_date_row = cur3.fetchone()
+                    max_date = max_date_row[0] if max_date_row else None
+                    if max_date:
+                        try:
+                            d = datetime.datetime.strptime(max_date, '%Y-%m-%d').date()
+                        except (ValueError, TypeError):
+                            d = datetime.date.today()
+                        cutoff = (d - datetime.timedelta(days=DAILY_QUOTES_DAYS)).isoformat()
+                        cur3.execute('SELECT * FROM daily_quotes WHERE date >= ?', (cutoff,))
+                    else:
+                        cur3.execute('SELECT * FROM daily_quotes')
+                else:
+                    cur3.execute(f'SELECT * FROM {name}')
                 rows = cur3.fetchall()
                 if rows and not dry_run:
                     ncols = len(rows[0])
