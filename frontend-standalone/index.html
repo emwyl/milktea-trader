@@ -606,6 +606,8 @@
   .sd-veto-box{background:#fef2f2;border:1px solid #fecaca;border-left:4px solid #dc2626;padding:10px 14px;border-radius:6px;margin-bottom:14px}
   .sd-veto-box ul{margin:6px 0 0 18px}
   .sd-veto-box li{color:#dc2626;margin:2px 0;font-size:13px}
+  /* v162: 一票否决标记(评分弹窗标题 / 列表综合评分列共用) */
+  .sd-veto-tag{display:inline-block;margin-left:4px;padding:1px 6px;border-radius:4px;background:#dc2626;color:#fff;font-size:11px;font-weight:600;vertical-align:middle;cursor:help}
   .sd-dim-row{display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding:10px 14px;background:#f8fafc;border-radius:6px;margin-bottom:14px}
   .sd-dim-row label{display:flex;align-items:center;gap:6px;font-size:13px}
   .sd-weight-input{width:54px;padding:4px 6px;border:1px solid #cbd5e1;border-radius:5px;text-align:center;font-weight:600;color:#1d4ed8}
@@ -745,7 +747,7 @@
     <header>
       <h1>🧋 加油赚奶茶钱</h1>
       <span class="sub">个人学习用 · 先控风险再谈收益</span>
-      <span class="version" id="appVersion">v20260907161</span>
+      <span class="version" id="appVersion">v20260907162</span>
       <button class="ghost auto-refresh-btn" :class="{active:autoRefresh}" @click="toggleAutoRefresh" :title="autoRefresh?'自动刷新开启中，每5秒更新当前页面数据':'点击开启每5秒自动刷新'">
         {{autoRefresh?'⏸':'▶'}} 自动 5s
       </button>
@@ -1275,8 +1277,8 @@
             <span v-if="mktBad(p.track,'q')" class="bad-data" title="行情读取异常,未评分">数据异常</span>
             <span v-else class="clickable-link"
                   :class="(p.user_score!=null ? p.user_score : (p.track.total_score||0))>=70 ? 'up' : ((p.user_score!=null ? p.user_score : (p.track.total_score||0))<40 ? 'down' : '')"
-                  :title="'点击查看评分详情与规则(可调权重/阈值,实时重算) · 当前显示实时重算分'"
-                  @click.stop="openScoreDetail(p)"><b>{{ p.user_score!=null ? p.user_score : (p.track.total_score!=null ? p.track.total_score : '-') }}</b></span>
+                  :title="p.user_vetoed ? '一票否决命中,总分强制为 0(与权重无关) · 点击查看评分详情' : '点击查看评分详情与规则(可调权重/阈值,实时重算) · 当前显示实时重算分'"
+                  @click.stop="openScoreDetail(p)"><b>{{ p.user_score!=null ? p.user_score : (p.track.total_score!=null ? p.track.total_score : '-') }}</b><span v-if="p.user_vetoed" class="sd-veto-tag" title="一票否决命中">否决</span></span>
           </template>
           <template v-else-if="col.key==='position_qty'">{{p.position_qty!=null ? p.position_qty : '-'}}</template>
               <template v-else-if="col.key==='cost_price'">{{p.cost_price!=null ? ui.fmt(p.cost_price) : '-'}}</template>
@@ -2070,6 +2072,8 @@
                 <span><span class="muted">当前实时分</span>
                   <b :class="(scoreDetailModal._result && scoreDetailModal._result.userScore>=70)?'up':(scoreDetailModal._result && scoreDetailModal._result.userScore<40?'down':'')"
                      style="font-size:20px">{{ (scoreDetailModal._result && scoreDetailModal._result.userScore!=null) ? scoreDetailModal._result.userScore : '-' }}</b>
+                  <span v-if="scoreDetailModal._result && scoreDetailModal._result.vetoed"
+                        class="sd-veto-tag" title="一票否决命中,总分强制为 0,与权重无关">一票否决</span>
                   <span class="sd-grade" v-if="scoreDetailModal._result && scoreDetailModal._result.userGrade"
                         :class="'grade-' + scoreDetailModal._result.userGrade">{{ scoreDetailModal._result.userGrade }}</span>
                   <span class="sd-grade grade-" v-if="scoreDetailModal._result && scoreDetailModal._result.officialGrade">→后端{{ scoreDetailModal._result.officialGrade }}</span>
@@ -2084,7 +2088,7 @@
             <div v-if="scoreDetailModal._result && scoreDetailModal._result.officialVetos && scoreDetailModal._result.officialVetos.length" class="sd-veto-box">
               <b>⚠ 一票否决命中(总分强制为 0):</b>
               <ul><li v-for="(v,vi) in scoreDetailModal._result.officialVetos" :key="vi">{{ v }}</li></ul>
-              <div class="muted" style="margin-top:4px;font-size:11px">提示:否决项是硬性筛选标准,与下方分项独立生效</div>
+              <div class="muted" style="margin-top:4px;font-size:11px">否决项命中后总分强制为 0,下方分项得分仅作诊断参考,不再参与总分计算</div>
             </div>
 
             <!-- 三维度权重编辑 -->
@@ -3241,14 +3245,26 @@ const app = createApp({
         total = +(total + penalty).toFixed(2);
         if(total < 0) total = 0;
         if(total > 100) total = 100;
+        // v162: 一票否决(后端已判定) → 总分强制为 0,与权重/分项无关
+        var _vr = (track && track.veto_reasons) || [];
+        if(typeof _vr === 'string'){ try{ _vr = JSON.parse(_vr); }catch(e){ _vr = _vr ? [_vr] : []; } }
+        if(!Array.isArray(_vr)) _vr = [];
+        var vetoed = _vr.length > 0;
+        if(vetoed) total = 0;
         var grade = 'D';
-        for(var i=0;i<rules.grades.length;i++){ if(total >= rules.grades[i].min){ grade = rules.grades[i].grade; break; } }
+        if(vetoed){
+          grade = 'D';
+        } else {
+          for(var i=0;i<rules.grades.length;i++){ if(total >= rules.grades[i].min){ grade = rules.grades[i].grade; break; } }
+        }
         return {
           officialScore: track && track.total_score != null ? track.total_score : null,
           officialGrade: track && track.ai_grade || null,
           officialVetos: track && track.veto_reasons || [],
           officialPenalty: track && track.penalty || 0,
           userScore: +total.toFixed(0),
+          vetoed: vetoed,
+          vetoReasons: _vr,
           userDimRaw: {A:0,B:0,C:0},  // 兼容旧 UI(无权重时代),保留 key 但不再使用
           userDimMax: {A:0,B:0,C:0},
           userDimScore: dimScore,
@@ -3776,11 +3792,12 @@ const app = createApp({
       const pool = this.pool || [];
       for(let i=0;i<pool.length;i++){
         const t = pool[i] && pool[i].track;
-        if(!t || t.mkt && t.mkt.q===0) { pool[i].user_score = null; continue; }
+        if(!t || t.mkt && t.mkt.q===0) { pool[i].user_score = null; pool[i].user_vetoed = false; continue; }
         try{
           const r = this.mtscore.compute(t, rules);
           pool[i].user_score = r && r.userScore != null ? r.userScore : null;
-        }catch(e){ pool[i].user_score = null; }
+          pool[i].user_vetoed = !!(r && r.vetoed);
+        }catch(e){ pool[i].user_score = null; pool[i].user_vetoed = false; }
       }
     },
     // v155: 给 rules.indicators 补 iw 默认值(每个分类内指标均分 100%)
@@ -3829,7 +3846,10 @@ const app = createApp({
         this.scoreDetailModal._result = result;
         // v159: 同步回写当前 p.user_score,列表列立即切到实时分
         const p = (this.pool||[]).find(x => x && x.code === m.code);
-        if(p) p.user_score = result && result.userScore != null ? result.userScore : null;
+        if(p){
+          p.user_score = result && result.userScore != null ? result.userScore : null;
+          p.user_vetoed = !!(result && result.vetoed);
+        }
       }, 80);
     },
     // ==== 三维权重编辑 ====
