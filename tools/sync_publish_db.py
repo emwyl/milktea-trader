@@ -27,9 +27,13 @@ KEEP_TABLES = [
     'signals', 'scheme_types', 'user_profile', 'notify_config',
     'notify_log', 'app_settings', 'screen_results', 'user_settings',
     'stock_tconfig', 'pool_tags', 'tracked_pool_tags',
+    # v143 日初判断历史(每次修改追加一行,同日可多条)
+    'day_view_log',
+    # v146 偏离原因复盘(每交易日每只股一行)
+    'day_view_recap',
     'daily_quotes',  # 打包最近 N 天缓存，防止线上无网时日线全异常
 ]
-# access_logs（访问日志/衍生日志）不打包；daily_quotes 全量 48MB 太大，只打包最近 60 天
+# access_logs(访问日志/衍生日志)不打包;daily_quotes 全量 48MB 太大,只打包最近 60 天
 DAILY_QUOTES_DAYS = 60
 
 

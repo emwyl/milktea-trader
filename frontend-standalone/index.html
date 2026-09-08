@@ -747,16 +747,16 @@
     <header>
       <h1>🧋 加油赚奶茶钱</h1>
       <span class="sub">个人学习用 · 先控风险再谈收益</span>
-      <span class="version" id="appVersion">v20260907162</span>
+      <span class="version" id="appVersion">v20260907164</span>
       <button class="ghost auto-refresh-btn" :class="{active:autoRefresh}" @click="toggleAutoRefresh" :title="autoRefresh?'自动刷新开启中，每5秒更新当前页面数据':'点击开启每5秒自动刷新'">
         {{autoRefresh?'⏸':'▶'}} 自动 5s
       </button>
       <span class="sub">你好，{{me.username}} <span v-if="me.role==='admin'" class="pill">admin</span><span v-if="me.is_guest" class="pill">游客</span></span>
       <button class="ghost" @click="logout">退出</button>
     </header>
-    <!-- v161：部署环境数据不持久警告条（仅环境变量 SHOWED 之后；用户可见） -->
+    <!-- v161/v164：部署环境数据不持久警告条（每次部署都会清空运行时写入的数据） -->
     <div v-if="envWarn.show" class="env-warn">
-      <span><b>⚠ 数据不持久：</b>当前部署环境（workbuddy 沙箱）每次重启/重新部署都会清空数据库，您添加到「短线可投池」的自选股、标签、规则、盯盘日志等都会丢失。</span>
+      <span><b>⚠ 数据不持久：</b>当前部署环境（workbuddy 沙箱）每次重启/重新部署都会清空运行时写入的数据，包括：<b>自选股、标签、规则、盯盘日志、日初判断、偏离复盘、访问记录</b>。下次发版前请先到「设置 → 数据迁移 → 导出」备份。</span>
       <a @click="go('settings'); $nextTick(()=>{ const el=[...document.querySelectorAll('h3')].find(h=>h.textContent.includes('数据迁移')); if(el) el.scrollIntoView({behavior:'smooth',block:'start'}); })">→ 到设置页导出备份</a>
       <button class="x" @click="envWarn.show=false" title="本次会话不再提示">×</button>
     </div>
