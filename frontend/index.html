@@ -24,9 +24,9 @@
     s.src = './vue.global.prod.js?v=20260909152' + Date.now();
     s.onload = function(){
       if (typeof Vue !== 'undefined' && Vue.createApp) { location.reload(); }
-      else { hint.innerHTML = '重试仍失败,请按 Ctrl+F5 强制刷新<br><span style="font-size:12px;color:#9ca3af">(v20260909181)</span>'; }
+      else { hint.innerHTML = '重试仍失败,请按 Ctrl+F5 强制刷新<br><span style="font-size:12px;color:#9ca3af">(v20260909182)</span>'; }
     };
-    s.onerror = function(){ hint.innerHTML = '重试仍失败,请按 Ctrl+F5 强制刷新<br><span style="font-size:12px;color:#9ca3af">(v20260909181)</span>'; };
+    s.onerror = function(){ hint.innerHTML = '重试仍失败,请按 Ctrl+F5 强制刷新<br><span style="font-size:12px;color:#9ca3af">(v20260909182)</span>'; };
     (document.head || document.documentElement).appendChild(s);
   }catch(e){ /* 兜底若失败也别抛,留给用户 Ctrl+F5 */ }
 })();
@@ -862,7 +862,7 @@
     <header>
       <h1>🧋 TR-个人学习版</h1>
       <span class="sub">个人学习用 · 先控风险再谈收益</span>
-      <span class="version" id="appVersion">v20260909181</span>
+      <span class="version" id="appVersion">v20260909182</span>
       <button class="ghost auto-refresh-btn" :class="{active:autoRefresh}" @click="toggleAutoRefresh" :title="autoRefresh?'自动刷新开启中，每10秒更新当前页面数据':'点击开启每10秒自动刷新'">
         {{autoRefresh?'⏸':'▶'}} 自动 5s
       </button>
@@ -1155,9 +1155,9 @@
           <div class="hintbar">短线可投池 = <b>你自己积攒的股票池</b>(手工输入代码加入)。系统每日跟踪 <b>箱体上下沿 / MA5·MA20 / 量比 / 换手 / 涨跌幅</b>,辅助你判断趋势与决策。</div>
         </div>
         <div v-if="poolMsg" class="hintbar" style="background:#e8f4ed;border-left-color:var(--ok);color:var(--ok)">{{poolMsg}}</div>
-        <!-- v180: 静态秒开提示 —— light 数据已展示,行情由后台全量富化自动填充 -->
-        <div v-if="poolEnrich" class="hintbar" style="background:#eef2ff;border-left-color:#6366f1;color:#3730a3">{{poolEnrich}}</div>
-        <!-- v181: 行情加载中提示 —— 请求超过 3s 未返回时页面居中显示(半透明、不挡操作) -->
+        <!-- v180: 静态秒开提示 —— light 数据已展示,行情由后台全量富化自动填充(居中遮罩出现时顶部条让位) -->
+        <div v-if="poolEnrich && !poolLoading" class="hintbar" style="background:#eef2ff;border-left-color:#6366f1;color:#3730a3">{{poolEnrich}}</div>
+        <!-- v182: 首次行情加载提示 —— 仅 loadPool 链路(进页面/翻页/筛选)富化预计超 1s 才居中显示;5s 定时刷新静默不再反复提示 -->
         <div v-if="poolLoading" class="pool-loading-mask">
           <div class="pool-loading-box"><span class="pool-loading-spin"></span>行情加载中，请稍候…</div>
         </div>
@@ -3181,10 +3181,11 @@ const app = createApp({
     pool:[], poolFilter:{q:'',tag:''}, poolPage:1, poolPageSize:15, poolTotal:0, rules:[], nr:{name:'',scope:'all',action:'reduce',conditions:'{"logic":"AND","conditions":[{"type":"below_ma","ma":20,"days":3}]}',risk:'重要',notice:'',enabled:true},
     // v180 性能:可投池「静态秒开 + 全量富化」状态
     poolEnrich:'',        // 顶部轻提示:「行情加载中,数据将自动更新…」;富化完成后清空
-    poolLoading:false,    // v181:行情请求超过 3s 未返回时,页面居中显示「加载中」提示
-    _poolLoadTimer:null,  // 3s 计时器句柄(loadPool/enrichPool 共用)
+    poolLoading:false,    // v182:仅「首次行情富化」预计超过 1s 时,页面居中显示「加载中」;定时刷新静默不再反复提示
+    _poolLoadTimer:null,  // 1s 计时器句柄(仅 loadPool→首次富化链路使用,enrichPool 静默刷新不触发)
     _poolSeq:0,           // loadPool 请求序号:翻页/筛选竞态时丢弃过期响应
     _enrichBusy:false,    // 全量富化防重入(tick 与手动富化可能同时触发)
+    _enrichQueued:false,  // v182: 富化被 tick 占用时,用户侧(进页/翻页/筛选)富化排队补跑一次,防行情落空
     // v180 宽指渐进加载状态
     _idxQuotesFetched:false,   // 首个 tick 是否已发快照请求(成功后转 20s guard 节流)
     _idxKlinesFetched:false,   // 60 日 K 线是否已补拉过(1h 缓存,只拉一次)
@@ -4828,7 +4829,8 @@ const app = createApp({
       }
       else if(v==='pool'){
         // v180 性能:静态行已渲染时 tick 只做全量富化(不必重拉静态);首屏空表兜底走完整 loadPool
-        if(!this.pool.length) this.loadPool(); else this.enrichPool();
+        // v182: tick 富化为静默刷新(enrichPool 不带提示开关),不再隔 5s 反复弹「加载中」
+        if(!this.pool.length) this.loadPool(); else this.enrichPool(false);
         this.loadPoolTags();
       }
       else if(v==='t' && this.t.code) this.loadT(true);
@@ -5649,9 +5651,10 @@ const app = createApp({
     //   light=1 秒回本地静态信息(代码/名称/标签/行业/日初判断/备注)先渲染,让用户立刻看到池子;
     //   随即在后台 fire enrichPool() 拉全量行情+评分(后端 60s track 缓存,重复刷新秒回)。
     //   搜索/翻页/筛选/增删后仍走 loadPool(先静态后富化)。
+    // v182: 进入可投池后先 light 秒回静态行;首次行情富化超 1s 时居中提示,快则无感;定时刷新静默不重复提示
     async loadPool(){
       const seq = ++this._poolSeq;
-      this._startPoolLoadingTimer();   // v181: 静态请求超 3s 也提示「加载中」
+      this._startPoolLoadingTimer();   // v182: 静态请求预计超 1s 也提示「加载中」
       try{
         const params = new URLSearchParams();
         if(this.poolFilter.q) params.append('q', this.poolFilter.q.trim());
@@ -5662,18 +5665,25 @@ const app = createApp({
         const r=await API('/pool?' + params.toString());
         if(seq !== this._poolSeq) return;   // 期间用户又翻页/筛选,丢弃过期响应
         this._applyPoolRows(r);
-        // 静态已可见,立即后台并发富化(不阻塞渲染)
-        if((r.items||[]).length) this.enrichPool();
+        // 静态已可见,立即后台并发富化(不阻塞渲染);仅进入页面/翻页/筛选后首次富化携带提示开关
+        if((r.items||[]).length) this.enrichPool(true);
+        else this._clearPoolLoading();   // 空结果:无可富化,清掉计时器避免空态误弹「加载中」
       }catch(e){
         this._clearPoolLoading();
         if(seq === this._poolSeq) this._setErr('poolErr','可投池加载失败：'+(e.message||'网络错误')+'，点击重试', ()=>this.loadPool());
       }
     },
-    // v180: 全量富化——拉行情+评分覆盖当前页;防重入;失败静默(静态行仍在,下一轮 tick 自动重试)
-    async enrichPool(){
-      if(this._enrichBusy) return;
+    // v182: 全量富化——拉行情+评分覆盖当前页;防重入;失败静默(静态行仍在,下一轮 tick 自动重试)
+    //   withHint=true: 仅「loadPool 链路(进页面/翻页/筛选/搜索)的首次行情加载」,预计超 1s 才弹居中「加载中」
+    //   withHint=false: 5s 定时刷新触发的富化,静默执行,不再反复弹提示
+    async enrichPool(withHint){
+      if(this._enrichBusy){
+        // v182: tick 富化占用中,但用户又主动翻页/进页 → 排队补跑一次,避免新页行情落空
+        if(withHint) this._enrichQueued = true;
+        return;
+      }
       this._enrichBusy = true;
-      this._startPoolLoadingTimer();   // v181: 超 3s 未返回 → 居中「加载中」
+      if(withHint) this._startPoolLoadingTimer();   // 仅首次行情加载计时;定时刷新不启动计时
       const seq = this._poolSeq;
       try{
         const params = new URLSearchParams();
@@ -5685,12 +5695,16 @@ const app = createApp({
         if(seq !== this._poolSeq) return;
         this._applyPoolRows(r);
       }catch(e){ console.warn('enrichPool fail:', (e&&e.message)||e); }
-      finally{ this._clearPoolLoading(); this._enrichBusy = false; }
+      finally{
+        this._clearPoolLoading(); this._enrichBusy = false;
+        if(this._enrichQueued){ this._enrichQueued = false; this.enrichPool(true); }
+      }
     },
-    // v181: 行情请求计时——3s 内没回来就显示居中「加载中…」(只在可投池页),返回即消失
+    // v182: 首次行情加载计时——1s 内没回来才显示居中「加载中…」(只在可投池页),返回即消失。
+    //   存量<5 且行情 1s 内可取回的场景,计时器在请求返回前已被 clear,提示不会出现。
     _startPoolLoadingTimer(){
       this._clearPoolLoading();
-      this._poolLoadTimer = setTimeout(()=>{ if(this.view==='pool') this.poolLoading = true; }, 3000);
+      this._poolLoadTimer = setTimeout(()=>{ if(this.view==='pool') this.poolLoading = true; }, 1000);
     },
     _clearPoolLoading(){
       if(this._poolLoadTimer){ clearTimeout(this._poolLoadTimer); this._poolLoadTimer = null; }
