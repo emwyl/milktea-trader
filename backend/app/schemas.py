@@ -122,6 +122,9 @@ class PoolOut(BaseModel):
     # v143：日初判断历史(从 day_view_log 派生)
     day_view_today: str = ""  # 当日最后一条 trend(看涨/看跌/风险/-),空=今日无 log
     day_view_log_count: int = 0  # 该 code 的总历史条数(便于判定「盯盘日志」按钮显示)
+    # v185: 当日(当前交易日)条数 —— 列表「日初判断」按钮右侧角标只显示当天维护的条数,
+    #   非当天有历史、当天没填的股票角标为 0(前端不显示数字),避免"历史条数"误导成"今天填了几次"
+    day_view_log_count_today: int = 0
 
 
 class DayViewIn(BaseModel):
@@ -139,6 +142,9 @@ class DayViewLogIn(BaseModel):
     trade_date: str  # YYYY-MM-DD,前端传入
     trend: str  # 看涨/看跌/风险/-
     target_price: Optional[float] = None
+    # v185: 目标价位拆分为买入端与卖出端(原单值 target_price 保留兼容旧数据)
+    target_buy: Optional[float] = None    # 目标买入价,可空
+    target_sell: Optional[float] = None   # 目标卖出价,可空
     target_note: str = ""  # ≤20字
     # v178: 录入时的快照(用于盯盘日志表格展示)
     composite_score: Optional[float] = None  # 综合评分(0-100),None 表示不入快照
@@ -147,12 +153,15 @@ class DayViewLogIn(BaseModel):
 
 
 class DayViewLogOut(BaseModel):
-    """v143：日初判断修改记录返回。v178 加 3 个快照字段。"""
+    """v143：日初判断修改记录返回。v178 加 3 个快照字段。
+    v185 加 target_buy / target_sell(目标买入 / 目标卖出)。"""
     id: int
     code: str
     trade_date: str
     trend: str
     target_price: Optional[float] = None
+    target_buy: Optional[float] = None     # v185: 目标买入价
+    target_sell: Optional[float] = None    # v185: 目标卖出价
     target_note: str = ""
     operator: str = ""
     operated_at: str = ""
@@ -185,9 +194,14 @@ class WatchLogItem(BaseModel):
     close: Optional[float] = None
     intraday_avg: Optional[float] = None  # 分时均价=amount/(volume*100),单位 元/股
     trend: str = ""  # 当日最后一条 trend
-    target_price: Optional[float] = None
+    target_price: Optional[float] = None   # v185: 旧的单值目标价位(兼容历史数据)
+    target_buy: Optional[float] = None     # v185: 目标买入价
+    target_sell: Optional[float] = None    # v185: 目标卖出价
+    # v185: 当日最高价 / 最低价(盯盘日志收盘价后追加两列,便于判断预判价位当天是否触及)
+    high: Optional[float] = None
+    low: Optional[float] = None
     target_note: str = ""
-    deviation: Optional[float] = None  # (target - close) / close
+    deviation: Optional[float] = None  # v185: 区间偏离度(见 pool.watch_log 口径);正=收盘高于预判上沿
     deviation_pct: Optional[float] = None  # 百分比
     deviation_reason: str = ""  # 默认模板话术(按 trend × deviation 方向)
     # v146: 用户编辑的偏离原因复盘

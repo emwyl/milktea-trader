@@ -265,6 +265,9 @@ def run_migrations(engine):
                 ("composite_score", "ALTER TABLE day_view_log ADD COLUMN composite_score FLOAT"),
                 ("reference_text", "ALTER TABLE day_view_log ADD COLUMN reference_text TEXT DEFAULT ''"),
                 ("reference_metrics_json", "ALTER TABLE day_view_log ADD COLUMN reference_metrics_json TEXT DEFAULT ''"),
+                # v185: 日初预判目标价位拆分为「目标买入 / 目标卖出」两端(旧 target_price 保留兼容)
+                ("target_buy", "ALTER TABLE day_view_log ADD COLUMN target_buy FLOAT"),
+                ("target_sell", "ALTER TABLE day_view_log ADD COLUMN target_sell FLOAT"),
             ):
                 try:
                     if not _has_col(conn, "day_view_log", col):

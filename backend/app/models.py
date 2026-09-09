@@ -132,7 +132,10 @@ class DayViewLog(Base):
     code: Mapped[str] = mapped_column(String(16), index=True)
     trade_date: Mapped[str] = mapped_column(String(10), index=True)  # YYYY-MM-DD,由前端传入(避免后端时区)
     trend: Mapped[str] = mapped_column(String(4), default="-")  # 看涨/看跌/风险/-
-    target_price: Mapped[float | None] = mapped_column(Float, nullable=True)  # 目标价位
+    target_price: Mapped[float | None] = mapped_column(Float, nullable=True)  # 目标价位(v185 起由「目标买入/目标卖出」取代,保留兼容旧数据)
+    # v185: 目标价位拆分为买入/卖出两端(用户原意:日初预判一个想买入的价位、一个想卖出的价位)
+    target_buy: Mapped[float | None] = mapped_column(Float, nullable=True)    # 目标买入价
+    target_sell: Mapped[float | None] = mapped_column(Float, nullable=True)   # 目标卖出价
     target_note: Mapped[str] = mapped_column(String(40), default="")  # 目标依据,前端校验 ≤20字,DB 给冗余
     operator: Mapped[str] = mapped_column(String(64), default="")  # 操作用户名(冗余便于历史回看)
     operator_id: Mapped[int | None] = mapped_column(Integer, nullable=True)

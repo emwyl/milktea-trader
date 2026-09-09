@@ -24,9 +24,9 @@
     s.src = './vue.global.prod.js?v=20260909152' + Date.now();
     s.onload = function(){
       if (typeof Vue !== 'undefined' && Vue.createApp) { location.reload(); }
-      else { hint.innerHTML = '重试仍失败,请按 Ctrl+F5 强制刷新<br><span style="font-size:12px;color:#9ca3af">(v20260909184)</span>'; }
+      else { hint.innerHTML = '重试仍失败,请按 Ctrl+F5 强制刷新<br><span style="font-size:12px;color:#9ca3af">(v20260910185)</span>'; }
     };
-    s.onerror = function(){ hint.innerHTML = '重试仍失败,请按 Ctrl+F5 强制刷新<br><span style="font-size:12px;color:#9ca3af">(v20260909184)</span>'; };
+    s.onerror = function(){ hint.innerHTML = '重试仍失败,请按 Ctrl+F5 强制刷新<br><span style="font-size:12px;color:#9ca3af">(v20260910185)</span>'; };
     (document.head || document.documentElement).appendChild(s);
   }catch(e){ /* 兜底若失败也别抛,留给用户 Ctrl+F5 */ }
 })();
@@ -862,7 +862,7 @@
     <header>
       <h1>🧋 TR-个人学习版</h1>
       <span class="sub">个人学习用 · 先控风险再谈收益</span>
-      <span class="version" id="appVersion">v20260909184</span>
+      <span class="version" id="appVersion">v20260910185</span>
       <button class="ghost auto-refresh-btn" :class="{active:autoRefresh}" @click="toggleAutoRefresh" :title="autoRefresh?'自动刷新开启中，每10秒更新当前页面数据':'点击开启每10秒自动刷新'">
         {{autoRefresh?'⏸':'▶'}} 自动 5s
       </button>
@@ -1241,8 +1241,9 @@
                   @click.stop="openDayViewModal(p)"
                   :title="p.day_view_today ? ('点击修改 ' + (p.name||p.code) + ' 的日初判断') : ('点击填写 ' + (p.name||p.code) + ' 的日初判断')">
                   <span v-if="p.day_view_today && p.day_view_today !== '-'" :class="'day-view-tag tag-' + p.day_view_today">{{ p.day_view_today }}</span>
-                  <span v-else class="muted">{{ (p.day_view_log_count > 0) ? '修改' : '填写' }}</span>
-                  <span v-if="p.day_view_log_count > 0" class="day-view-count" :title="'该股累计 ' + p.day_view_log_count + ' 条日初判断历史'">{{ p.day_view_log_count }}</span>
+                  <!-- v185: 右侧数字只统计「当天交易日」维护的条数,非当天的不显示(历史条数不再误导) -->
+                  <span v-else class="muted">{{ (p.day_view_log_count_today > 0) ? '修改' : '填写' }}</span>
+                  <span v-if="p.day_view_log_count_today > 0" class="day-view-count" :title="'今日(' + (p.day_view_log_count_today) + '条)日初判断记录,点击可修改'">{{ p.day_view_log_count_today }}</span>
                 </button>
               </template>
               <template v-else-if="col.key==='realtime_volume'">
@@ -2128,10 +2129,15 @@
                 </div>
               </div>
             </div>
+            <!-- v185: 原单个「目标价位」拆成「目标买入 / 目标卖出」两端 -->
             <div class="dv-edit-row">
               <div class="dv-field" style="flex:1">
-                <label>目标价位(元,可选)</label>
-                <input type="number" v-model.number="dayViewModal.target_price" step="0.01" min="0" placeholder="留空表示不设" />
+                <label>目标买入(元,可选)</label>
+                <input type="number" v-model.number="dayViewModal.target_buy" step="0.01" min="0" placeholder="想买入的价格" />
+              </div>
+              <div class="dv-field" style="flex:1">
+                <label>目标卖出(元,可选)</label>
+                <input type="number" v-model.number="dayViewModal.target_sell" step="0.01" min="0" placeholder="想卖出的价格" />
               </div>
               <div class="dv-field" style="flex:2">
                 <label>目标依据(≤20字,可选)</label>
@@ -2178,7 +2184,8 @@
             <div v-if="!dayViewModal.history.length" class="muted" style="padding:12px 0;text-align:center">今日暂无修改记录</div>
             <table v-else class="dv-history-tbl">
               <thead>
-                <tr><th style="width:36px">序号</th><th style="width:80px">用户</th><th style="width:80px">时间</th><th style="width:60px">趋势</th><th style="width:80px">目标价位</th><th>目标依据</th></tr>
+                <!-- v185: 目标价位 → 目标买入 / 目标卖出 -->
+                <tr><th style="width:36px">序号</th><th style="width:80px">用户</th><th style="width:80px">时间</th><th style="width:60px">趋势</th><th style="width:76px">目标买入</th><th style="width:76px">目标卖出</th><th>目标依据</th></tr>
               </thead>
               <tbody>
                 <tr v-for="(h, i) in dayViewModal.history" :key="h.id">
@@ -2186,14 +2193,15 @@
                   <td>{{ h.operator || '-' }}</td>
                   <td>{{ fmtTimeShort(h.operated_at) }}</td>
                   <td><span :class="'day-view-tag tag-' + (h.trend || '-')">{{ h.trend || '-' }}</span></td>
-                  <td>{{ h.target_price != null ? h.target_price : '-' }}</td>
+                  <td>{{ h.target_buy != null ? h.target_buy : '-' }}</td>
+                  <td>{{ h.target_sell != null ? h.target_sell : '-' }}</td>
                   <td :title="h.target_note || ''">{{ h.target_note || '-' }}</td>
                 </tr>
               </tbody>
             </table>
           </div>
           <div class="modal-foot">
-            <button type="button" class="ghost" @click="dayViewModal.target_price=null;dayViewModal.target_note='';dayViewModal.trend='-'" :disabled="dayViewModal.saving">重置</button>
+            <button type="button" class="ghost" @click="dayViewModal.target_buy=null;dayViewModal.target_sell=null;dayViewModal.target_note='';dayViewModal.trend='-'" :disabled="dayViewModal.saving">重置</button>
             <button type="button" @click="submitDayViewLog" :disabled="dayViewModal.saving">{{ dayViewModal.saving ? '保存中...' : '保存' }}</button>
             <button type="button" class="ghost" @click="closeDayViewModal">关闭</button>
           </div>
@@ -2219,6 +2227,9 @@
                   <th style="width:96px">交易日</th>
                   <th style="width:80px">开盘</th>
                   <th style="width:80px">收盘</th>
+                  <!-- v185: 收盘价后追加当日最高 / 最低,便于判断预判价位当天是否曾触及 -->
+                  <th style="width:80px">最高</th>
+                  <th style="width:80px">最低</th>
                   <th style="width:90px">分时均价</th>
                   <!-- v178:录入时的"综合评分"快照(系统自动取,不可改) -->
                   <th style="width:70px">综合<br/>评分</th>
@@ -2226,9 +2237,12 @@
                   <th style="width:240px">预判参考信息</th>
                   <!-- v178:后续 5 列是用户录入字段,标题统一蓝色提示 -->
                   <th style="width:70px" class="wl-user-th">预判趋势</th>
-                  <th style="width:70px" class="wl-user-th">目标价位</th>
+                  <!-- v185: 单个「目标价位」拆成买入端与卖出端 -->
+                  <th style="width:76px" class="wl-user-th">目标买入</th>
+                  <th style="width:76px" class="wl-user-th">目标卖出</th>
                   <th class="wl-user-th">目标依据</th>
-                  <th style="width:80px" class="wl-user-th">偏离度</th>
+                  <th style="width:92px" class="wl-user-th">偏离度<span class="wl-help"
+                      title="偏离度 = 收盘价相对你预判的「买入~卖出」区间的偏离：&#10;· 收盘落在区间内 → 0%（预判准确）&#10;· 收盘低于目标买入价 → 负值（比预判更便宜）&#10;· 收盘高于目标卖出价 → 正值（卖飞/超预期上涨）&#10;只填一端时以该端为参考；两端都未填则不计算。">?</span></th>
                   <th class="wl-user-th">偏离原因复盘</th>
                 </tr>
               </thead>
@@ -2239,6 +2253,9 @@
                     <td><b>{{ it.trade_date }}</b></td>
                     <td>{{ it.open != null ? it.open : '-' }}</td>
                     <td>{{ it.close != null ? it.close : '-' }}</td>
+                    <!-- v185: 最高 / 最低 -->
+                    <td>{{ it.high != null ? it.high : '-' }}</td>
+                    <td>{{ it.low != null ? it.low : '-' }}</td>
                     <td>{{ it.intraday_avg != null ? it.intraday_avg : '-' }}</td>
                     <!-- v178:综合评分快照 -->
                     <td>
@@ -2251,7 +2268,9 @@
                       <div :class="it.reference_text ? 'wl-snap-text' : 'wl-snap-text empty'" :title="it.reference_text || ''">{{ it.reference_text || '无(旧数据或录入时未生成)' }}</div>
                     </td>
                     <td><span :class="'day-view-tag tag-' + (it.trend || '-')">{{ it.trend || '-' }}</span></td>
-                    <td>{{ it.target_price != null ? it.target_price : '-' }}</td>
+                    <!-- v185: 目标买入 / 目标卖出(无新字段时回退旧 target_price 展示) -->
+                    <td>{{ it.target_buy != null ? it.target_buy : '-' }}</td>
+                    <td>{{ it.target_sell != null ? it.target_sell : (it.target_price != null ? it.target_price : '-') }}</td>
                     <td :title="it.target_note || ''">{{ it.target_note || '-' }}</td>
                     <td :class="(it.deviation!=null && it.deviation>0) ? 'up' : ((it.deviation!=null && it.deviation<0) ? 'down' : '')">
                       {{ it.deviation_pct != null ? (it.deviation_pct>0?'+':'') + it.deviation_pct + '%' : '-' }}
@@ -2273,18 +2292,20 @@
                     </td>
                   </tr>
                   <tr v-if="it._expanded" class="wl-detail-row">
-                    <td colspan="12">
+                    <!-- v185: 加最高/最低 + 目标拆分后共 15 列 -->
+                    <td colspan="15">
                       <div v-if="!it._details" class="muted" style="padding:8px 0">加载中...</div>
                       <div v-else-if="!it._details.length" class="muted" style="padding:8px 0">该日无修改明细</div>
                       <table v-else class="wl-detail-tbl">
-                        <thead><tr><th style="width:36px">序号</th><th style="width:100px">时间</th><th style="width:80px">用户</th><th style="width:70px">趋势</th><th style="width:90px">目标价位</th><th>目标依据</th></tr></thead>
+                        <thead><tr><th style="width:36px">序号</th><th style="width:100px">时间</th><th style="width:80px">用户</th><th style="width:70px">趋势</th><th style="width:80px">目标买入</th><th style="width:80px">目标卖出</th><th>目标依据</th></tr></thead>
                         <tbody>
                           <tr v-for="(d, di) in it._details" :key="d.id">
                             <td>{{ di+1 }}</td>
                             <td>{{ fmtTimeShort(d.operated_at) }}</td>
                             <td>{{ d.operator || '-' }}</td>
                             <td><span :class="'day-view-tag tag-' + (d.trend || '-')">{{ d.trend || '-' }}</span></td>
-                            <td>{{ d.target_price != null ? d.target_price : '-' }}</td>
+                            <td>{{ d.target_buy != null ? d.target_buy : '-' }}</td>
+                            <td>{{ d.target_sell != null ? d.target_sell : (d.target_price != null ? d.target_price : '-') }}</td>
                             <td :title="d.target_note || ''">{{ d.target_note || '-' }}</td>
                           </tr>
                         </tbody>
@@ -2298,9 +2319,9 @@
           <div class="modal-foot">
             <span class="muted" style="font-size:12px;margin-right:auto;line-height:1.5;flex:1;min-width:240px">
               <b>算法口径:</b>分时均价 = 当日成交额 ÷ (成交量 × 100),单位 元/股,跨价位股票可比;
-              偏离度 = (目标价位 − 收盘价) ÷ 收盘价,
-              <span class="up">正值</span>=收盘低于目标(未达目标位),
-              <span class="down">负值</span>=收盘高于目标(突破目标位);
+              偏离度 = 收盘价相对你预判的「目标买入~目标卖出」区间的偏离:收盘落在区间内记 0%(预判准确),
+              收盘低于目标买入价记<span class="down">负值</span>(比预判更便宜),
+              收盘高于目标卖出价记<span class="up">正值</span>(卖飞/上涨超预期);
               同一交易日多次修改取最后一条;「偏离原因复盘」默认可编辑(默认留空,不预填后端模板话术),改完后点下方「保存」统一入库。
             </span>
             <!-- v154: 保存过程的状态反馈横条 -->
@@ -3247,20 +3268,22 @@ const app = createApp({
       // v179: 升 key 到 v2 —— A 类 5→5 指标且每档 max 8,旧 4 指标 + max=5/15/10 规则与新规则混用会出错,直接重置
       // v184: 升 key 到 v3 —— C 类板块共振 5 档 7 分→强/弱二档 4 分 + 新增跳空缺口 3 分,
       //   旧 v2 规则缺 gap 指标且 sector 仍是旧枚举,混用会导致新规则不生效,直接重置
-      const KEY = 'milktea_scoring_rules_v3';
+      // v185: 升 key 到 v4 —— B 类 MA5/MA20 由二档改三档(连续3日双上/仅MA20站上/连续3日下跌),
+      //   旧 v3 规则里 ma 指标仍是「双上/仅MA5上/双下」枚举,与新后端 ma_position 对不上会恒显无数据,直接重置
+      const KEY = 'milktea_scoring_rules_v4';
       try{
         const raw = localStorage.getItem(KEY);
         if(raw){ return JSON.parse(raw); }
       }catch(e){ /* 解析失败走默认 */ }
       return null;  // null=mtscore 默认规则(首次进弹窗自动载入)
     })(),
-    scoreRulesLSKey: 'milktea_scoring_rules_v3',
+    scoreRulesLSKey: 'milktea_scoring_rules_v4',
     // v148: mtscore 评分工具集(放在 data() 而非 methods(),避免 Vue 3 prod 对嵌套方法对象的处理陷阱)
     mtscore: {
       // ==== 默认规则(与后端 data_fetcher.py:_calc_pass_scores 对齐) ====
       default: function defaultRules(){
         return {
-          version:'v184-default',  // v155 加指标级权重(iw);v184 C 类改档+新增跳空缺口
+          version:'v185-default',  // v155 加指标级权重(iw);v184 C 类改档+新增跳空缺口
           weights:{A:40, B:35, C:25},
           grades:[
             {min:80,grade:'A'},
@@ -3345,24 +3368,30 @@ const app = createApp({
                {label:'过热', min:15, lt:null, score:2, veto:false, after:true},
              ]},
             {id:'ma', dim:'B', label:'MA5/MA20 位置', unit:'-', max:15,
-             // v157-fix: source 返回值必须与 bands.attr 字符串一致,否则 scoreInd 中 b.attr===v 永远 false
+            // v185: 改用后端 ma_position 三档口径(连续3日双上 / 仅MA20站上 / 连续3日下跌),
+            //   并保留「中间态」与日线不足时的降级档,避免展示分与实际分不一致
              source:function getV(t){
-               if(t.above_ma5===true&&t.above_ma20===true) return '双上';
-               if(t.above_ma5===true) return '仅MA5上';
-               if(t.above_ma5===false&&t.above_ma20===false) return '双下';
+               var p = t.ma_position;
+               if(p==='above3'||p==='above3_short') return '连3双上';
+               if(p==='ma20_only'||p==='ma20_only_short') return '仅MA20上';
+               if(p==='fall3') return '连3下跌';
+               if(p==='mid') return '中间态';
                return null;
              },
-             valid:function isV(t){return t.above_ma5===true||t.above_ma5===false;},
+             valid:function isV(t){return !!t.ma_position && t.ma_position!=='unknown';},
              display:function getD(t){
-               if(t.above_ma5===true&&t.above_ma20===true) return '双上';
-               if(t.above_ma5===true) return '仅MA5上';
-               if(t.above_ma5===false&&t.above_ma20===false) return '双下';
+               var p = t.ma_position;
+               if(p==='above3'||p==='above3_short') return '连续3日双上';
+               if(p==='ma20_only'||p==='ma20_only_short') return '仅MA20站上';
+               if(p==='fall3') return '连续3日下跌';
+               if(p==='mid') return '中间态';
                return '无数据';
              },
              bands:[
-               {label:'最优', attr:'双上',    score:15, veto:false},
-               {label:'次优', attr:'仅MA5上', score:8,  veto:false},
-               {label:'差',   attr:'双下',    score:0,  veto:false},
+               {label:'最优', attr:'连3双上',  score:15, veto:false},
+               {label:'次优', attr:'仅MA20上', score:8,  veto:false},
+               {label:'中性', attr:'中间态',   score:4,  veto:false},
+               {label:'差',   attr:'连3下跌',  score:0,  veto:false},
              ]},
             {id:'box_pos', dim:'B', label:'箱体位置', unit:'-', max:10,
              source:function getV(t){return t.box_pos;},

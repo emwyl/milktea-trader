@@ -240,12 +240,21 @@ def list_pool(
             for r in day_rows:
                 if r.code not in today_map:
                     today_map[r.code] = r.trend or "-"
-        # 总历史条数
+        # 总历史条数(v185: 仍保留,用于「盯盘日志」按钮是否显示 —— 只看有没有历史,不按当天)
         cnt_rows = (db.query(DayViewLog.code, func.count(DayViewLog.id))
                     .filter(DayViewLog.user_id == user.id, DayViewLog.code.in_(codes))
                     .group_by(DayViewLog.code)
                     .all())
         count_map = {c: int(n) for c, n in cnt_rows}
+        # v185: 当日条数 —— 列表「日初判断」右侧角标只统计当前交易日维护的条数,
+        #   非当天维护的记录不计入(前端 0 则不显示数字),与「盯盘日志」按钮的显示条件解耦
+        today_cnt_rows = (db.query(DayViewLog.code, func.count(DayViewLog.id))
+                          .filter(DayViewLog.user_id == user.id,
+                                  DayViewLog.trade_date == eff_today,
+                                  DayViewLog.code.in_(codes))
+                          .group_by(DayViewLog.code)
+                          .all())
+        today_count_map = {c: int(n) for c, n in today_cnt_rows}
 
     result = []
     for p in page_rows:
@@ -253,6 +262,7 @@ def list_pool(
         o["track"] = tracks.get(p.code, {})
         o["day_view_today"] = today_map.get(p.code, "")
         o["day_view_log_count"] = count_map.get(p.code, 0)
+        o["day_view_log_count_today"] = today_count_map.get(p.code, 0)   # v185: 仅当天条数
         result.append(o)
     return {"items": result, "total": total, "page": page, "page_size": page_size}
 
@@ -907,6 +917,25 @@ def add_day_view_log(code: str, body: DayViewLogIn,
         raise HTTPException(status_code=400, detail=f"trend 必须是: {','.join(_V143_TREND)}")
     if body.target_price is not None and body.target_price < 0:
         raise HTTPException(status_code=400, detail="target_price 必须 ≥ 0")
+    # v185: 目标买入 / 目标卖出(拆分后的两个端,可只填其一)
+    tb = body.target_buy
+    ts = body.target_sell
+    if tb is not None:
+        try:
+            tb = float(tb)
+        except Exception:
+            raise HTTPException(status_code=400, detail="target_buy 必须是数字")
+        if tb < 0:
+            raise HTTPException(status_code=400, detail="target_buy 必须 ≥ 0")
+    if ts is not None:
+        try:
+            ts = float(ts)
+        except Exception:
+            raise HTTPException(status_code=400, detail="target_sell 必须是数字")
+        if ts < 0:
+            raise HTTPException(status_code=400, detail="target_sell 必须 ≥ 0")
+    if tb and ts and tb > ts:
+        raise HTTPException(status_code=400, detail="目标买入价不应高于目标卖出价")
     note = (body.target_note or "").strip()
     if len(note) > 20:
         raise HTTPException(status_code=400, detail="target_note 不能超过 20 字")
@@ -936,6 +965,9 @@ def add_day_view_log(code: str, body: DayViewLogIn,
         user_id=user.id, code=code, trade_date=body.trade_date,
         trend=body.trend,
         target_price=body.target_price if body.target_price is not None and body.target_price > 0 else None,
+        # v185: 目标买入 / 目标卖出(落库;0 视为未填)
+        target_buy=(tb if tb and tb > 0 else None),
+        target_sell=(ts if ts and ts > 0 else None),
         target_note=note[:20],
         operator=user.username or "", operator_id=user.id,
         operated_at=_now(),
@@ -949,7 +981,9 @@ def add_day_view_log(code: str, body: DayViewLogIn,
     db.refresh(row)
     return DayViewLogOut(
         id=row.id, code=row.code, trade_date=row.trade_date,
-        trend=row.trend, target_price=row.target_price, target_note=row.target_note or "",
+        trend=row.trend, target_price=row.target_price,
+        target_buy=row.target_buy, target_sell=row.target_sell,   # v185
+        target_note=row.target_note or "",
         operator=row.operator or "", operated_at=row.operated_at or "",
         composite_score=row.composite_score,
         reference_text=row.reference_text or "",
@@ -972,6 +1006,7 @@ def list_day_view_log(code: str, trade_date: str = Query("", description="可选
     return [DayViewLogOut(
         id=r.id, code=r.code, trade_date=r.trade_date,
         trend=r.trend or "-", target_price=r.target_price,
+        target_buy=r.target_buy, target_sell=r.target_sell,       # v185
         target_note=r.target_note or "",
         operator=r.operator or "", operated_at=r.operated_at or "",
         composite_score=r.composite_score,
@@ -980,34 +1015,40 @@ def list_day_view_log(code: str, trade_date: str = Query("", description="可选
     ).model_dump() for r in rows]
 
 
-def _deviation_reason(trend: str, dev: float | None) -> str:
+def _deviation_reason(trend: str, dev: float | None, has_close: bool = True) -> str:
     """v143: 偏离原因复盘——按 trend × deviation 方向生成纯模板话术。
 
-    deviation = (target_price - close) / close:
-      · dev > 0 → 收盘价 < 目标位(价格没到目标)
-      · dev < 0 → 收盘价 > 目标位(价格已超过目标)
+    v185 偏离度口径改为「买卖区间口径」后,dev 的符号含义同步调整为:
+        deviation = (收盘价 C − 参考价) / 参考价
+        参考价 = 收盘低于买入预判时取买入价 B;高于卖出预判时取卖出价 S;落在 [B,S] 内 → 0
+      · dev > 0 → 收盘价高于预判卖出位(卖飞 / 上涨超预期)
+      · dev < 0 → 收盘价低于预判买入位(比预判更便宜 / 走势弱于预期)
+      · dev = 0 → 收盘落在预判买卖区间内(预判准确)
     """
     if dev is None:
-        return "目标价位缺失,无法评估偏离"
+        # v185: 区分「没填目标价」与「当日还没收盘/无行情」——后者填了价也算不出来
+        if not has_close:
+            return "当日尚无收盘行情,暂无法评估偏离"
+        return "未设置目标买入/卖出价,无法评估偏离"
     abs_d = abs(dev)
-    if abs_d <= 0.005:
-        return "符合预判,盘中波动在预期内"
+    if dev == 0 or abs_d <= 0.005:
+        return "符合预判,收盘落在预判买卖区间内"
     if trend == "看涨":
         if dev > 0:
-            return "标的未达目标位,继续观察上冲动能"
-        return "标的走强突破目标位,留意止盈窗口"
+            return "收盘高于预判卖出位,上涨超预期,留意止盈窗口"
+        return "收盘低于预判买入位,走势弱于预期,观察是否止跌"
     if trend == "看跌":
         if dev < 0:
-            return "未如预期走弱,需重新评估逻辑"
-        return "符合预判走弱,目标位高于收盘,已达成下行"
+            return "收盘低于预判买入位,下行符合或强于预期"
+        return "收盘高于预判卖出位,未如预期走弱,需重新评估逻辑"
     if trend == "风险":
         if abs_d <= 0.05:
             return "已按风控要求处置,波动可控"
         return "已按风控要求处置,关注进一步信号"
     # 趋势"-"或未设置
     if dev > 0:
-        return "收盘低于目标位,需结合其他判断"
-    return "收盘高于目标位,需结合其他判断"
+        return "收盘高于预判卖出位,需结合其他判断"
+    return "收盘低于预判买入位,需结合其他判断"
 
 
 @router.get("/{code}/watch-log")
@@ -1018,11 +1059,14 @@ def watch_log(code: str, limit: int = Query(60, ge=1, le=500),
 
     v146:每行的偏离原因复盘可被用户编辑,join day_view_recap 取最新用户编辑内容。
 
-    偏离度算法口径（前端备注同步）:
-        deviation = (target_price - close) / close
-        正值(dev > 0):收盘低于目标位 → 未达目标
-        负值(dev < 0):收盘高于目标位 → 突破目标
-        target_price 为空:deviation=None,reason=「目标价位缺失,无法评估偏离」
+    偏离度算法口径（v185「买卖区间口径」,前端表头 ? 说明同步）:
+        参考价 = 收盘低于买入预判时取 目标买入价 B;高于卖出预判时取 目标卖出价 S;落在 [B,S] 内 → 偏离 0
+        deviation = (收盘价 C − 参考价) / 参考价
+        正值(dev > 0):收盘高于预判卖出位 → 卖飞/上涨超预期
+        负值(dev < 0):收盘低于预判买入位 → 比预判更便宜/走势弱于预期
+        dev = 0     :收盘落在预判买卖区间内 → 预判准确
+        买卖两端都为空:回退旧 target_price 视作卖出端;仍为空 → deviation=None,
+                     reason=「未设置目标买入/卖出价,无法评估偏离」
     分时均价:amount(元)/(volume*100),volume 单位=手;若 amount=0 用 volume*close*100 兜底
     """
     name = _name(code, db)
@@ -1066,6 +1110,9 @@ def watch_log(code: str, limit: int = Query(60, ge=1, le=500),
         q = quotes.get(d)
         open_p = q.open if q and q.open else None
         close_p = q.close if q and q.close else None
+        # v185: 当日最高/最低(盯盘日志收盘价后追加两列,用于判断预判价位当天是否曾被触及)
+        high_p = q.high if q and q.high else None
+        low_p = q.low if q and q.low else None
         intraday_avg = None
         # v146:amount 单位=元、volume 单位=手(1手=100股)→均价=元/股 = amount/(volume*100)
         #   兜底:若 amount=0(腾讯日线无成交额),用 volume*close*100 估算(与 data_fetcher 一致),
@@ -1076,11 +1123,32 @@ def watch_log(code: str, limit: int = Query(60, ge=1, le=500),
                 intraday_avg = round(amt / (q.volume * 100.0), 3)
             except Exception:
                 intraday_avg = None
+        # v185: 偏离度改为「买卖区间口径」——收盘价 C 相对用户预判区间 [买入价 B, 卖出价 S] 的偏离
+        #   C 落在 [B, S] 内 → 0.00%(预判准确,收盘就在你预判的买卖区间里)
+        #   C < B(收盘低于买入价) → (C-B)/B 为负: 比预判还能更低买入,预判偏乐观
+        #   C > S(收盘高于卖出价) → (C-S)/S 为正: 比预判卖得更高(卖飞),预判偏保守
+        #   只填一端 → 以该端为参考;两端都没填 → 回退旧的单一 target_price(视作卖出端)兼容历史数据
         deviation = None
         deviation_pct = None
-        if lg.target_price and lg.target_price > 0 and close_p:
-            deviation = round((lg.target_price - close_p) / close_p, 4)
-            deviation_pct = round(deviation * 100, 2)
+        buy_p = lg.target_buy if (lg.target_buy and lg.target_buy > 0) else None
+        sell_p = lg.target_sell if (lg.target_sell and lg.target_sell > 0) else None
+        if buy_p is None and sell_p is None:
+            sell_p = lg.target_price if (lg.target_price and lg.target_price > 0) else None
+        if close_p and (buy_p or sell_p):
+            if buy_p and sell_p:
+                if close_p < buy_p:
+                    ref = buy_p
+                elif close_p > sell_p:
+                    ref = sell_p
+                else:
+                    ref = None            # 区间内 → 偏离 0
+            else:
+                ref = buy_p or sell_p
+            if ref:
+                deviation = round((close_p - ref) / ref, 4)
+                deviation_pct = round(deviation * 100, 2)
+            else:
+                deviation, deviation_pct = 0.0, 0.0
         # v146:用户编辑的复盘优先;否则用模板话术
         rec = recaps_by_date.get(d)
         recap_text = (rec.recap or "") if rec else ""
@@ -1089,10 +1157,14 @@ def watch_log(code: str, limit: int = Query(60, ge=1, le=500),
         items.append(WatchLogItem(
             trade_date=d,
             open=open_p, close=close_p, intraday_avg=intraday_avg,
-            trend=lg.trend or "-", target_price=lg.target_price,
+            high=high_p, low=low_p,                      # v185: 最高 / 最低
+            trend=lg.trend or "-",
+            target_price=lg.target_price,                # 旧单值(兼容)
+            target_buy=lg.target_buy,                    # v185: 目标买入
+            target_sell=lg.target_sell,                  # v185: 目标卖出
             target_note=lg.target_note or "",
             deviation=deviation, deviation_pct=deviation_pct,
-            deviation_reason=_deviation_reason(lg.trend or "-", deviation),
+            deviation_reason=_deviation_reason(lg.trend or "-", deviation, has_close=bool(close_p)),
             recap=recap_text,
             recap_user=recap_user,
             recap_updated_at=recap_at,

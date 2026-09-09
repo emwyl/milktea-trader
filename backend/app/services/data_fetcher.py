@@ -457,6 +457,138 @@ def _get_cached_quotes(code: str, days: int = 180) -> list[Quote]:
         db.close()
 
 
+# ===== v184: 行业字段运行时补全 + 板块当日涨跌(真实值) =====
+# 背景: stocks.industry 5549 只里只有 44 只有值, 板块共振长期取不到数;
+# 且 get_sector_trend() 只返回 20 日 slope, 没有 change_pct —— 旧评分取 sector.get("change_pct", 0)
+# 恒为 0, 导致板块共振永远判不出「强」。这里补两个能力:
+#   1) _fetch_industry_em: 东财 push2 单只 f127 行业(域名池回退 + 短超时 + 失败负缓存)
+#   2) _sector_day_change: 用本地 daily_quotes 缓存算同行业样本股「最近一日平均涨跌幅」
+_IND_EM_CACHE: dict[str, tuple[float, str]] = {}      # code -> (ts, industry)
+_IND_EM_NEG: dict[str, float] = {}                    # code -> 失败时刻(负缓存)
+_IND_NEG_TTL = 6 * 3600.0                             # 失败后 6h 内不再重试,避免拖慢评分
+
+
+def _secucode(code: str) -> str:
+    """6 位代码 → 东财 datacenter 的 SECUCODE(如 300377.SZ / 600519.SH / 920008.BJ)。"""
+    c = str(code or "").strip()
+    if not c:
+        return ""
+    if c[0] in ("6", "9"):
+        return f"{c}.SH"
+    if c[:2] in ("00", "30", "20"):
+        return f"{c}.SZ"
+    if c[0] in ("8", "4") or c[:2] == "92":
+        return f"{c}.BJ"
+    return f"{c}.SZ"
+
+
+def _norm_industry(em2016: str = "", csrc1: str = "") -> str:
+    """东财三级行业 '金融-银行-股份制与城商行' → 取二级('银行')。
+
+    二级粒度最适合做板块共振:一级太粗(样本过大、区分度低),三级太细(同板块样本常不足 3 只)。
+    只有两段时取末段;取不到则回退证监会行业 INDUSTRYCSRC1 的末段。
+    """
+    s = str(em2016 or "").strip()
+    if s:
+        parts = [x.strip() for x in s.split("-") if x.strip()]
+        if len(parts) >= 2:
+            return parts[1]
+        if parts:
+            return parts[0]
+    s = str(csrc1 or "").strip()
+    if s:
+        parts = [x.strip() for x in s.split("-") if x.strip()]
+        if parts:
+            return parts[-1]
+    return ""
+
+
+def _fetch_industry_em(code: str) -> str:
+    """单只股票行业。取不到返回 ''。
+
+    数据源优先级:
+      1) 东财 datacenter RPT_F10_BASIC_ORGINFO(EM2016 东财行业三级) —— 最稳,实测可用,取二级
+      2) 东财 push2 f127(域名池回退) —— 备用
+    仅用于「DB 里 industry 为空」的兜底:取到后由调用方写回 stocks 表,下次直接用。
+    失败进负缓存,防止每次评分都打网络。
+    """
+    import time as _t
+    now = _t.time()
+    hit = _IND_EM_CACHE.get(code)
+    if hit and (now - hit[0]) < 86400:
+        return hit[1]
+    if (now - _IND_EM_NEG.get(code, 0)) < _IND_NEG_TTL:
+        return ""
+    sc = _secucode(code)
+    # 源 1: datacenter(3s 超时,单次)
+    if sc:
+        try:
+            url = ("https://datacenter-web.eastmoney.com/api/data/v1/get"
+                   "?reportName=RPT_F10_BASIC_ORGINFO&columns=SECUCODE,EM2016,INDUSTRYCSRC1"
+                   f"&filter=(SECUCODE%3D%22{sc}%22)&pageSize=1")
+            with httpx.Client(headers={"User-Agent": _DEFAULT_UA,
+                                       "Referer": "https://data.eastmoney.com/"},
+                              timeout=3.0, follow_redirects=True) as cli:
+                r = cli.get(url)
+            if r.status_code == 200:
+                rows = (((r.json() or {}).get("result") or {}).get("data")) or []
+                if rows:
+                    ind = _norm_industry(rows[0].get("EM2016"), rows[0].get("INDUSTRYCSRC1"))
+                    if ind:
+                        _IND_EM_CACHE[code] = (now, ind)
+                        return ind
+        except Exception:
+            pass
+    # 源 2: push2 f127(2.5s 超时,只试前 2 个域名)
+    for host in _EM_PUSH_HOSTS[:2]:
+        try:
+            with httpx.Client(headers={"User-Agent": _DEFAULT_UA, "Referer": "https://quote.eastmoney.com/"},
+                              timeout=2.5, follow_redirects=True) as cli:
+                r = cli.get(f"https://{host}/api/qt/stock/get?secid={_secid(code)}&fields=f57,f127")
+            if r.status_code != 200:
+                continue
+            ind = str(((r.json() or {}).get("data") or {}).get("f127") or "").strip()
+            if ind and ind not in ("-", "nan"):
+                _IND_EM_CACHE[code] = (now, ind)
+                return ind
+        except Exception:
+            continue
+    _IND_EM_NEG[code] = now
+    return ""
+
+
+def _sector_day_change(industry: str, db, min_samples: int = 3) -> float | None:
+    """同行业样本股「最近一日平均涨跌幅(%)」。
+
+    口径: 取该行业样本(最多 15 只)最后一根日线的 (close - pre_close)/pre_close 均值。
+    只读本地 daily_quotes 缓存,不触发网络。样本不足 min_samples 只 → 返回 None
+    (1~2 只算出的"板块涨跌"其实是单只个股,不能当板块用,宁可不计分)。
+    """
+    if not industry:
+        return None
+    try:
+        from app.models import Stock
+        codes = [s.code for s in db.query(Stock.code).filter(Stock.industry == industry).limit(15).all()]
+    except Exception:
+        return None
+    if len(codes) < min_samples:
+        return None
+    pcts: list[float] = []
+    for c in codes:
+        try:
+            qs = _get_cached_quotes(c, 5)
+        except Exception:
+            continue
+        if not qs:
+            continue
+        last = qs[-1]
+        if last.close and last.pre_close:
+            pcts.append((last.close - last.pre_close) / last.pre_close * 100)
+    if len(pcts) < min_samples:
+        return None
+    return round(sum(pcts) / len(pcts), 2)
+
+
 def get_sector_trend(industry: str, db_session=None) -> dict:
     """行业板块趋势：用该行业样本股近 20 日平均收盘价斜率近似。
     只读本地 daily_quotes 缓存,不触发网络请求(避免选股/推荐时被打爆)。"""
@@ -1530,16 +1662,51 @@ def _calc_pass_scores(code: str, out: dict, quotes: list[Quote], spot: dict | No
 
     # ===== B. 趋势与位置(35分) =====
     # 1) MA5/MA20 位置 15分
-    if above_ma5 is True and above_ma20 is True:
-        score_b += 15
-        detail.append("站上MA5且MA20(+15)")
-    elif above_ma5 is True and above_ma20 is False:
-        score_b += 8
-        detail.append("站上MA5但MA20下方(+8)")
-    elif above_ma5 is False and above_ma20 is False:
-        detail.append("MA5/MA20下方(+0)")
+    # v185: 由旧的「当日双上15 / 仅MA5八分 / 双下0」改为用户定义的 3 档:
+    #   档1 连续3日双上: 最近 3 个交易日收盘「同时」站上 MA5 与 MA20 → 15 分(趋势确立,最强)
+    #   档2 仅MA20站上:  连续3日双上不成立,但当日收盘站上 MA20 → 8 分(中期不坏,短期待确认)
+    #   档3 连续3日下跌: 最近 3 日收盘价逐日走低(closes[-1]<closes[-2]<closes[-3]) → 0 分
+    #   其余中间态(如跌破MA20但没连跌)→ 4 分中性偏低,既不误杀也不白给
+    # 判定期望顺序:先看最强(连3双上),再看最弱(连3下跌),最后看仅MA20
+    def _ma_series(src: list[float], n: int) -> list[float | None]:
+        """滑动均线序列,前 n-1 位为 None(不足以成线)。"""
+        return [None if i < n - 1 else (sum(src[i - n + 1:i + 1]) / n) for i in range(len(src))]
+
+    if len(closes) >= 22:   # 至少 20(MA20) + 3(连3判定) - 1
+        ma5s, ma20s = _ma_series(closes, 5), _ma_series(closes, 20)
+        idxs = (-3, -2, -1)
+        above3 = all(ma5s[i] is not None and ma20s[i] is not None
+                     and closes[i] > ma5s[i] and closes[i] > ma20s[i] for i in idxs)
+        fall3 = closes[-1] < closes[-2] < closes[-3]
+        ma20_only = (ma20s[-1] is not None) and (closes[-1] > ma20s[-1])
+        if above3:
+            score_b += 15
+            out["ma_position"] = "above3"
+            detail.append("连续3日站上MA5与MA20(+15)")
+        elif fall3:
+            out["ma_position"] = "fall3"
+            detail.append("连续3日下跌(+0)")
+        elif ma20_only:
+            score_b += 8
+            out["ma_position"] = "ma20_only"
+            detail.append("仅站上MA20(+8)")
+        else:
+            score_b += 4
+            out["ma_position"] = "mid"
+            detail.append("MA5/MA20中间态(+4)")
     else:
-        detail.append("MA位置数据缺失(+0)")
+        # 日线不足 22 根(新票/停牌) → 退化到单日口径,避免「数据不足恒 0」误杀
+        if above_ma5 is True and above_ma20 is True:
+            score_b += 8
+            out["ma_position"] = "above3_short"
+            detail.append("站上MA5且MA20(日线不足22根,降级+8)")
+        elif above_ma20 is True:
+            score_b += 4
+            out["ma_position"] = "ma20_only_short"
+            detail.append("仅站上MA20(日线不足22根,降级+4)")
+        else:
+            out["ma_position"] = "unknown"
+            detail.append("MA位置数据缺失(+0)")
 
     # 2) 箱体位置 10分
     if box_pos is not None:
@@ -1634,13 +1801,27 @@ def _calc_pass_scores(code: str, out: dict, quotes: list[Quote], spot: dict | No
         from app.models import Stock
         stock = db.get(Stock, code)
         industry = (stock.industry or "").strip() if stock else ""
+        if not industry:
+            # v184: 库里行业缺失(5549 只仅 44 只有值) → 现场用东财 push2 f127 补一次并落库
+            industry = _fetch_industry_em(code)
+            if industry and stock is not None:
+                try:
+                    stock.industry = industry
+                    db.commit()
+                except Exception:
+                    db.rollback()
         if industry:
-            sector = get_sector_trend(industry, db)
-            sector_pct = sector.get("change_pct", 0)
+            # v184: 旧代码取 get_sector_trend()["change_pct"],但该字典根本没有该字段 → 恒 0,
+            #   板块共振永远判不出「强」。改用同行业样本股最近一日平均涨跌幅(真实值)。
+            sector_pct = _sector_day_change(industry, db)
             stock_pct = out.get("change_pct", 0)
-            sector_up = sector_pct > 1.0          # 板块涨(含 >2% 强涨,合并为「强」档)
-            stock_up = stock_pct > 0
-            if sector_up and stock_up:
+            out["sector_industry"] = industry        # v184: 行业名(前端可展示/核对)
+            if sector_pct is not None:
+                out["sector_pct"] = sector_pct      # v185: 强/弱都输出,避免详情里缺板块涨跌幅
+            if sector_pct is None:
+                out["sector_resonance"] = "missing"
+                detail.append(f"板块样本不足,共振不计分(行业{industry},+0/4)")
+            elif sector_pct > 1.0 and stock_pct > 0:
                 out["sector_resonance"] = "strong"
                 score_c += 4
                 detail.append(f"板块涨{sector_pct}%且个股上涨(+4)")
