@@ -1349,7 +1349,9 @@ def _calc_pass_scores(code: str, out: dict, quotes: list[Quote], spot: dict | No
       1. 一票否决项:命中任意一条,total_score=0,grade=D。
       2. A. 流动性与波动(40 分):成交额/振幅/换手率。
       3. B. 趋势与位置(35 分):MA5/MA20 位置/箱体位置/MACD。
-      4. C. 资金与板块(25 分):量比/主力资金净流入/板块共振。
+      4. C. 资金与板块(25 分):量比 10/主力资金净流入 8/板块共振 4/跳空缺口 3。
+         v184: 板块共振由 5 档 7 分改为强/弱二档 4 分(强=板块涨且个股同步),新增跳空缺口 3 分,
+         C 类总分仍为 25 分。
       5. 扣分项:从总分中直接扣(黑名单/前高缩量/大阴线/获利盘/超仓)。
       6. 等级:>=80 A, 65~79 B, 50~64 C, <50 D。
 
@@ -1562,6 +1564,9 @@ def _calc_pass_scores(code: str, out: dict, quotes: list[Quote], spot: dict | No
         detail.append("箱体位置缺失(+0)")
 
     # 3) MACD 状态 10分
+    # v184 fix: 旧代码只把 MACD 状态写进 detail 文案,从未写入 track 字段,
+    #   前端评分模型 macd 指标 source=t.macd_signal 永远取不到值 → B 类 MACD 恒显示「无数据」/ 0 分。
+    #   这里统一产出 macd_signal(与前端 valid 枚举一致)+ macd 明细,供评分与展示复用。
     if dif and dea and hist and len(hist) >= 2:
         dif_last = dif[-1]
         hist_last, hist_prev = hist[-1], hist[-2]
@@ -1570,20 +1575,28 @@ def _calc_pass_scores(code: str, out: dict, quotes: list[Quote], spot: dict | No
         red_shrink = hist_prev > hist_last > 0
         green_shrink = 0 > hist_prev > hist_last
         green_expand = 0 > hist_last > hist_prev
+        out["macd"] = {"dif": round(dif_last, 4), "dea": round(dea[-1], 4),
+                       "hist": round(hist_last, 4), "above_zero": bool(above_zero)}
         if above_zero and red_expand:
             score_b += 10
+            out["macd_signal"] = "red_expand"
             detail.append("MACD零轴上方红柱放大(+10)")
         elif above_zero and red_shrink:
             score_b += 7
+            out["macd_signal"] = "red_shrink"
             detail.append("MACD零轴上方红柱缩短(+7)")
         elif not above_zero and green_shrink:
             score_b += 4
+            out["macd_signal"] = "green_shrink"
             detail.append("MACD零轴下方绿柱缩短(+4)")
         elif not above_zero and green_expand:
+            out["macd_signal"] = "green_expand"
             detail.append("MACD零轴下方绿柱放大(+0/否决)")
         else:
+            out["macd_signal"] = "neutral"
             detail.append("MACD状态中性(+0)")
     else:
+        out["macd_signal"] = "missing"   # 前端 valid 不含 missing → 不计分,展示「数据不足」
         detail.append("MACD数据不足(+0)")
 
     # ===== C. 资金与板块(25分) =====
@@ -1614,7 +1627,9 @@ def _calc_pass_scores(code: str, out: dict, quotes: list[Quote], spot: dict | No
     score_c += 4
     detail.append("主力资金净流入:数据未接入(+4/8)")
 
-    # 3) 板块共振 7分
+    # 3) 板块共振 4分(v184: 原 5 档 7 分 → 强/弱二档 4 分, C 类总 25 分不变: 量比10+主力8+板块4+缺口3)
+    #    强 = 板块上涨(>1%)且个股同步上涨/领涨 → 4 分; 其余(板块平/跌、板块涨但个股跌) → 弱 = 0 分。
+    #    行业信息缺失/取数异常 → missing: 不计分(前端 valid 排除后权重自动转移), 不误杀也不白给分。
     try:
         from app.models import Stock
         stock = db.get(Stock, code)
@@ -1623,34 +1638,43 @@ def _calc_pass_scores(code: str, out: dict, quotes: list[Quote], spot: dict | No
             sector = get_sector_trend(industry, db)
             sector_pct = sector.get("change_pct", 0)
             stock_pct = out.get("change_pct", 0)
-            sector_up_strong = sector_pct > 2.0
-            sector_up = 1.0 < sector_pct <= 2.0
-            sector_flat = abs(sector_pct) <= 1.0
-            sector_down = sector_pct < -1.0
+            sector_up = sector_pct > 1.0          # 板块涨(含 >2% 强涨,合并为「强」档)
             stock_up = stock_pct > 0
-            if sector_up_strong and stock_up:
-                score_c += 7
-                detail.append("板块涨>2%且个股领涨(+7)")
-            elif sector_up:
-                score_c += 5
-                detail.append("板块涨1~2%(+5)")
-            elif sector_flat:
-                score_c += 3
-                detail.append("板块平盘(+3)")
-            elif sector_down and stock_up:
-                score_c += 1
-                detail.append("板块跌但个股涨(+1)")
-            elif sector_down and not stock_up:
-                detail.append("板块跌个股跌(+0)")
+            if sector_up and stock_up:
+                out["sector_resonance"] = "strong"
+                score_c += 4
+                detail.append(f"板块涨{sector_pct}%且个股上涨(+4)")
             else:
-                score_c += 3
-                detail.append("板块共振中性(+3)")
+                out["sector_resonance"] = "weak"
+                detail.append(f"板块共振弱(板块{sector_pct}%/个股{stock_pct}%)(+0)")
         else:
-            score_c += 3
-            detail.append("行业信息缺失(+3/7)")
+            out["sector_resonance"] = "missing"
+            detail.append("行业信息缺失,板块共振不计分(+0/4)")
     except Exception:
-        score_c += 3
-        detail.append("板块共振数据未接入(+3/7)")
+        out["sector_resonance"] = "missing"
+        detail.append("板块共振数据未接入,不计分(+0/4)")
+
+    # 4) 跳空缺口 3分(v184 新增): 向上跳空=强势信号 3 分; 无缺口/向下缺口 0 分(向下本就是风险项)
+    #    口径与 get_pool_track 的 out["gap"] 完全一致: 今日开盘 vs 昨日最高/最低价
+    try:
+        if len(quotes) >= 2 and quotes[-1].open and quotes[-2].close:
+            _o = quotes[-1].open
+            _yh, _yl = quotes[-2].high, quotes[-2].low
+            if _yh and _o > _yh:
+                out["gap_signal"] = "up"
+                score_c += 3
+                detail.append("向上跳空缺口(+3)")
+            elif _yl and _o < _yl:
+                out["gap_signal"] = "down"
+                detail.append("向下跳空缺口(+0)")
+            else:
+                out["gap_signal"] = "flat"
+                detail.append("无跳空缺口(+0)")
+        else:
+            out["gap_signal"] = "missing"
+            detail.append("跳空缺口数据不足,不计分(+0/3)")
+    except Exception:
+        out["gap_signal"] = "missing"
 
     # ===== 扣分项 =====
     penalty = 0

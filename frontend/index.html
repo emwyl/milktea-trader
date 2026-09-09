@@ -24,9 +24,9 @@
     s.src = './vue.global.prod.js?v=20260909152' + Date.now();
     s.onload = function(){
       if (typeof Vue !== 'undefined' && Vue.createApp) { location.reload(); }
-      else { hint.innerHTML = '重试仍失败,请按 Ctrl+F5 强制刷新<br><span style="font-size:12px;color:#9ca3af">(v20260909183)</span>'; }
+      else { hint.innerHTML = '重试仍失败,请按 Ctrl+F5 强制刷新<br><span style="font-size:12px;color:#9ca3af">(v20260909184)</span>'; }
     };
-    s.onerror = function(){ hint.innerHTML = '重试仍失败,请按 Ctrl+F5 强制刷新<br><span style="font-size:12px;color:#9ca3af">(v20260909183)</span>'; };
+    s.onerror = function(){ hint.innerHTML = '重试仍失败,请按 Ctrl+F5 强制刷新<br><span style="font-size:12px;color:#9ca3af">(v20260909184)</span>'; };
     (document.head || document.documentElement).appendChild(s);
   }catch(e){ /* 兜底若失败也别抛,留给用户 Ctrl+F5 */ }
 })();
@@ -862,7 +862,7 @@
     <header>
       <h1>🧋 TR-个人学习版</h1>
       <span class="sub">个人学习用 · 先控风险再谈收益</span>
-      <span class="version" id="appVersion">v20260909183</span>
+      <span class="version" id="appVersion">v20260909184</span>
       <button class="ghost auto-refresh-btn" :class="{active:autoRefresh}" @click="toggleAutoRefresh" :title="autoRefresh?'自动刷新开启中，每10秒更新当前页面数据':'点击开启每10秒自动刷新'">
         {{autoRefresh?'⏸':'▶'}} 自动 5s
       </button>
@@ -2202,8 +2202,9 @@
 
       <!-- v143: 盯盘日志弹窗 — 该股所有交易日复盘,行可展开当日多次修改明细 -->
       <!-- v178: 表格扩到 12 列(综合评分/预判参考信息 + 用户录入 5 字段),max-width 提到 1280 防止横向溢出 -->
+      <!-- v184: 用户要求再拉宽 1.5 倍 → 1280×1.5=1920(仍受 width:100% + 视口约束,不会溢出屏幕) -->
       <div v-if="watchLogModal.show" class="modal" @click.self="closeWatchLogModal">
-        <div class="modal-box" style="max-width:1280px">
+        <div class="modal-box" style="max-width:1920px">
           <div class="modal-head">
             <h3>盯盘日志 — {{ watchLogModal.name }} {{ watchLogModal.code }}</h3>
             <button type="button" class="close-x" @click="closeWatchLogModal" aria-label="关闭">×</button>
@@ -2267,7 +2268,7 @@
                         <span v-if="it._saving" style="color:#0ea5e9;margin-left:8px;font-weight:600">⏳ 保存中...</span>
                         <span v-else-if="it._recapDirty" style="color:#dc2626;margin-left:8px;font-weight:600">● 未保存</span>
                         <span v-else-if="it._recapDraft && it.recap" style="color:#16a34a;margin-left:8px">✓ 已保存于 {{ fmtDateShort(it.recap_updated_at) }} · {{ it.recap_user || '-' }}</span>
-                        <span v-else style="margin-left:8px">默认留空 · 输入后点右下「保存」入库</span>
+                        <!-- v184: 去掉「默认留空…」提示(与输入框 placeholder 重复),未输入时此处不再占位 -->
                       </div>
                     </td>
                   </tr>
@@ -3244,20 +3245,22 @@ const app = createApp({
     // v148: 用户自定义评分规则(阈值/权重),启动时从 localStorage 读,默认走现行 9 项指标(后端 _calc_pass_scores 一致)
     userScoringRules: (function(){
       // v179: 升 key 到 v2 —— A 类 5→5 指标且每档 max 8,旧 4 指标 + max=5/15/10 规则与新规则混用会出错,直接重置
-      const KEY = 'milktea_scoring_rules_v2';
+      // v184: 升 key 到 v3 —— C 类板块共振 5 档 7 分→强/弱二档 4 分 + 新增跳空缺口 3 分,
+      //   旧 v2 规则缺 gap 指标且 sector 仍是旧枚举,混用会导致新规则不生效,直接重置
+      const KEY = 'milktea_scoring_rules_v3';
       try{
         const raw = localStorage.getItem(KEY);
         if(raw){ return JSON.parse(raw); }
       }catch(e){ /* 解析失败走默认 */ }
       return null;  // null=mtscore 默认规则(首次进弹窗自动载入)
     })(),
-    scoreRulesLSKey: 'milktea_scoring_rules_v2',
+    scoreRulesLSKey: 'milktea_scoring_rules_v3',
     // v148: mtscore 评分工具集(放在 data() 而非 methods(),避免 Vue 3 prod 对嵌套方法对象的处理陷阱)
     mtscore: {
       // ==== 默认规则(与后端 data_fetcher.py:_calc_pass_scores 对齐) ====
       default: function defaultRules(){
         return {
-          version:'v155-default',  // v155: 加指标级权重(iw),compute 内 inline 自动均分 + 按比例归一
+          version:'v184-default',  // v155 加指标级权重(iw);v184 C 类改档+新增跳空缺口
           weights:{A:40, B:35, C:25},
           grades:[
             {min:80,grade:'A'},
@@ -3411,19 +3414,42 @@ const app = createApp({
                {label:'流出',     min:-3, lt:-1,   score:2, veto:false},
                {label:'大幅流出', min:null, lt:-3, score:0, veto:false},
              ]},
-            {id:'sector', dim:'C', label:'板块共振', unit:'-', max:7,
+            // v184: 板块共振 5 档 7 分 → 强/弱二档 4 分(C 类总 25 分不变:量比10+主力8+板块4+缺口3)
+            //   强 = 板块上涨且个股同步/领涨 → 4 分; 弱 = 板块平/跌、或板块涨但个股跌 → 0 分
+            //   数据缺失(missing) → 不计分,权重自动转移给同维度有效指标
+            {id:'sector', dim:'C', label:'板块共振', unit:'-', max:4,
              source:function getV(t){return t.sector_resonance;},
-             valid:function isV(t){var ok=['sector_strong_up','sector_up','sector_flat','sector_down_up','sector_down']; return ok.indexOf(t.sector_resonance)>=0;},
+             valid:function isV(t){var ok=['strong','weak']; return ok.indexOf(t.sector_resonance)>=0;},
              display:function getD(t){
-               var map={sector_strong_up:'板块强涨',sector_up:'板块涨',sector_flat:'板块平',sector_down_up:'板块跌个股涨',sector_down:'板块跌个股跌',missing:'无数据'};
+               var map={strong:'强(板块涨·个股同步)',weak:'弱(板块未共振)',missing:'数据未接入'};
                return map[t.sector_resonance] || '无数据';
              },
              bands:[
-               {label:'共振强', attr:'sector_strong_up', score:7, veto:false},
-               {label:'板块涨', attr:'sector_up',        score:5, veto:false},
-               {label:'板块平', attr:'sector_flat',      score:3, veto:false},
-               {label:'逆势涨', attr:'sector_down_up',   score:1, veto:false},
-               {label:'共跌',   attr:'sector_down',      score:0, veto:false},
+               {label:'强', attr:'strong', score:4, veto:false},
+               {label:'弱', attr:'weak',   score:0, veto:false},
+             ]},
+            // v184 新增:跳空缺口 3 分。口径=今日开盘 vs 昨日最高/最低价(与后端 out["gap"] 同源)
+            //   向上缺口=强势信号 3 分;无缺口/向下缺口 0 分
+            {id:'gap', dim:'C', label:'跳空缺口', unit:'-', max:3,
+             source:function getV(t){
+               if(t.gap && t.gap.dir) return t.gap.dir;
+               return t.gap_signal || null;
+             },
+             valid:function isV(t){
+               var d = (t.gap && t.gap.dir) || t.gap_signal;
+               return d==='up' || d==='flat' || d==='down';
+             },
+             display:function getD(t){
+               var d = (t.gap && t.gap.dir) || t.gap_signal;
+               var map={up:'向上缺口',flat:'无缺口',down:'向下缺口',missing:'数据不足'};
+               if(d==='up' && t.gap && t.gap.amp!=null) return '向上缺口 +'+(+t.gap.amp).toFixed(2)+'%';
+               if(d==='down' && t.gap && t.gap.amp!=null) return '向下缺口 '+(+t.gap.amp).toFixed(2)+'%';
+               return map[d] || '无数据';
+             },
+             bands:[
+               {label:'向上缺口', attr:'up',   score:3, veto:false},
+               {label:'无缺口',   attr:'flat', score:0, veto:false},
+               {label:'向下缺口', attr:'down', score:0, veto:false},
              ]},
           ],
           penalties:[
