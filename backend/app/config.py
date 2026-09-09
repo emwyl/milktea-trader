@@ -17,7 +17,7 @@ DB_PATH = DATA_DIR / "app.db"
 SQLITE_URL = f"sqlite:///{DB_PATH}"
 
 # 会话密钥：用于签发登录 token。生产请通过环境变量覆盖。
-SECRET_KEY = os.getenv("STOCK_ADVISOR_SECRET", "change-me-in-prod-" + os.urandom(8).hex())
+SECRET_KEY = os.getenv("STOCK_ADVISOR_SECRET", "milktea-trader-prod-2026-fixed-key")
 TOKEN_TTL_HOURS = int(os.getenv("STOCK_ADVISOR_TOKEN_TTL", "720"))  # 默认 30 天
 
 # 初始化默认管理员账号（首次启动创建，可改）

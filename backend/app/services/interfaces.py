@@ -57,6 +57,7 @@ class SignalResult:
     risk_advice: str       # 风控前置（软引导）
     confidence: int = 0     # 共振置信度 0-100
     metrics: dict[str, Any] = field(default_factory=dict)
+    rule_id: int | None = None  # v173：触发该信号的规则 id（用于反查规则的名称/等级/风控提示）
 
 
 @runtime_checkable

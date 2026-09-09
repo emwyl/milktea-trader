@@ -13,7 +13,8 @@ router = APIRouter(prefix="/api/rules", tags=["rules"])
 
 def _to_out(r: PositionRule) -> RuleOut:
     return RuleOut(id=r.id, name=r.name, scope=r.scope, conditions=json.loads(r.conditions_json),
-                   action=r.action, priority=r.priority, enabled=r.enabled, scheme_type=r.scheme_type)
+                   action=r.action, priority=r.priority, enabled=r.enabled, scheme_type=r.scheme_type,
+                   risk_notice=getattr(r, "risk_notice", "") or "")
 
 
 @router.get("")
@@ -25,7 +26,7 @@ def list_rules(db: SessionLocal = Depends(get_db), user: User = Depends(get_curr
 def create_rule(body: RuleIn, db: SessionLocal = Depends(get_db), user: User = Depends(get_current_user)):
     r = PositionRule(user_id=user.id, name=body.name, scope=body.scope, conditions_json=json.dumps(body.conditions),
                      action=body.action, priority=body.priority, enabled=body.enabled,
-                     scheme_type=body.scheme_type)
+                     scheme_type=body.scheme_type, risk_notice=(body.risk_notice or "").strip())
     db.add(r)
     db.commit()
     db.refresh(r)
@@ -44,6 +45,7 @@ def update_rule(rid: int, body: RuleIn, db: SessionLocal = Depends(get_db), user
     r.priority = body.priority
     r.enabled = body.enabled
     r.scheme_type = body.scheme_type
+    r.risk_notice = (body.risk_notice or "").strip()
     db.commit()
     return _to_out(r)
 

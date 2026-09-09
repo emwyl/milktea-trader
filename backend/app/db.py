@@ -231,6 +231,8 @@ def run_migrations(engine):
         # v143：日初判断修改记录表（day_view_log）。
         #   每次修改都追加一条（不删旧），同一天允许多条；
         #   「当日最新」=同日 operated_at 最大；盯盘日志按交易日聚合，每交易日取最后一条作为复盘输入。
+        #   v178：补 composite_score / reference_text / reference_metrics_json 三列——录入时刻的
+        #   综合评分快照 + 预判参考信息文本 + 结构化指标 JSON，用于盯盘日志表格新增两列展示。
         if not _has_table(conn, "day_view_log"):
             try:
                 conn.execute(text("""
@@ -245,6 +247,9 @@ def run_migrations(engine):
                         operator VARCHAR(64) DEFAULT '',
                         operator_id INTEGER,
                         operated_at VARCHAR(32) DEFAULT '',
+                        composite_score FLOAT,
+                        reference_text TEXT DEFAULT '',
+                        reference_metrics_json TEXT DEFAULT '',
                         FOREIGN KEY(user_id) REFERENCES users(id)
                     )
                 """))
@@ -254,6 +259,18 @@ def run_migrations(engine):
                 conn.execute(text("CREATE INDEX ix_day_view_log_user_id ON day_view_log(user_id)"))
             except Exception:
                 pass
+        else:
+            # v178：旧库 day_view_log 缺新三列,逐列补(已有则跳过)。
+            for col, ddl in (
+                ("composite_score", "ALTER TABLE day_view_log ADD COLUMN composite_score FLOAT"),
+                ("reference_text", "ALTER TABLE day_view_log ADD COLUMN reference_text TEXT DEFAULT ''"),
+                ("reference_metrics_json", "ALTER TABLE day_view_log ADD COLUMN reference_metrics_json TEXT DEFAULT ''"),
+            ):
+                try:
+                    if not _has_col(conn, "day_view_log", col):
+                        conn.execute(text(ddl))
+                except Exception:
+                    pass
 
         # v146: 偏离原因复盘表(day_view_recap)。
         #   每 (user, code, trade_date) 一行,只存最新一份;双击单元格保存时覆盖更新 updated_at。
@@ -276,5 +293,13 @@ def run_migrations(engine):
                 conn.execute(text("CREATE UNIQUE INDEX uq_day_view_recap_user_code_date ON day_view_recap(user_id, code, trade_date)"))
                 conn.execute(text("CREATE INDEX ix_day_view_recap_code ON day_view_recap(code)"))
                 conn.execute(text("CREATE INDEX ix_day_view_recap_user_date ON day_view_recap(user_id, trade_date)"))
+            except Exception:
+                pass
+
+        # v173：规则级风控提示。每条加减仓规则可自带一段"风控提示"，
+        #   命中该规则的信号在「最新信号」表里直接展示这段文字（不再只用系统自动生成的通用建议）。
+        if _has_table(conn, "position_rules") and not _has_col(conn, "position_rules", "risk_notice"):
+            try:
+                conn.execute(text("ALTER TABLE position_rules ADD COLUMN risk_notice TEXT DEFAULT ''"))
             except Exception:
                 pass

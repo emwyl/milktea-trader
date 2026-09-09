@@ -37,7 +37,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="加油赚奶茶钱", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="TR-个人学习版", version="0.1.0", lifespan=lifespan)
 
 
 # 禁用所有响应的浏览器缓存(避免用户改数据后看到陈旧响应,这是个人工具,实时性优先)
@@ -100,7 +100,7 @@ for r in (auth, stocks, screens, pool, rules, engine_router, analysis, preferenc
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "name": "加油赚奶茶钱"}
+    return {"ok": True, "name": "TR-个人学习版"}
 
 
 # 托管前端（D 盘 frontend 目录）。StaticFiles 挂在最后，/api 路由优先匹配。

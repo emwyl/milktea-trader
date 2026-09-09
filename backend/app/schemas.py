@@ -131,17 +131,23 @@ class DayViewIn(BaseModel):
 
 class DayViewLogIn(BaseModel):
     """v143：日初判断修改记录。trend 看涨/看跌/风险/-；target_price 可空；target_note ≤20字。
-
     trade_date 由前端传（YYYY-MM-DD），避免后端时区错位。
+    v178：录入时可一并提交"录入当时"的综合评分快照 + 预判参考信息文本 + 结构化指标 JSON，
+          用于盯盘日志表格的「综合评分 / 预判参考信息」两列展示。这三个字段非必填，留空表示
+          该股为旧录入或当时未生成参考信息（旧数据保持向后兼容）。
     """
     trade_date: str  # YYYY-MM-DD,前端传入
     trend: str  # 看涨/看跌/风险/-
     target_price: Optional[float] = None
     target_note: str = ""  # ≤20字
+    # v178: 录入时的快照(用于盯盘日志表格展示)
+    composite_score: Optional[float] = None  # 综合评分(0-100),None 表示不入快照
+    reference_text: str = ""  # 预判参考信息文本(如 "量比:1.0、换手:3.01%、…")
+    reference_metrics_json: str = ""  # 结构化指标 JSON(后端写库时再验,默认空)
 
 
 class DayViewLogOut(BaseModel):
-    """v143：日初判断修改记录返回。"""
+    """v143：日初判断修改记录返回。v178 加 3 个快照字段。"""
     id: int
     code: str
     trade_date: str
@@ -150,11 +156,29 @@ class DayViewLogOut(BaseModel):
     target_note: str = ""
     operator: str = ""
     operated_at: str = ""
+    # v178
+    composite_score: Optional[float] = None
+    reference_text: str = ""
+    reference_metrics_json: str = ""
+
+
+class MetricsSummaryOut(BaseModel):
+    """v178：录入日初判断前的预判参考信息快照——「综合评分 + 预判参考信息」合并返回。
+    前端在打开日初判断录入弹窗时 GET 一次该端点，把 composite_score / reference_text
+    同步到弹窗的两个只读预览字段；保存时这两个字段会随 POST 一并入库（成为盯盘日志列的快照值）。
+    """
+    code: str
+    composite_score: Optional[float] = None  # 当前综合评分(None=缺数据)
+    official_score: Optional[float] = None  # 后端官方分(给前端对照)
+    reference_text: str = ""  # 组装好的预判参考信息(完整中文短句,用于预览)
+    metrics: dict = {}  # 结构化指标 {量比,换手,日内振幅,MA5,MA20,箱体位置,…},便于前端兜底格式化
 
 
 class WatchLogItem(BaseModel):
     """v143:盯盘日志单日条目。已聚合当日最后一条 + 计算偏离度/原因;
     v146 扩展:recap_user_text/recap_user/recap_updated_at——用户编辑的偏离原因复盘文本,优先展示。
+    v178 扩展:composite_score / reference_text / reference_metrics_json——录入时刻的综合评分
+    快照与预判参考信息，用于盯盘日志表格的「综合评分 / 预判参考信息」两列展示。
     """
     trade_date: str
     open: Optional[float] = None
@@ -170,6 +194,10 @@ class WatchLogItem(BaseModel):
     recap: str = ""  # 用户编辑的文本;空=沿用模板话术
     recap_user: str = ""  # 最后一次编辑者用户名
     recap_updated_at: str = ""  # 最后一次编辑时间 ISO8601 (UTC, 毫秒)
+    # v178: 录入时刻的快照
+    composite_score: Optional[float] = None
+    reference_text: str = ""
+    reference_metrics_json: str = ""
 
 
 class RecapIn(BaseModel):
@@ -212,6 +240,7 @@ class RuleIn(BaseModel):
     priority: int = 0
     scheme_type: str = "custom"
     enabled: bool = True
+    risk_notice: str = ""  # v173：规则级风控提示
 
 
 class RuleOut(BaseModel):
@@ -223,6 +252,7 @@ class RuleOut(BaseModel):
     priority: int
     enabled: bool
     scheme_type: str
+    risk_notice: str = ""  # v173：规则级风控提示
 
 
 class SignalOut(BaseModel):
@@ -238,6 +268,11 @@ class SignalOut(BaseModel):
     metrics: dict
     generated_at: str
     status: str
+    # v173：信号反查触发它的规则，用于在「最新信号」表展示用户自定义的等级/名称/风控提示
+    rule_name: Optional[str] = None        # 风险规则名称
+    rule_detail: Optional[str] = None      # 命中的条件描述（reason 去掉 [规则名] 前缀后的部分）
+    rule_risk_level: Optional[str] = None  # 风险等级：紧急 / 重要 / 关注
+    rule_notice: Optional[str] = None      # 该规则自带的风控提示
 
 
 class DashboardOut(BaseModel):

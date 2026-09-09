@@ -24,7 +24,7 @@ def _notify_user(db, user: User):
     risk = [s for s in pending if s.risk_level == "高"]
     add = [s for s in pending if s.signal_type == "add"]
     reduce = [s for s in pending if s.signal_type == "reduce"]
-    lines = [f"【加油赚奶茶钱 · 每日复盘 · {user.username}】",
+    lines = [f"【TR-个人学习版 · 每日复盘 · {user.username}】",
              f"⚠️ 高风险信号: {len(risk)} 条（优先关注）",
              f"加仓信号: {len(add)} 条 | 减仓信号: {len(reduce)} 条 | 共: {len(pending)} 条",
              "---"]
@@ -34,7 +34,7 @@ def _notify_user(db, user: User):
         lines.append(f"  [{s.code}] {s.signal_type}: {s.reason}")
     content = "\n".join(lines) or "今日无信号"
     notifier = get_notifier(cfg.channel)
-    result = notifier.send("加油赚奶茶钱 · 每日复盘", content, json.loads(cfg.config_json))
+    result = notifier.send("TR-个人学习版 · 每日复盘", content, json.loads(cfg.config_json))
     db.add(NotifyLog(user_id=user.id, channel=cfg.channel, content=content[:500],
                      status="success" if result.get("ok") else "failed"))
     db.commit()

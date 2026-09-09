@@ -1,0 +1,12 @@
+fastapi
+uvicorn
+sqlalchemy
+pandas
+openpyxl
+numpy
+httpx
+apscheduler
+python-multipart
+passlib[bcrypt]
+bcrypt
+akshare

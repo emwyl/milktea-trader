@@ -6,8 +6,63 @@
 <meta name="theme-color" content="#2563eb" />
 <meta http-equiv="Pragma" content="no-cache" />
 <meta http-equiv="Expires" content="0" />
-<title>加油赚奶茶钱</title>
-<script src="./vue.global.prod.js?v=20260826"></script>
+<title>TR-个人学习版</title>
+<script src="./vue.global.prod.js?v=20260909178"></script>
+<script>
+// v166 网关偶发 502 历史教训:vue.global.prod.js 加载失败会直接导致下方主脚本 `const {createApp}=Vue` 抛
+// ReferenceError,整页{{}}占位符/弹窗默认可见——表现就是"登录闪一下又回登录界面但 Vue 没渲染"。
+// v168 实施兜底:检测到 Vue 未定义时,提示用户并自动注入新 <script> 重试一次,成功后整页 reload 跑完整流程。
+(function ensureVue(){
+  if (typeof Vue !== 'undefined' && Vue && Vue.createApp) return;
+  try{
+    var hint = document.createElement('div');
+    hint.style.cssText = 'position:fixed;inset:0;background:#fff;display:flex;align-items:center;justify-content:center;z-index:99999;font-size:15px;color:#374151;text-align:center;padding:24px;line-height:1.8;font-family:system-ui,-apple-system,sans-serif';
+    hint.id = 'vue-reload-hint';
+    hint.innerHTML = '页面资源加载异常,正在自动重试...<br><span style="font-size:13px;color:#6b7280">若一直停留,请按 Ctrl+F5 强制刷新</span>';
+    (document.body || document.documentElement).appendChild(hint);
+    var s = document.createElement('script');
+    s.src = './vue.global.prod.js?v=20260909178' + Date.now();
+    s.onload = function(){
+      if (typeof Vue !== 'undefined' && Vue.createApp) { location.reload(); }
+      else { hint.innerHTML = '重试仍失败,请按 Ctrl+F5 强制刷新<br><span style="font-size:12px;color:#9ca3af">(v20260908169)</span>'; }
+    };
+    s.onerror = function(){ hint.innerHTML = '重试仍失败,请按 Ctrl+F5 强制刷新<br><span style="font-size:12px;color:#9ca3af">(v20260908169)</span>'; };
+    (document.head || document.documentElement).appendChild(s);
+  }catch(e){ /* 兜底若失败也别抛,留给用户 Ctrl+F5 */ }
+})();
+</script>
+<script>
+// v166: 网关偶发 502 自愈 — vue.global.prod.js 若加载失败(线上网关不稳定时约 1/10 概率),
+//      会直接导致下方主脚本 `const {createApp}=Vue` 抛 ReferenceError、整页白屏(用户反馈"登录都不行")。
+//      这里在 Vue 库标签之后、主脚本之前兜底: 3.2s 内 Vue 仍未就绪 => 自动整页重载,最多 3 次。
+(function(){
+  var KEY='mt_vue_retry';
+  function mark(n){ try{ sessionStorage.setItem(KEY, String(n)); }catch(e){} }
+  function read(){ try{ return parseInt(sessionStorage.getItem(KEY)||'0',10)||0; }catch(e){ return 0; } }
+  function clear(){ try{ sessionStorage.removeItem(KEY); }catch(e){} }
+  if (typeof Vue !== 'undefined') { clear(); return; } // 一次性脚本标签同步加载已就绪
+  var n = read() + 1;
+  if (n <= 3) {
+    mark(n);
+    setTimeout(function(){
+      if (typeof Vue === 'undefined') {
+        console.warn('[mt-boot] Vue 未就绪(疑似网关 502), 自动重载第 '+n+' 次');
+        location.reload();
+      } else { clear(); }
+    }, 3200);
+  } else {
+    clear();
+    // 已重试 3 次仍失败: 提示手动刷新, 不陷入无限刷新
+    setTimeout(function(){
+      if (typeof Vue === 'undefined') {
+        document.title = '加载失败';
+        var d = document.getElementById('app');
+        if (d) d.innerHTML = '<div style="padding:48px 20px;text-align:center;font-family:sans-serif"><h3 style="margin:0 0 12px">😵 页面加载失败</h3><p style="color:#6b7280;line-height:1.8">网关暂时不稳定（502）。<br/>请稍候点击右上角刷新，或直接 <a href="javascript:location.reload()" style="color:#2563eb">重试</a>。</p></div>';
+      }
+    }, 3200);
+  }
+})();
+</script>
 <style>
   :root{
     --milk:#f5f7fa; --tea:#2563eb; --tea-d:#1d4ed8; --ink:#1f2937; --line:#e5e7eb;
@@ -170,6 +225,26 @@
       display:block;margin-top:6px;font-size:11px;line-height:1.5;
       box-shadow:0 6px 20px rgba(30,64,175,.12);
     }
+    /* ===== 最新信号：窄屏卡片视图（6 列挤压会逐字竖排，故切卡片） ===== */
+    .sig-tbl-wrap{display:none}
+    .sig-card-list{display:block;margin-top:8px}
+    .sig-card{
+      background:#fff;border:1px solid var(--line);border-radius:12px;
+      padding:12px;margin-bottom:10px;box-shadow:0 2px 6px rgba(30,64,175,.05);
+      cursor:pointer;
+    }
+    .sig-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:8px}
+    .sig-card-name{display:flex;align-items:baseline;gap:6px;flex-wrap:wrap;min-width:0}
+    .sig-card-name .sig-title{font-weight:700;font-size:15px;color:var(--ink)}
+    .sig-card-code{font-size:11px;color:#2563eb;font-weight:500}
+    .sig-card-pills{display:flex;gap:4px;flex-wrap:wrap;flex-shrink:0}
+    .sig-rule-name{font-weight:600;font-size:14px;color:var(--ink);line-height:1.45;overflow-wrap:break-word;word-break:break-word}
+    .sig-rule-detail{font-size:12px;color:#6b7280;margin-top:3px;line-height:1.5;overflow-wrap:break-word;word-break:break-word}
+    .sig-notice{
+      font-size:12px;color:#92400e;background:#fffbeb;
+      border-left:3px solid var(--warn);padding:6px 8px;border-radius:0 6px 6px 0;
+      margin-top:8px;line-height:1.55;overflow-wrap:break-word;word-break:break-word;
+    }
   }
   /* 480px 以下：进一步压缩 */
   @media(max-width:480px){
@@ -180,6 +255,8 @@
   /* 平板及以上保持原样 */
   @media(min-width:769px){
     .pool-card-list{display:none !important}
+    .sig-card-list{display:none !important}
+    .sig-tbl-wrap{display:block !important}
     .scroll-hint{display:none}
     /* 桌面端：说明带一直显示,折叠按钮隐藏 */
     .hintbar-toggle{display:none}
@@ -191,6 +268,22 @@
   .pill{display:inline-block;padding:2px 8px;border-radius:10px;font-size:12px}
   .pill.高{background:#fde2e0;color:var(--danger)} .pill.中{background:#fdeccd;color:var(--warn)} .pill.低{background:#d8f0e4;color:var(--ok)}
   .pill.add{background:#d8f0e4;color:var(--ok)} .pill.reduce{background:#fdeccd;color:var(--warn)} .pill.alert{background:#eff6ff;color:#1d4ed8} .pill.danger{background:#fee2e2;color:var(--danger)}
+  /* v170：风险等级 chip（紧急/重要/关注） */
+  .pill.risk-urgent{background:#fee2e2;color:#b91c1c;font-weight:600;letter-spacing:1px}
+  .pill.risk-important{background:#fed7aa;color:#c2410c;font-weight:600;letter-spacing:1px}
+  .pill.risk-watch{background:#dbeafe;color:#1d4ed8;font-weight:600;letter-spacing:1px}
+  /* v170：风险等级 select 与 rows 样式 */
+  .risk-select{padding:4px 8px;border-radius:6px;border:1px solid var(--line);font-size:13px;background:#fff;color:var(--tea-d)}
+  .risk-select.risk-urgent{background:#fee2e2;color:#b91c1c;border-color:#fca5a5}
+  .risk-select.risk-important{background:#fed7aa;color:#c2410c;border-color:#fdba74}
+  .risk-select.risk-watch{background:#dbeafe;color:#1d4ed8;border-color:#93c5fd}
+  /* v171 首页风控提示条：按用户录入内容显示；空内容时自动隐藏 */
+  .risk-notice-card{border-left:4px solid #f59e0b;background:linear-gradient(90deg,#fff7ed 0%, #fffaf0 100%)}
+  .risk-notice-card .rn-head{display:flex;align-items:center;gap:8px}
+  .risk-notice-card .rn-icon{display:inline-flex;width:22px;height:22px;align-items:center;justify-content:center;border-radius:50%;background:#f59e0b;color:#fff;font-size:13px;font-weight:bold}
+  .risk-notice-card .rn-content{white-space:pre-wrap;line-height:1.7;color:#92400e;font-size:14px;margin-top:6px}
+  .risk-notice-card .rn-empty-input{display:flex;gap:8px;align-items:center;margin-top:6px}
+  .risk-notice-card .rn-textarea{width:100%;min-height:60px;resize:vertical;font-family:inherit;font-size:13px}
   /* A 股配色：涨红跌绿(语义化:up=涨/盈/偏强,down=跌/亏/偏弱) */
   :root{ --up:#ef4444; --down:#10b981; }
   .pill.up{background:#fde2e0;color:var(--up)} .pill.down{background:#d8f0e4;color:var(--down)}
@@ -567,14 +660,31 @@
   .dv-chip.tag--.active{background:#f3f4f6;border-color:#6b7280;font-weight:600}
   .dv-note-counter{font-size:11px;color:#9ca3af;text-align:right;margin-top:2px}
   .dv-note-counter.over{color:#dc2626;font-weight:600}
+  /* v178: 综合评分/预判参考信息 只读预览区(灰色背景,系统快照) */
+  .dv-snap-row{display:flex;gap:14px;margin-top:14px;padding:10px 12px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px}
+  .dv-snap-row.loading{background:#fffbe6;border-color:#fde68a}
+  .dv-snap-row.empty{background:#fef2f2;border-color:#fecaca}
+  .dv-snap-field{flex:1;display:flex;flex-direction:column;min-width:0}
+  .dv-snap-field label{font-size:12px;color:#6b7280;margin-bottom:4px;font-weight:600}
+  .dv-snap-input{padding:7px 10px;border:1px solid #e5e7eb;border-radius:5px;background:#fff;color:#374151;font-size:13px;line-height:1.5}
+  .dv-snap-input.empty{color:#9ca3af;font-style:italic}
+  .dv-snap-text.dv-snap-input{word-break:break-all;white-space:pre-wrap}
+  .dv-snap-input b{color:#0f172a;font-size:14px}
   .dv-history-tbl{width:100%;border-collapse:collapse;font-size:12px;margin-top:4px}
   .dv-history-tbl th,.dv-history-tbl td{padding:6px 8px;border-bottom:1px solid var(--line);text-align:left}
   .dv-history-tbl th{background:#f9fafb;font-weight:600;color:#374151}
   .dv-history-tbl td{max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   /* v143: 盯盘日志表格 */
-  .wl-tbl{width:100%;border-collapse:collapse;font-size:13px}
-  .wl-tbl th,.wl-tbl td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left}
+  .wl-tbl{width:100%;border-collapse:collapse;font-size:13px;table-layout:fixed}
+  .wl-tbl th,.wl-tbl td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left;word-break:break-all;overflow-wrap:anywhere}
   .wl-tbl th{background:#f9fafb;font-weight:600;color:#374151;position:sticky;top:0;z-index:1}
+  /* v178: 用户录入字段标题蓝底提示(预判趋势/目标价位/目标依据/偏离度/偏离原因复盘) */
+  .wl-tbl th.wl-user-th{color:#1d4ed8;font-weight:600}
+  /* v178: 综合评分/预判参考信息两列只读预览样式(系统快照) */
+  .wl-snap-score{font-weight:700;color:#0f172a}
+  .wl-snap-score.empty{color:#9ca3af;font-weight:400}
+  .wl-snap-text{color:#374151;line-height:1.5;word-break:break-all;white-space:pre-wrap}
+  .wl-snap-text.empty{color:#9ca3af;font-style:italic}
   .wl-row{cursor:pointer;transition:background .12s}
   .wl-row:hover{background:#f8fafc}
   .wl-row.expanded{background:#eff6ff}
@@ -714,7 +824,7 @@
     <div class="login-card">
       <div class="login-brand">
         <div class="logo">🧋</div>
-        <h1>加油赚奶茶钱</h1>
+        <h1>TR-个人学习版</h1>
         <p>小散户的纪律化看盘笔记 · 多人账户隔离版</p>
       </div>
       <div class="login-tabs">
@@ -745,18 +855,18 @@
   <!-- 主框架 -->
   <div v-else>
     <header>
-      <h1>🧋 加油赚奶茶钱</h1>
+      <h1>🧋 TR-个人学习版</h1>
       <span class="sub">个人学习用 · 先控风险再谈收益</span>
-      <span class="version" id="appVersion">v20260907164</span>
+      <span class="version" id="appVersion">v20260909178</span>
       <button class="ghost auto-refresh-btn" :class="{active:autoRefresh}" @click="toggleAutoRefresh" :title="autoRefresh?'自动刷新开启中，每5秒更新当前页面数据':'点击开启每5秒自动刷新'">
         {{autoRefresh?'⏸':'▶'}} 自动 5s
       </button>
       <span class="sub">你好，{{me.username}} <span v-if="me.role==='admin'" class="pill">admin</span><span v-if="me.is_guest" class="pill">游客</span></span>
       <button class="ghost" @click="logout">退出</button>
     </header>
-    <!-- v161/v164：部署环境数据不持久警告条（每次部署都会清空运行时写入的数据） -->
+    <!-- v169：原 v161/v164 文案与实测不符（同一链接重复部署并不清空数据），已改为准确说明 -->
     <div v-if="envWarn.show" class="env-warn">
-      <span><b>⚠ 数据不持久：</b>当前部署环境（workbuddy 沙箱）每次重启/重新部署都会清空运行时写入的数据，包括：<b>自选股、标签、规则、盯盘日志、日初判断、偏离复盘、访问记录</b>。下次发版前请先到「设置 → 数据迁移 → 导出」备份。</span>
+      <span><b>✅ 数据持久：</b>自选股、标签、规则、盯盘日志、日初判断、偏离复盘、访问记录都保存在<b>服务端数据库</b>，换浏览器/换设备、重复发版都不会清空。<b>注意：数据按账号隔离</b>（admin 与 guest 各自独立，互不可见）。仅当沙箱环境被平台回收时才会回退到发版基线，建议仍定期用「设置 → 数据迁移 → 导出」备份。</span>
       <a @click="go('settings'); $nextTick(()=>{ const el=[...document.querySelectorAll('h3')].find(h=>h.textContent.includes('数据迁移')); if(el) el.scrollIntoView({behavior:'smooth',block:'start'}); })">→ 到设置页导出备份</a>
       <button class="x" @click="envWarn.show=false" title="本次会话不再提示">×</button>
     </div>
@@ -782,6 +892,16 @@
       <!-- 看板总览 -->
       <div v-if="view==='dash'">
         <div class="card"><div class="row"><b>看板总览</b><button @click="runEngine">运行引擎</button><button class="ghost" @click="openRulesModal">加减仓规则</button><span class="muted">{{dashMsg}}</span></div></div>
+        <!-- v171 首页风控提示：按用户在「加减仓规则」弹窗中录入的内容显示；空内容自动隐藏 -->
+        <div v-if="riskNotice && riskNoticeLoaded" class="card risk-notice-card">
+          <div class="rn-head">
+            <span class="rn-icon" aria-hidden="true">!</span>
+            <b style="color:#92400e">风控提示</b>
+            <span class="muted" style="font-size:12px">您自定义</span>
+            <button type="button" class="ghost btn-sm" style="margin-left:auto" @click="openRulesModal" title="修改风控提示内容">编辑</button>
+          </div>
+          <div class="rn-content">{{riskNotice}}</div>
+        </div>
         <!-- 宽指快览 v128：登录进来第一眼看到的大盘健康度（涨跌按 A 股红涨绿跌） -->
         <div class="card">
           <div class="idx-head">
@@ -823,14 +943,36 @@
           </div>
         </div>
         <div class="card"><h3 style="margin-top:0">最新信号（风险优先）</h3>
-          <table><thead><tr><th>代码</th><th>名称</th><th>类型</th><th>风险</th><th>置信度</th><th>原因</th><th>风控提示</th></tr></thead>
+          <div class="sig-tbl-wrap">
+          <table><thead><tr><th>代码</th><th>名称</th><th>类型</th><th>风险等级</th><th>风险规则名称</th><th>风控提示</th></tr></thead>
           <tbody>
             <tr v-for="s in dash.recent_signals" :key="s.id" @click="openAnalysis(s.code)" style="cursor:pointer">
               <td>{{s.code}}</td><td>{{s.name}}</td><td><span class="pill" :class="s.signal_type">{{s.signal_type}}</span></td>
-              <td><span class="pill" :class="s.risk_level">{{s.risk_level}}</span></td><td>{{s.confidence}}</td>
-              <td>{{s.reason}}</td><td class="muted">{{s.risk_advice}}</td>
+              <td><span class="pill" :class="riskPillClassOfLevel(s.rule_risk_level)">{{s.rule_risk_level || '—'}}</span></td>
+              <td><div style="font-weight:600">{{s.rule_name || '—'}}</div>
+                  <div v-if="s.rule_detail" class="muted" style="font-size:12px;margin-top:2px">{{s.rule_detail}}</div></td>
+              <td class="muted">{{s.rule_notice || s.risk_advice}}</td>
             </tr>
           </tbody></table>
+          </div>
+          <!-- 窄屏卡片视图：6 列在手机上会被挤成逐字竖排，故改用卡片纵向展示 -->
+          <div class="sig-card-list">
+            <div class="sig-card" v-for="s in dash.recent_signals" :key="'sc'+s.id" @click="openAnalysis(s.code)">
+              <div class="sig-card-head">
+                <div class="sig-card-name">
+                  <span class="sig-title">{{s.name}}</span>
+                  <span class="sig-card-code">{{s.code}}</span>
+                </div>
+                <div class="sig-card-pills">
+                  <span class="pill" :class="s.signal_type">{{s.signal_type}}</span>
+                  <span class="pill" :class="riskPillClassOfLevel(s.rule_risk_level)">{{s.rule_risk_level || '—'}}</span>
+                </div>
+              </div>
+              <div class="sig-rule-name">{{s.rule_name || '—'}}</div>
+              <div v-if="s.rule_detail" class="sig-rule-detail">{{s.rule_detail}}</div>
+              <div v-if="s.rule_notice || s.risk_advice" class="sig-notice">⚠ {{s.rule_notice || s.risk_advice}}</div>
+            </div>
+          </div>
           <p v-if="!dash.recent_signals.length" class="muted">暂无 pending 信号，点“运行引擎”试试</p>
         </div>
       </div>
@@ -1166,17 +1308,17 @@
               </template>
               <template v-else-if="col.key==='main_net_pct'">
                 <span v-if="p.track.main_net_pct!=null" :class="ui.classOf(p.track.main_net_pct)" :title="'主力资金当日净流入占比(%)'">{{ui.fmtPctSigned(p.track.main_net_pct)}}</span>
-                <span v-else-if="mktBad(p.track,'f')" class="bad-data" title="资金流数据读取异常">数据异常</span>
+                <span v-else-if="mktBad(p.track,'f')" class="muted" title="当日资金流暂未取到：数据源不可达或当日数据尚未更新，为避免用昨日数据误导，此处留空">—</span>
                 <span v-else class="muted">-</span>
               </template>
               <template v-else-if="col.key==='main_signal'">
                 <span v-if="p.track.main_signal" :class="(p.track.main_signal.level==='strong_bull'||p.track.main_signal.level==='bull')?'up':((p.track.main_signal.level==='strong_bear'||p.track.main_signal.level==='bear')?'down':'muted')">{{p.track.main_signal.text}}</span>
-                <span v-else-if="mktBad(p.track,'f')" class="bad-data" title="资金流数据读取异常">数据异常</span>
+                <span v-else-if="mktBad(p.track,'f')" class="muted" title="当日资金流暂未取到：数据源不可达或当日数据尚未更新，为避免用昨日数据误导，此处留空">—</span>
                 <span v-else class="muted">-</span>
               </template>
               <template v-else-if="col.key==='big_order_net'">
                 <span v-if="p.track.big_order_net!=null" :class="ui.classOf(p.track.big_order_net)" :title="'大单流向(万元)：超大单+大单净额，正数净买入/负数净卖出'">{{p.track.big_order_net}}</span>
-                <span v-else-if="mktBad(p.track,'f')" class="bad-data" title="资金流数据读取异常">数据异常</span>
+                <span v-else-if="mktBad(p.track,'f')" class="muted" title="当日资金流暂未取到：数据源不可达或当日数据尚未更新，为避免用昨日数据误导，此处留空">—</span>
                 <span v-else class="muted">-</span>
               </template>
               <template v-else-if="col.key==='valuation_pct_3y'">
@@ -1445,11 +1587,13 @@
           <div class="modal-body">
             <div class="card" style="margin-bottom:12px">
               <div class="row"><b>现有规则</b><button @click="loadRules">刷新</button></div>
-              <table><thead><tr><th>名称</th><th>动作</th><th>优先级</th><th>状态</th><th>操作</th></tr></thead>
+              <table><thead><tr><th>名称</th><th>动作</th><th>风险等级</th><th>状态</th><th>操作</th></tr></thead>
               <tbody><tr v-for="r in rules" :key="r.id"><td>{{r.name}}</td>
-                <td><span class="pill" :class="r.action">{{r.action}}</span></td><td>{{r.priority}}</td>
+                <td><span class="pill" :class="r.action">{{r.action}}</span></td>
+                <td><span class="pill" :class="riskPillClass(r.priority)">{{riskLevelOf(r.priority)}}</span></td>
                 <td>{{r.enabled?'启用':'停用'}}</td>
-                <td><button type="button" class="ghost btn-sm" @click="toggleRule(r.id)">启/停</button>
+                <td><button type="button" class="ghost btn-sm" @click="editRuleStart(r)">改</button>
+                    <button type="button" class="ghost btn-sm" @click="toggleRule(r.id)">启/停</button>
                     <button type="button" class="ghost btn-sm" @click="removeRule(r.id)">删</button></td></tr></tbody></table>
             </div>
             <div class="card" style="margin-bottom:0">
@@ -1458,16 +1602,75 @@
               <label>作用范围</label><input v-model="nr.scope" placeholder="all 或 JSON 数组如 [&quot;000725&quot;]" />
               <label>动作</label>
               <select v-model="nr.action"><option value="add">加仓 add</option><option value="reduce">减仓 reduce</option><option value="alert">提醒 alert</option><option value="hold">持有 hold</option></select>
+              <label>风险等级（紧急最先触发，关注最后触发）</label>
+              <select v-model="nr.risk" :class="['risk-select', nr.risk==='紧急'?'risk-urgent':(nr.risk==='重要'?'risk-important':'risk-watch')]">
+                <option value="紧急">紧急（最高优先级，最先触发）</option>
+                <option value="重要">重要</option>
+                <option value="关注">关注（最低优先级，最后触发）</option>
+              </select>
+              <label>风控提示（命中本规则时，这段文字会显示在「最新信号」表）</label>
+              <textarea v-model="nr.notice" rows="2" maxlength="200" placeholder="例：跌破即减半仓，不扛；单票亏损超 5% 无条件止损。留空则显示系统通用建议"></textarea>
               <label>条件（JSON，条件类型见文档）</label>
               <textarea v-model="nr.conditions" rows="6"></textarea>
               <div class="row"><button @click="createRule">创建</button>
                 <span class="muted">示例：{"logic":"AND","conditions":[{"type":"below_ma","ma":20,"days":3}]}</span></div>
             </div>
+            <!-- v171：风控提示自定义输入（按录入内容显示在首页顶部；按账号隔离；最长 500 字） -->
+            <div class="card risk-notice-card" style="margin-top:12px;margin-bottom:0">
+              <div class="rn-head">
+                <span class="rn-icon" aria-hidden="true">!</span>
+                <b style="color:#92400e">首页风控提示</b>
+                <span class="muted" style="font-size:12px;margin-left:6px">您录入的内容会显示在「看板总览」顶部</span>
+              </div>
+              <textarea class="rn-textarea" v-model="riskNotice" maxlength="500" placeholder="例：年底清仓，本周不再新增仓位；下周一 14:30 前留意美联储决议窗口。" @input="onRiskNoticeInput"></textarea>
+              <div class="row" style="margin-top:6px">
+                <button type="button" @click="saveRiskNotice">保存风控提示</button>
+                <button type="button" class="ghost" @click="riskNotice=''; onRiskNoticeInput()">清空</button>
+                <span class="muted">{{riskNoticeMsg || '空内容时首页不显示提示条'}}</span>
+                <span class="muted" style="margin-left:auto">{{(riskNotice||'').length}}/500</span>
+              </div>
+            </div>
           </div>
-          <div class="modal-foot">
-            <button type="button" class="ghost" @click="showRulesModal=false">关闭</button>
+<div class="modal-foot">
+          <button type="button" class="ghost" @click="showRulesModal=false">关闭</button>
+        </div>
+      </div>
+    </div>
+
+      <!-- v170：修改规则弹窗（独立于加减仓弹窗，可改全部字段） -->
+      <div v-if="showEditRuleModal" class="modal" @click.self="showEditRuleModal=false;editingRuleId=null">
+        <div class="modal-box">
+          <div class="modal-head">
+            <h3>修改规则</h3>
+            <button type="button" class="close-x" @click="showEditRuleModal=false;editingRuleId=null" aria-label="关闭">×</button>
+          </div>
+          <div class="modal-body">
+            <div class="card" style="margin-bottom:0">
+              <b>全部字段可调整</b>
+              <label>名称</label><input v-model="nr.name" />
+              <label>作用范围</label><input v-model="nr.scope" placeholder="all 或 JSON 数组如 [&quot;000725&quot;]" />
+              <label>动作</label>
+              <select v-model="nr.action"><option value="add">加仓 add</option><option value="reduce">减仓 reduce</option><option value="alert">提醒 alert</option><option value="hold">持有 hold</option></select>
+              <label>风险等级（紧急最先触发，关注最后触发）</label>
+              <select v-model="nr.risk" :class="['risk-select', nr.risk==='紧急'?'risk-urgent':(nr.risk==='重要'?'risk-important':'risk-watch')]">
+                <option value="紧急">紧急（最高优先级，最先触发）</option>
+                <option value="重要">重要</option>
+                <option value="关注">关注（最低优先级，最后触发）</option>
+              </select>
+              <label>风控提示（命中本规则时，这段文字会显示在「最新信号」表）</label>
+              <textarea v-model="nr.notice" rows="2" maxlength="200" placeholder="例：跌破即减半仓，不扛；单票亏损超 5% 无条件止损。留空则显示系统通用建议"></textarea>
+              <label>条件（JSON，条件类型见文档）</label>
+              <textarea v-model="nr.conditions" rows="8"></textarea>
+              <label style="display:flex;align-items:center;gap:6px;margin:8px 0"><input type="checkbox" v-model="nr.enabled" style="width:auto" />启用此规则</label>
+              <div class="row">
+                <button @click="updateRule">保存修改</button>
+                <button type="button" class="ghost" @click="showEditRuleModal=false;editingRuleId=null;nr.name=''">取消</button>
+                <span class="muted">所有字段改动会通过 PUT /api/rules/{id} 持久化到后端</span>
+              </div>
+            </div>
           </div>
         </div>
+      </div>
       </div>
 
       <!-- 偏好分析 -->
@@ -1926,6 +2129,37 @@
               </div>
             </div>
 
+            <!-- v178:录入时的"综合评分 + 预判参考信息"只读预览(系统自动取,不可改;点保存后随下方入库存为快照) -->
+            <div class="dv-snap-row" :class="{'loading': dayViewModal._snapLoading, 'empty': !dayViewModal._snapLoading && dayViewModal._snapError}">
+              <div class="dv-snap-field">
+                <label>综合评分
+                  <span class="muted" style="font-weight:400;font-size:11px;margin-left:4px">录入时的综合评分快照</span>
+                </label>
+                <div class="dv-snap-input" :class="dayViewModal._compositeScore==null ? 'empty' : ''">
+                  <span v-if="dayViewModal._snapLoading">加载中…</span>
+                  <span v-else-if="dayViewModal._snapError">{{ dayViewModal._snapError }}</span>
+                  <span v-else-if="dayViewModal._compositeScore != null">
+                    <b>{{ (+dayViewModal._compositeScore).toFixed(2) }}</b>
+                    <span v-if="dayViewModal._officialScore != null && +dayViewModal._officialScore !== +dayViewModal._compositeScore" class="muted" style="font-size:11px;margin-left:6px">
+                      (后端官方 {{ (+dayViewModal._officialScore).toFixed(2) }})
+                    </span>
+                  </span>
+                  <span v-else class="muted">-</span>
+                </div>
+              </div>
+              <div class="dv-snap-field" style="flex:2">
+                <label>预判参考信息
+                  <span class="muted" style="font-weight:400;font-size:11px;margin-left:4px">默认按量比/换手/振幅/MA5/MA20/箱体位置组装</span>
+                </label>
+                <div class="dv-snap-input dv-snap-text" :class="(!dayViewModal._referenceText && !dayViewModal._snapLoading) ? 'empty' : ''">
+                  <span v-if="dayViewModal._snapLoading">加载中…</span>
+                  <span v-else-if="dayViewModal._snapError">{{ dayViewModal._snapError }}</span>
+                  <span v-else-if="dayViewModal._referenceText">{{ dayViewModal._referenceText }}</span>
+                  <span v-else class="muted">暂无可用参考指标(日线/盘口均缺数据)</span>
+                </div>
+              </div>
+            </div>
+
             <div class="dv-section-title" style="margin-top:16px">
               当日历史
               <span class="muted" style="font-weight:400;margin-left:8px">已有 {{ dayViewModal.history.length }} 条,最新一条作为该日复盘输入</span>
@@ -1956,8 +2190,9 @@
       </div>
 
       <!-- v143: 盯盘日志弹窗 — 该股所有交易日复盘,行可展开当日多次修改明细 -->
+      <!-- v178: 表格扩到 12 列(综合评分/预判参考信息 + 用户录入 5 字段),max-width 提到 1280 防止横向溢出 -->
       <div v-if="watchLogModal.show" class="modal" @click.self="closeWatchLogModal">
-        <div class="modal-box" style="max-width:1080px">
+        <div class="modal-box" style="max-width:1280px">
           <div class="modal-head">
             <h3>盯盘日志 — {{ watchLogModal.name }} {{ watchLogModal.code }}</h3>
             <button type="button" class="close-x" @click="closeWatchLogModal" aria-label="关闭">×</button>
@@ -1973,11 +2208,16 @@
                   <th style="width:80px">开盘</th>
                   <th style="width:80px">收盘</th>
                   <th style="width:90px">分时均价</th>
-                  <th style="width:80px">预判趋势</th>
-                  <th style="width:80px">目标价位</th>
-                  <th>目标依据</th>
-                  <th style="width:80px">偏离度</th>
-                  <th>偏离原因复盘</th>
+                  <!-- v178:录入时的"综合评分"快照(系统自动取,不可改) -->
+                  <th style="width:70px">综合<br/>评分</th>
+                  <!-- v178:录入时的"预判参考信息"快照(自动组装,不可改) -->
+                  <th style="width:240px">预判参考信息</th>
+                  <!-- v178:后续 5 列是用户录入字段,标题统一蓝色提示 -->
+                  <th style="width:70px" class="wl-user-th">预判趋势</th>
+                  <th style="width:70px" class="wl-user-th">目标价位</th>
+                  <th class="wl-user-th">目标依据</th>
+                  <th style="width:80px" class="wl-user-th">偏离度</th>
+                  <th class="wl-user-th">偏离原因复盘</th>
                 </tr>
               </thead>
               <tbody>
@@ -1988,6 +2228,16 @@
                     <td>{{ it.open != null ? it.open : '-' }}</td>
                     <td>{{ it.close != null ? it.close : '-' }}</td>
                     <td>{{ it.intraday_avg != null ? it.intraday_avg : '-' }}</td>
+                    <!-- v178:综合评分快照 -->
+                    <td>
+                      <span :class="it.composite_score != null ? 'wl-snap-score' : 'wl-snap-score empty'">
+                        {{ it.composite_score != null ? (Number.isInteger(+it.composite_score) ? +it.composite_score : (+it.composite_score).toFixed(2)) : '-' }}
+                      </span>
+                    </td>
+                    <!-- v178:预判参考信息快照 -->
+                    <td>
+                      <div :class="it.reference_text ? 'wl-snap-text' : 'wl-snap-text empty'" :title="it.reference_text || ''">{{ it.reference_text || '无(旧数据或录入时未生成)' }}</div>
+                    </td>
                     <td><span :class="'day-view-tag tag-' + (it.trend || '-')">{{ it.trend || '-' }}</span></td>
                     <td>{{ it.target_price != null ? it.target_price : '-' }}</td>
                     <td :title="it.target_note || ''">{{ it.target_note || '-' }}</td>
@@ -2011,7 +2261,7 @@
                     </td>
                   </tr>
                   <tr v-if="it._expanded" class="wl-detail-row">
-                    <td colspan="10">
+                    <td colspan="12">
                       <div v-if="!it._details" class="muted" style="padding:8px 0">加载中...</div>
                       <div v-else-if="!it._details.length" class="muted" style="padding:8px 0">该日无修改明细</div>
                       <table v-else class="wl-detail-tbl">
@@ -2692,7 +2942,7 @@
                 <div v-for="s in ext.data.signals" :key="s.id" class="advice" style="margin-bottom:8px">
                   <span class="pill" :class="s.risk_level">{{s.risk_level}}</span>
                   <b>{{s.signal_type}}</b> · {{s.reason}}
-                  <div class="muted">风控提示:{{s.risk_advice}}({{s.generated_at}})</div>
+                  <div class="muted">风控提示:{{s.rule_notice || s.risk_advice}}({{s.generated_at}})</div>
                 </div>
               </div>
             </template>
@@ -2917,7 +3167,7 @@ const app = createApp({
     building:false, seeding:false, stocksCount:0, cachedCount:0, warmup:{running:false,done:0,total:0,errors:0,msg:''}, warmupTimer:null,
     industries:[],  // 申万一级行业列表(后端返回,前端 chip 多选)
     seedingInd:false,  // 行业补全按钮 loading
-    pool:[], poolFilter:{q:'',tag:''}, poolPage:1, poolPageSize:15, poolTotal:0, rules:[], nr:{name:'',scope:'all',action:'reduce',conditions:'{"logic":"AND","conditions":[{"type":"below_ma","ma":20,"days":3}]}'},
+    pool:[], poolFilter:{q:'',tag:''}, poolPage:1, poolPageSize:15, poolTotal:0, rules:[], nr:{name:'',scope:'all',action:'reduce',conditions:'{"logic":"AND","conditions":[{"type":"below_ma","ma":20,"days":3}]}',risk:'重要',notice:'',enabled:true},
     poolTab:'manual',  // v152: 短线可投池下仅保留手工筛选;选股/筛选逻辑请到一级 nav「选股模型」
     poolSelected:[],  // 可投池表格当前勾选中的 code
     poolSort:{key:null, dir:null},  // 可投池表格列排序状态：{key, dir} dir=asc|desc；null=按后端原序
@@ -2929,6 +3179,11 @@ const app = createApp({
     chartTip:null,  // 走势分析 hover tooltip {x,y,html}
     poolTags:[],  // 当前用户的可投池自定义标签列表
     showRulesModal:false,  // 加减仓规则弹窗显隐
+    showEditRuleModal:false,  // v170：修改规则弹窗显隐
+    editingRuleId:null,  // v170：当前正在修改的规则 id（null 表示新建模式）
+    riskNotice:'',  // v171：首页风控提示（用户自定义，按账号隔离）
+    riskNoticeMsg:'',  // v171：风控提示保存提示（如"已保存 18:20"）
+    riskNoticeLoaded:false,  // v171：是否已加载（避免加载与写入竞态）
     questionnaire:[], indicators:[], answers:{}, focus:[], prefDone:false, pref:{},
     ai:{key:'',base:'',model:''}, nt:{channel:'console',config:'',cron:'30 15 * * 1-5'},
     envWarn:{show:true},  // v161 部署环境不持久警告条（默认显示，用户可点 × 关闭）
@@ -2955,7 +3210,11 @@ const app = createApp({
       profit_state:'', last_year_net_profit:null, yoy_label:''
     },  // 可投池财报明细弹窗(#66 / v153:盈亏状态banner+多源跳链)
     // v143: 日初判断录入弹窗(上半录入 + 下半当日历史)
-    dayViewModal:{show:false, code:'', name:'', trade_date:'', trend:'-', target_price:null, target_note:'', history:[], saving:false},
+    dayViewModal:{show:false, code:'', name:'', trade_date:'', trend:'-', target_price:null, target_note:'', history:[], saving:false,
+                   // v178: 录入时的「综合评分 + 预判参考信息」只读预览快照
+                   _snapLoading:false, _snapError:'',
+                   _compositeScore:null, _officialScore:null,
+                   _referenceText:'', _referenceMetricsJson:''},
     // v143: 盯盘日志弹窗(每日复盘 + 行可展开当日多次修改)
     watchLogModal:{show:false, code:'', name:'', items:[], loading:false, saving:false, dirtyCount:0, _dirtyAlerted:false, justSaved:false, justSavedCount:0, _justSavedTimer:null},
     // v148: 综合评分详情+规则可调弹窗(用户实时调整权重/阈值,前端实时重算 user_score)
@@ -2984,16 +3243,40 @@ const app = createApp({
             {min:0, grade:'D'},
           ],
           indicators:[
-            {id:'vol20', dim:'A', label:'日均成交量(20日)', unit:'万手', max:15,
-             source:function getV(t){return t.avg_volume_20;},
-             valid:function isV(t){return t.avg_volume_20!=null && !isNaN(+t.avg_volume_20) && t.avg_volume_20>=0;},
-             display:function getD(t){return t.avg_volume_20!=null ? (+t.avg_volume_20).toFixed(1)+'万手' : '无数据';},
+            {id:'vol20_history', dim:'A', label:'历史活跃度(5日均量)', unit:'万手', max:5,
+             source:function getV(t){return t.avg_volume_5;},
+             valid:function isV(t){return t.avg_volume_5!=null && !isNaN(+t.avg_volume_5) && t.avg_volume_5>=0;},
+             display:function getD(t){return t.avg_volume_5!=null ? (+t.avg_volume_5).toFixed(1)+'万手' : '无数据';},
              bands:[
-               {label:'最优', min:40, lt:null, score:15, veto:false},
-               {label:'次优', min:20, lt:40,  score:12, veto:false},
-               {label:'次差', min:10, lt:20,  score:9,  veto:false},
-               {label:'差',   min:5,  lt:10,  score:5,  veto:false},
-               {label:'否决', min:0,  lt:5,   score:0,  veto:true},
+               {label:'最优', min:40, lt:null, score:5, veto:false},
+               {label:'次优', min:20, lt:40,  score:4, veto:false},
+               {label:'次差', min:10, lt:20,  score:3, veto:false},
+               {label:'差',   min:5,  lt:10,  score:1, veto:false},
+               {label:'否决', min:0,  lt:5,   score:0, veto:true},
+             ]},
+            // v176: day_vs_prev 与 day_vs_ma20 合并 → 单一"当日/前日成交量 vs 20日均成交量"
+            // 15:00 前用"前日 vs 20日均"避开当日 0 量;15:00 后切回"当日 vs 20日均"反映当日真实活跃。
+            // 评分在 data_fetcher.py 已按当前服务器时间切好,前端 source 只负责取值展示。
+            {id:'day_vs_ma20', dim:'A', label:'当日/前日成交量vs20日均成交量', unit:'%', max:5,
+             source:function getV(t){
+               // 当前时间 >=15:00 视为收盘,展示当日;否则展示前日
+               if(new Date().getHours()>=15) return t.vol_ratio_vs_ma20;
+               return t.vol_ratio_prev_vs_ma20;
+             },
+             valid:function isV(t){
+               const v=(new Date().getHours()>=15) ? t.vol_ratio_vs_ma20 : t.vol_ratio_prev_vs_ma20;
+               return v!=null && isFinite(+v);
+             },
+             display:function getD(t){
+               const v=+((new Date().getHours()>=15) ? t.vol_ratio_vs_ma20 : t.vol_ratio_prev_vs_ma20);
+               return isFinite(v)?((v>0?'+':'')+v.toFixed(2)+'%'):'无数据';
+             },
+             bands:[
+               {label:'放量',  min:50,  lt:null, score:5, veto:false},
+               {label:'次放',  min:20,  lt:50,   score:4, veto:false},
+               {label:'中性',  min:0,   lt:20,   score:3, veto:false},
+               {label:'偏弱',  min:-20, lt:0,    score:1, veto:false},
+               {label:'弱势',  min:null,lt:-20,  score:0, veto:false},
              ]},
             {id:'intra_amp', dim:'A', label:'日内振幅(5日均)', unit:'%', max:15,
              source:function getV(t){return t.intra_amplitude;},
@@ -3691,7 +3974,13 @@ const app = createApp({
         case 'goodwill':       return (t.goodwill!=null ? +t.goodwill : null);
         case 'next_ratio':     return (t.next_ratio!=null ? +t.next_ratio : null);
         case 'next_date':      return t.next_date || '';
-        case 'total_score':    return (t.total_score!=null ? +t.total_score : null);
+        // v165: 综合评分排序以"显示值"为准 — 列上显示的是 p.user_score(实时按用户规则重算),
+        //      一票否决被强制为 0,排序必须随 0 走(即否决始终置顶 asc=头/desc=底)。
+        //      历史 bug:用 t.total_score 排时,会出现"行被排走但显示还是原值"的错位错觉。
+        case 'total_score': {
+          if(p && p.user_score != null) return +p.user_score;
+          return (t.total_score!=null ? +t.total_score : null);
+        }
         case 'pct_5d':     return (t.pct_5d!=null ? +t.pct_5d : null);
         case 'gap': {
           if(!t.gap || !t.gap.dir) return null;
@@ -3967,13 +4256,46 @@ const app = createApp({
       // 取今天(本地时区)作为 trade_date
       const d = new Date();
       const today = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-      // 弹窗状态重置
+      // 弹窗状态重置(v178 加 _snap* 字段,先占位,等接口回来再赋值)
       this.dayViewModal = {
         show:true, code:p.code, name:p.name||p.code, trade_date:today,
-        trend:'-', target_price:null, target_note:'', history:[], saving:false
+        trend:'-', target_price:null, target_note:'', history:[], saving:false,
+        _snapLoading:true, _snapError:'',
+        _compositeScore:null, _officialScore:null,
+        _referenceText:'', _referenceMetricsJson:''
       };
+      // v178: 拉取「综合评分 + 预判参考信息」快照(用户录入当时显示用,保存时一起入库)
+      // 优先级:① 列表里的 user_score(实时重算分) ② 接口里的 composite_score(后端官方分)
+      this._fillDayViewSnapshot(p);
       // 拉该 code 当日历史(用于下半区展示,新窗口开时立刻可见)
       await this.loadDayViewLog(p.code, today);
+    },
+    // v178: 拉 metrics-summary 接口,写入 dayViewModal 快照字段
+    async _fillDayViewSnapshot(p){
+      const m = this.dayViewModal;
+      if(!m || !m.code){ return; }
+      m._snapLoading = true; m._snapError = '';
+      try{
+        const data = await API(`/pool/${m.code}/day-view-log/preview`);
+        // 入库参考信息(预判参考信息字段必填)
+        m._referenceText = (data && data.reference_text) || '';
+        m._referenceMetricsJson = JSON.stringify((data && data.metrics) || {});
+        // 综合评分:列表里 p.user_score(实时分) 优先;否则用接口官方分
+        if(p && p.user_score != null){
+          m._compositeScore = +p.user_score;
+        }else if(data && data.composite_score != null){
+          m._compositeScore = +data.composite_score;
+        }else{
+          m._compositeScore = null;
+        }
+        m._officialScore = (data && data.official_score != null) ? +data.official_score : null;
+      }catch(e){
+        m._snapError = '获取参考信息失败:' + (e && (e.detail || e.message) || '网络错误');
+        m._compositeScore = null;
+        m._referenceText = '';
+      }finally{
+        m._snapLoading = false;
+      }
     },
     async loadDayViewLog(code, trade_date){
       try{
@@ -4004,14 +4326,25 @@ const app = createApp({
         await API(`/pool/${m.code}/day-view-log`, {method:'POST', body: JSON.stringify({
           trade_date: m.trade_date, trend: m.trend,
           target_price: (m.target_price==null || m.target_price==='') ? null : (+m.target_price),
-          target_note: note
+          target_note: note,
+          // v178: 录入时的综合评分/预判参考信息 一并入库(盯盘日志展示)
+          composite_score: (m._compositeScore==null || m._compositeScore==='') ? null : (+m._compositeScore),
+          reference_text: m._referenceText || '',
+          reference_metrics_json: m._referenceMetricsJson || '',
         })});
         // 成功:刷新当日历史 + 刷新列表(让 day_view_today / count 同步)
         await this.loadDayViewLog(m.code, m.trade_date);
         await this.loadPool();
+        // v178.1: 连续录入场景——保留列表里的最新 user_score 作"快照",避免每条都退化到官方分
+        const _p = Array.isArray(this.pool) ? this.pool.find(function(x){ return x.code === m.code; }) : null;
         this.showToast('已记录');
-        // 清空录入区(保留弹窗,便于连续录入)
+        // 清空录入区(保留弹窗,便于连续录入);快照字段也清掉,等待重新拉取
         m.trend = '-'; m.target_price = null; m.target_note = '';
+        m._compositeScore = null; m._officialScore = null;
+        m._referenceText = ''; m._referenceMetricsJson = '';
+        // v178: 重新拉一次快照(连续录入下一条时也要看当时的评分/参考);
+        //   列表已 loadPool 且 recomputeAllUserScores 已跑,传入最新 user_score,缺失则 null 让接口回退官方分
+        this._fillDayViewSnapshot({code:m.code, user_score:(_p && _p.user_score != null) ? _p.user_score : null});
       }catch(e){
         this.showAlert('保存失败:' + (e && e.message || '网络错误'));
       }finally{
@@ -4432,7 +4765,7 @@ const app = createApp({
       this.autoRefreshTimer = setInterval(()=> this.refreshCurrentView(), 5000);
     },
     stopAutoRefresh(){ if(this.autoRefreshTimer){ clearInterval(this.autoRefreshTimer); this.autoRefreshTimer=null; } },
-    go(v){ this.view=v; if(v==='dash')this.loadDash(); if(v==='screens'){this.loadScreens();this.loadIndustries();this.refreshCounts();this.checkWarmup();this.loadPref();} if(v==='pool'){this.loadPool(); this.loadPoolTags();} if(v==='pref')this.loadPref(); if(v==='settings'){this.loadSettings(); if(this.me.role==='admin'){this.loadUsers(); this.loadBackups(); this.loadCosStatus();}} if(v==='t')this.loadT(); },
+    go(v){ this.view=v; if(v==='dash'){this.loadDash(); this.loadRiskNotice();} if(v==='screens'){this.loadScreens();this.loadIndustries();this.refreshCounts();this.checkWarmup();this.loadPref();} if(v==='pool'){this.loadPool(); this.loadPoolTags();} if(v==='pref')this.loadPref(); if(v==='settings'){this.loadSettings(); if(this.me.role==='admin'){this.loadUsers(); this.loadBackups(); this.loadCosStatus();}} if(v==='t')this.loadT(); },
     refreshCurrentView(){
       if(!this.token) return;
       // 有弹窗打开时跳过本次刷新，避免干扰用户当前操作
@@ -5584,7 +5917,101 @@ const app = createApp({
     async loadRules(){ const r=await API('/rules'); this.rules=r; },
     async toggleRule(id){ await API('/rules/'+id+'/toggle',{method:'POST'}); this.loadRules(); },
     async removeRule(id){ await API('/rules/'+id,{method:'DELETE'}); this.loadRules(); },
-    async createRule(){ await API('/rules',{method:'POST',body:JSON.stringify({name:this.nr.name,scope:this.nr.scope,conditions:JSON.parse(this.nr.conditions),action:this.nr.action,priority:5})}); this.nr.name=''; this.loadRules(); },
+    async createRule(){
+      const cond=this.safeParseJSON(this.nr.conditions, {});
+      if(!cond || typeof cond!=='object'){ this.showAlert('条件 JSON 解析失败，请检查'); return; }
+      await API('/rules',{method:'POST',body:JSON.stringify({name:this.nr.name,scope:this.nr.scope,conditions:cond,action:this.nr.action,priority:this.priorityOfRisk(this.nr.risk),enabled:true,scheme_type:'custom',risk_notice:this.nr.notice||''})});
+      this.nr.name=''; this.nr.notice=''; this.loadRules();
+    },
+    /* v170：把规则数据回填到 nr 并打开修改弹窗 */
+    editRuleStart(r){
+      this.editingRuleId = r.id;
+      this.nr = {
+        name: r.name||'',
+        scope: r.scope||'all',
+        action: r.action||'reduce',
+        conditions: typeof r.conditions==='object' ? JSON.stringify(r.conditions, null, 2) : (r.conditions||'{}'),
+        risk: this.riskLevelOf(r.priority),
+        notice: r.risk_notice || '',
+        enabled: r.enabled!==false
+      };
+      this.showEditRuleModal = true;
+    },
+    async updateRule(){
+      if(!this.editingRuleId){ return; }
+      const cond=this.safeParseJSON(this.nr.conditions, {});
+      if(!cond || typeof cond!=='object'){ this.showAlert('条件 JSON 解析失败，请检查'); return; }
+      await API('/rules/'+this.editingRuleId,{method:'PUT',body:JSON.stringify({name:this.nr.name,scope:this.nr.scope,conditions:cond,action:this.nr.action,priority:this.priorityOfRisk(this.nr.risk),enabled:this.nr.enabled!==false,scheme_type:'custom',risk_notice:this.nr.notice||''})});
+      this.showEditRuleModal = false;
+      this.editingRuleId = null;
+      this.nr.name='';
+      this.loadRules();
+      this.showAlert('规则已更新');
+    },
+    /* v170：风险等级 ↔ priority int 双向映射
+       - 紧急 → 10（最先触发，最高优先级）
+       - 重要 → 6
+       - 关注 → 3（最后触发，最低优先级）
+       旧数据兼容：>=8 → 紧急；5~7 → 重要；<=4 → 关注 */
+    riskLevelOf(p){
+      const n = +p;
+      if(isNaN(n)) return '关注';
+      if(n >= 8) return '紧急';
+      if(n >= 5) return '重要';
+      return '关注';
+    },
+    priorityOfRisk(level){
+      if(level==='紧急') return 10;
+      if(level==='重要') return 6;
+      return 3;  // 默认关注
+    },
+    riskPillClass(p){
+      const lv = this.riskLevelOf(p);
+      if(lv==='紧急') return 'risk-urgent';
+      if(lv==='重要') return 'risk-important';
+      return 'risk-watch';
+    },
+    /* v173：信号表按「风险等级文案」取色（后端已把 priority 映射成 紧急/重要/关注） */
+    riskPillClassOfLevel(level){
+      if(level==='紧急') return 'risk-urgent';
+      if(level==='重要') return 'risk-important';
+      if(level==='关注') return 'risk-watch';
+      return '';
+    },
+    async loadRiskNotice(){
+      // v171：加载首页风控提示（按账号隔离）；失败静默，不影响其他模块
+      try{
+        const r = await API('/settings/risk_notice');
+        // 仅当未手动编辑过时用服务端值，避免覆盖用户正在输入的内容
+        if(!this._riskNoticeTouched){
+          this.riskNotice = r.content || '';
+          this.riskNoticeLoaded = true;
+        }
+      }catch(e){ /* 静默 */ }
+    },
+    async saveRiskNotice(){
+      // v171：保存/清空首页风控提示；最长 500 字
+      const content = (this.riskNotice || '').trim().slice(0, 500);
+      try{
+        await API('/settings/risk_notice', {method:'POST', body:JSON.stringify({content})});
+        this.riskNotice = content;  // 写回截断后值
+        this.riskNoticeLoaded = true;
+        const now = new Date();
+        const hh = String(now.getHours()).padStart(2,'0');
+        const mm = String(now.getMinutes()).padStart(2,'0');
+        this.riskNoticeMsg = (content ? '已保存' : '已清空') + ' ' + hh + ':' + mm;
+        this._riskNoticeTouched = false;
+      }catch(e){
+        this.riskNoticeMsg = '保存失败：' + (e && e.message || '网络错误');
+      }
+    },
+    onRiskNoticeInput(){
+      this._riskNoticeTouched = true;
+      this.riskNoticeMsg = '有未保存的修改';
+    },
+    safeParseJSON(s, fb){
+      try{ const o=JSON.parse(s); return o; }catch(e){ return fb; }
+    },
     async loadPref(){ const r=await API('/preference/questionnaire'); this.questionnaire=r.questions; this.indicators=r.indicators; const me=await API('/preference/me'); if(!me.empty){ this.prefDone=true; this.pref=me; } },
     async submitPref(){ const r=await API('/preference',{method:'POST',body:JSON.stringify({answers:this.answers,focus_indicators:this.focus})}); this.pref=r; this.prefDone=true; },
     async loadSettings(){ const ai=await API('/settings/ai'); this.ai.configured=ai.configured; this.ai.base=ai.base_url||''; this.ai.model=ai.model||''; const nt=await API('/notify/config'); this.nt={channel:nt.channel,config:JSON.stringify(nt.config),cron:nt.daily_review_cron}; },

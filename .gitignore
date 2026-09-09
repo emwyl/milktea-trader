@@ -30,7 +30,18 @@ _dl_test.json
 # ===== 部署发布包（不入库） =====
 # publish/ 内含固定会话签名密钥（config.py 的 SECRET_KEY 明文）与含用户数据的 app.db，
 # 若仓库公开会造成 token 伪造风险与数据泄露。部署配方见项目记忆文档。
-/publish/
+# 2026-09-08: 改为忽略「内容」而非「目录本身」,以便用 ! 放行需要版本化的启动脚本
+# (Git 不会进入被忽略的目录,若写 /publish/ 则下面的 ! 例外不会生效)
+/publish/**
+# 例外:启动自愈脚本不含密钥,必须入库(否则环境重建即丢失该修复)。
+# 注意顺序:先取消忽略 backend 目录(否则 Git 不会进入该目录,! 对嵌套文件无效),
+# 再把含用户数据/体积大的项逐个重新忽略掉。
+!/publish/backend/
+/publish/backend/data/
+/publish/backend/app/
+/publish/backend/quotes.seed
+!/publish/backend/seed_quotes.py
+# 注:publish/start.sh 含明文签名密钥,不入库;脱敏模板见 tools/publish_start.sh.template
 
 # ===== 根目录临时/调试文件（下划线前缀） =====
 /_*.js
@@ -60,3 +71,20 @@ _dl_test.json
 
 # ===== 项目记忆（不入库） =====
 .workbuddy/
+
+# ===== 本地调试/临时产物补漏（含用户数据或一次性脚本，严禁入库） =====
+_tmp_*.db
+_heal_test/
+_chk_*.cjs
+_cloud_*.json
+_smoke_*.png
+
+# ===== 部署产物：frontend-standalone 现作为完整后端应用发布目录（含 37M 数据库，禁止入库） =====
+frontend-standalone/backend/
+
+# ===== 本地运行库与调试残留（严禁入库） =====
+/backend/*.db
+/backend/_test_data/
+/backend/_pool2.txt
+/backend/server.err
+/backend/ys_*.json

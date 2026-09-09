@@ -101,6 +101,20 @@ def _as_float(v) -> float:
         return 0.0
 
 
+def _as_float_or_none(v):
+    """严格解析：不可解析（None / '' / '-' / 非数字）时返回 **None** 而非 0.0。
+
+    v174 新增。用途：资金流等场景必须区分「数值真的是 0」与「接口没给数据」——
+    东财在无数据时把字段置为 "-"，旧逻辑 `_as_float('-') -> 0.0` 会让
+    `main_net is None` 永远为假，于是「无数据」被当成「净流入 0」落库并显示为 0.00%，
+    同时掩盖了取数失败。此函数用于所有需要判空的地方。
+    """
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
 # ============ 演示数据（最后兜底）============
 DEMO_STOCKS = [
     ("600000", "浦发银行", "银行", "sh"), ("601398", "工商银行", "银行", "sh"),
@@ -228,6 +242,39 @@ def _fetch_daily_tencent(code: str, days: int) -> list[Quote] | None:
         return None
 
 
+def _fetch_daily_sina(code: str, days: int) -> list[Quote] | None:
+    """新浪日线——北交所兜底。实测(2026-09-08):腾讯对 920xxx 一律只回最新 1 根,
+    东财在本机常被网络掐断,akshare 亦依赖东财;新浪 CN_MarketDataService 支持
+    bj920xxx 全史(datalen 约可到 500)。注意该接口为不复权日线,仅用于北交所,
+    与历史行同一口径自洽,不影响 MA/箱体等相对指标。"""
+    mkt = _market_of(code)
+    try:
+        url = ("https://quotes.sina.cn/cn/api/jsonp_v2.php/var%20_/"
+               "CN_MarketDataService.getKLineData"
+               f"?symbol={mkt}{code}&scale=240&ma=no&datalen={min(max(days, 60), 500)}")
+        txt = _http_get(url)
+        if not txt:
+            return None
+        import json
+        i = txt.find("(")
+        if i < 0 or txt.rfind(")") <= i:
+            return None
+        arr = json.loads(txt[i + 1: txt.rfind(")")])
+        out: list[Quote] = []
+        prev = None
+        for r in arr:
+            o = _as_float(r.get("open")); c = _as_float(r.get("close"))
+            h = _as_float(r.get("high")); l = _as_float(r.get("low"))
+            v = _as_float(r.get("volume"))
+            out.append(Quote(code=code, date=str(r.get("day")), open=o, high=h, low=l, close=c,
+                             volume=v, amount=0.0, turnover=0.0,
+                             pre_close=prev if prev is not None else c))
+            prev = c
+        return out[-days:] if out else None
+    except Exception:
+        return None
+
+
 def _fetch_daily_eastmoney(code: str, days: int) -> list[Quote] | None:
     """东财日线（前复权），腾讯失败时兜底。
 
@@ -324,12 +371,21 @@ def ensure_quotes(code: str, days: int = 180, _prov: list | None = None) -> list
         # 1. HTTP 直连真实日线（盘间保证最新，且覆盖演示缓存）
         # 腾讯 kline 不含成交额,若日线需要金额类指标(如日均成交额),优先尝试东财接口。
         quotes = _fetch_daily_tencent(code, days)
+        # 源只回零星几根时不能当完整序列(实测:腾讯对北交所 920xxx 一律只回最新 1 根,
+        # 若当 live 整表覆盖,会把几十上百根真实缓存删成 1 根 → 下次直接跌入 demo 数据异常)。
+        if quotes and len(quotes) < 10:
+            quotes = None
         if quotes and all(q.amount == 0 for q in quotes):
             east = _fetch_daily_eastmoney(code, days)
             if east:
                 quotes = east
         if not quotes:
             quotes = _fetch_daily_eastmoney(code, days)
+        if not quotes and _market_of(code) == "bj":
+            # 北交所日线兜底:腾讯仅回最新1根/东财常被掐,新浪支持 bj920xxx 全史
+            quotes = _fetch_daily_sina(code, days)
+            if quotes and len(quotes) < 10:
+                quotes = None
         if quotes:
             # 写回缓存（先清旧，避免唯一约束重复 + 覆盖旧演示数据）
             db.query(DailyQuote).filter(DailyQuote.code == code).delete()
@@ -344,9 +400,12 @@ def ensure_quotes(code: str, days: int = 180, _prov: list | None = None) -> list
             return quotes[-days:]
 
         # 2. 直连失败 → DB 缓存（可能是历史真实数据）
+        #    阈值放宽(2026-09-08):演示数据已不落库,缓存里只可能是真实行;次新/停牌股
+        #    真实根数偏少(如上市 3 周仅 ~16 根),过严的 max(20, days//2) 会把它们逼进 demo
+        #    → 线上永久「数据异常」。MA20/箱体在根数不足时用现有根数折算,仍可展示。
         rows = (db.query(DailyQuote).filter(DailyQuote.code == code)
                 .order_by(DailyQuote.date).all())
-        if rows and len(rows) >= max(20, days // 2):
+        if rows and len(rows) >= max(8, days // 4):
             cached = [Quote(code=r.code, date=r.date, open=r.open, high=r.high, low=r.low,
                             close=r.close, volume=r.volume, amount=r.amount,
                             turnover=r.turnover, pre_close=r.pre_close) for r in rows[-days:]]
@@ -370,16 +429,13 @@ def ensure_quotes(code: str, days: int = 180, _prov: list | None = None) -> list
             return quotes[-days:]
 
         # 4. 演示数据（所有真实源都不可用）
-        #    不写 _DAILY_FRESH：源只是短暂抖动时，别把假数据钉住一个刷新周期。
+        #    只返回内存演示序列，绝不写库。历史教训(2026-09-08):此分支曾 DELETE 真实日线缓存
+        #    再写入 8~45 随机假价,网络抖动一次就永久污染 daily_quotes——后续 cache 分支读到假价,
+        #    与实时盘口价差>50% 交叉验证失败 → 该股永久 qbad=0「数据异常」,且无自愈途径。
+        #    与第 0 步新鲜度缓存同一原则:演示数据不进缓存,真实源恢复后自动覆盖。
         quotes = generate_demo_quotes(code, days)
-        db.query(DailyQuote).filter(DailyQuote.code == code).delete()
-        for q in quotes:
-            db.add(DailyQuote(code=q.code, date=q.date, open=q.open, high=q.high, low=q.low,
-                              close=q.close, volume=q.volume, amount=q.amount,
-                              turnover=q.turnover, pre_close=q.pre_close))
         if _prov is not None:
             _prov[:] = ["demo"]
-        db.commit()
         return quotes[-days:]
     finally:
         db.close()
@@ -1319,6 +1375,9 @@ def _calc_pass_scores(code: str, out: dict, quotes: list[Quote], spot: dict | No
     # avg_volume_20: 近20个交易日日均成交量, 单位「万手」。前端列名"20日平均 成交量(万)"
     avg_volume_20 = (sum(volumes[-20:]) / min(20, len(volumes))) / 1e4 if volumes else 0.0
     out["avg_volume_20"] = round(avg_volume_20, 2)
+    # v176: avg_volume_5 近5日均量(万手),供"历史活跃度(5日均量)"评分用。短期均值更贴近近期活跃度。
+    avg_volume_5 = (sum(volumes[-5:]) / min(5, len(volumes))) / 1e4 if volumes else 0.0
+    out["avg_volume_5"] = round(avg_volume_5, 2)
     # 流动性阈值改为「日均成交量(万手)」口径(见下方否决项与 A 档评分),
     # 不再用成交额(元)。注意: 万手口径与价格无关, 高价股(如茅台)成交量(万手)偏小,
     # 用万手阈值判流动性会低估其真实流动性 —— 这是切换口径的固有代价(用户2026-09-03确认)。
@@ -1362,54 +1421,108 @@ def _calc_pass_scores(code: str, out: dict, quotes: list[Quote], spot: dict | No
     # 5) 近期有重大利空(数据未接入,需人工复核)
 
     # ===== A. 流动性与波动(40分) =====
-    # 1) 日均成交量(20日, 万手) 15分  —— 万手口径(用户2026-09-03要求从成交额改为成交量)
-    if avg_volume_20 >= 40.0:
-        score_a += 15
-        detail.append("成交量≥40万手(+15)")
-    elif avg_volume_20 >= 20.0:
-        score_a += 12
-        detail.append("成交量20~40万手(+12)")
-    elif avg_volume_20 >= 10.0:
-        score_a += 9
-        detail.append("成交量10~20万手(+9)")
-    elif avg_volume_20 >= 5.0:
-        score_a += 5
-        detail.append("成交量5~10万手(+5)")
-    else:
-        detail.append("成交量<5万手(否决)")
+    # v179: A 类 5 指标每个默认满分 8 分,权重均摊各 20%(iw 自动 even=100/5=20)
+    # 阈值沿用 v176 规则;score 按各原 bands 等比缩放到 max=8:
+    #   5日均 / 当日vs20日均:原 5/4/3/1/0 × 8/5 → 8/6/5/2/0
+    #   日内振幅:            原 15/12/9/5/0 × 8/15 → 8/6/5/3/0
+    #   换手率:              原 10/8/7/4/3 × 8/10 → 8/6/6/3/2
+    # 新增的 20 日均量打分规则与 5 日均量完全一致(阈值+score 都不变)。
 
-    # 2) 日内振幅(近5日平均) 15分
-    if avg_amplitude_5 >= 6.0:
-        score_a += 15
-        detail.append("振幅≥6%(+15)")
-    elif avg_amplitude_5 >= 4.0:
-        score_a += 12
-        detail.append("振幅4~6%(+12)")
-    elif avg_amplitude_5 >= 3.0:
-        score_a += 9
-        detail.append("振幅3~4%(+9)")
-    elif avg_amplitude_5 >= 2.0:
+    # 1a) 历史活跃度(5日均量,万手) 8分 —— v176 改用 5 日均量贴近近期活跃度
+    if avg_volume_5 >= 40.0:
+        score_a += 8
+        detail.append("历史活跃度(5日均)≥40万手(+8)")
+    elif avg_volume_5 >= 20.0:
+        score_a += 6
+        detail.append("历史活跃度(5日均)20~40万手(+6)")
+    elif avg_volume_5 >= 10.0:
         score_a += 5
-        detail.append("振幅2~3%(+5)")
+        detail.append("历史活跃度(5日均)10~20万手(+5)")
+    elif avg_volume_5 >= 5.0:
+        score_a += 2
+        detail.append("历史活跃度(5日均)5~10万手(+2)")
+    else:
+        detail.append("历史活跃度(5日均)<5万手(否决)")
+
+    # 1a-long) v179 新增:历史活跃度(20日均量,万手) 8分 —— 规则与 5 日均量完全一致
+    if avg_volume_20 >= 40.0:
+        score_a += 8
+        detail.append("历史活跃度(20日均)≥40万手(+8)")
+    elif avg_volume_20 >= 20.0:
+        score_a += 6
+        detail.append("历史活跃度(20日均)20~40万手(+6)")
+    elif avg_volume_20 >= 10.0:
+        score_a += 5
+        detail.append("历史活跃度(20日均)10~20万手(+5)")
+    elif avg_volume_20 >= 5.0:
+        score_a += 2
+        detail.append("历史活跃度(20日均)5~10万手(+2)")
+    else:
+        detail.append("历史活跃度(20日均)<5万手(否决)")
+
+    # 1b) + 1c) 合并 —— v176: "当日/前日成交量 vs 20日均成交量" 8分
+    #     痛点: 盘前/盘中开盘初期 volumes[-1] 极小或为 0,"当日 vs 20日均" 的值是噪声,统计无意义。
+    #     解法: 15:00 之前用"前日 vs 20日均"打分(避开当日 0 量), 15:00 之后(收盘)切回"当日 vs 20日均"。
+    #     两个原始量都写到 out,前端按当前时间直接展示对应值即可,逻辑在数据层做完。
+    day_vs_ma20_pct: float | None = None
+    vol_ratio_prev_vs_ma20: float | None = None
+    avg_vol_hands = avg_volume_20 * 1e4
+    if avg_vol_hands > 0 and volumes:
+        day_vs_ma20_pct = round((volumes[-1] - avg_vol_hands) / avg_vol_hands * 100, 2)
+        if len(volumes) >= 2 and volumes[-2] and volumes[-2] > 0:
+            vol_ratio_prev_vs_ma20 = round((volumes[-2] - avg_vol_hands) / avg_vol_hands * 100, 2)
+    out["vol_ratio_vs_ma20"] = day_vs_ma20_pct            # 当日 vs 20日均(%)
+    out["vol_ratio_prev_vs_ma20"] = vol_ratio_prev_vs_ma20  # 前日 vs 20日均(%)
+    # 评分按当前服务器时间切:>=15:00 视为"当日数据已定型",用当日;否则用前日避免 0 量污染
+    is_after_close = dt.datetime.now().time() >= dt.time(15, 0)
+    used_field = "当日" if is_after_close else "前日"
+    pct_for_score = day_vs_ma20_pct if is_after_close else vol_ratio_prev_vs_ma20
+    if pct_for_score is not None:
+        if pct_for_score >= 50.0:
+            score_a += 8; detail.append(f"当日/前日vs20日均量({used_field})+{pct_for_score:.1f}%(+8)")
+        elif pct_for_score >= 20.0:
+            score_a += 6; detail.append(f"当日/前日vs20日均量({used_field})+{pct_for_score:.1f}%(+6)")
+        elif pct_for_score >= 0.0:
+            score_a += 5; detail.append(f"当日/前日vs20日均量({used_field})+{pct_for_score:.1f}%(+5)")
+        elif pct_for_score >= -20.0:
+            score_a += 2; detail.append(f"当日/前日vs20日均量({used_field}){pct_for_score:.1f}%(+2)")
+        else:
+            detail.append(f"当日/前日vs20日均量({used_field}){pct_for_score:.1f}%(+0)")
+    else:
+        detail.append("当日/前日vs20日均量无数据(+0)")
+
+    # 2) 日内振幅(近5日平均) 8分 (原 15 分,v179 按 8/15 缩放)
+    if avg_amplitude_5 >= 6.0:
+        score_a += 8
+        detail.append("振幅≥6%(+8)")
+    elif avg_amplitude_5 >= 4.0:
+        score_a += 6
+        detail.append("振幅4~6%(+6)")
+    elif avg_amplitude_5 >= 3.0:
+        score_a += 5
+        detail.append("振幅3~4%(+5)")
+    elif avg_amplitude_5 >= 2.0:
+        score_a += 3
+        detail.append("振幅2~3%(+3)")
     else:
         detail.append("振幅<2%(否决)")
 
-    # 3) 换手率 10分
+    # 3) 换手率 8分 (原 10 分,v179 按 8/10 缩放)
     if 5.0 <= turnover <= 10.0:
-        score_a += 10
-        detail.append("换手率5~10%(+10)")
-    elif 3.0 <= turnover < 5.0:
         score_a += 8
-        detail.append("换手率3~5%(+8)")
+        detail.append("换手率5~10%(+8)")
+    elif 3.0 <= turnover < 5.0:
+        score_a += 6
+        detail.append("换手率3~5%(+6)")
     elif 10.0 < turnover <= 15.0:
-        score_a += 7
-        detail.append("换手率10~15%(+7)")
+        score_a += 6
+        detail.append("换手率10~15%(+6)")
     elif 1.0 <= turnover < 3.0:
-        score_a += 4
-        detail.append("换手率1~3%(+4)")
-    elif turnover > 15.0:
         score_a += 3
-        detail.append("换手率>15%过热(+3)")
+        detail.append("换手率1~3%(+3)")
+    elif turnover > 15.0:
+        score_a += 2
+        detail.append("换手率>15%过热(+2)")
     else:
         detail.append("换手率<1%(+0)")
 
@@ -1835,7 +1948,7 @@ def _fetch_capital_flow(code: str) -> dict | None:
     b_in = _as_float(r.get("BIGDEAL_INFLOW")) or 0.0
     b_out = _as_float(r.get("BIGDEAL_OUTFLOW")) or 0.0
     return {
-        "main_net": _as_float(r.get("PRIME_INFLOW")),   # 主力净流入净额(元)
+        "main_net": _as_float_or_none(r.get("PRIME_INFLOW")),   # 主力净流入净额(元)；无数据=None
         "xl_net": s_in - s_out,                          # 超大单净流入净额(元)
         "l_net": b_in - b_out,                           # 大单净流入净额(元)
         "trade_date": (r.get("TRADE_DATE") or "")[:10],
@@ -1846,17 +1959,53 @@ def _fetch_capital_flow(code: str) -> dict | None:
 _FUND_INTRADAY_TTL = 120.0
 _FUND_INTRADAY_CACHE: dict[str, tuple[float, dict]] = {}
 
+# v174：东财 push2 域名池。云端部署沙箱常拦截 push2 主域名（v123 已证实），
+# 而 push2his / 数字 CDN 节点可能仍可达；取数时按序回退，任一返回有效数值即采用。
+_EM_PUSH_HOSTS = ["push2.eastmoney.com", "push2his.eastmoney.com", "82.push2.eastmoney.com"]
+
+
+def _fund_from_fflow(code: str, today: str) -> dict | None:
+    """单只「当日累计资金流」：东财 push2 `stock/fflow/kline/get`（klt=1 分钟级）。
+
+    返回 {"main_net", "xl_net", "l_net"}（单位元，带符号）或 None。
+    只取 klines 末条，并校验其日期 == today：
+      休市日/源滞后时末条是上一交易日，绝不能拿昨日冒充今日（v137 原则）。
+    """
+    url = ("https://push2.eastmoney.com/api/qt/stock/fflow/kline/get"
+           "?lmt=0&klt=1&secid=" + _secid(code)
+           + "&fields1=f1,f2,f3,f7&fields2=f51,f52,f53,f54,f55,f56")
+    j = _em_json(url)
+    kl = (((j or {}).get("data") or {}).get("klines")) or []
+    if not kl:
+        return None
+    parts = str(kl[-1]).split(",")
+    if len(parts) < 6:
+        return None
+    if not parts[0].strip().startswith(today):
+        return None   # 非当日（休市/源滞后）→ 视为无数据
+    main_net = _as_float_or_none(parts[1])
+    if main_net is None:
+        return None
+    return {
+        "main_net": main_net,                    # 主力净额 = 大单 + 超大单
+        "xl_net": _as_float_or_none(parts[5]),   # 超大单净额
+        "l_net": _as_float_or_none(parts[4]),    # 大单净额
+        "main_pct": None,                        # 该源不返回占比，由调用方按实时成交额计算
+    }
+
 
 def _fetch_intraday_fund(codes: list[str]) -> dict[str, dict]:
-    """【当日盘中】资金流（东财 push2 ulist 批量接口，一次最多 40 只）。
+    """【当日盘中】资金流。
 
-    字段口径（单位：元，带符号）：
-      f62  = 主力净流入净额 = 超大单 + 大单（对齐同花顺"大单流向"口径）
-      f184 = 主力净流入占当日成交额比例(%)，东财官方口径
-      f66  = 超大单净额      f72 = 大单净额（不含超大单）
+    v175 主源切换：东财 push2 的批量接口 `ulist.np`（f62/f184）在本沙箱与云端均被
+    连接级拒绝（RemoteProtocolError，实测本地 0/5、云端同样取不到），而同域名的
+    `stock/fflow/kline/get` 路径实测 HTTP 200 可用，返回**当日累计**资金流：
+        data.klines[-1] = "时间,主力净额,小单,中单,大单,超大单"（元，带符号）
+        实测 f52(主力) == f55(大单) + f56(超大单)，且随时间单调递增 → 末条即当日累计值。
 
-    push2 在部分网络环境会间歇性 RemoteDisconnected，故带 3 次重试；
-    仍失败则返回 {}（调用方据此留空，绝不回落到"昨日"数据）。
+    该源不返回占比，main_pct 由调用方按「当日实时成交额」计算；
+    只接受末条日期 == 今日，避免休市日/源滞后时拿昨日冒充今日（v137 原则）。
+    fflow 不可达时回落旧 ulist.np 多域名兜底。
     """
     codes = [c for c in dict.fromkeys(codes or []) if c]
     if not codes:
@@ -1870,34 +2019,47 @@ def _fetch_intraday_fund(codes: list[str]) -> dict[str, dict]:
             out[c] = hit[1]
         else:
             todo.append(c)
-    for i in range(0, len(todo), 40):
-        chunk = todo[i:i + 40]
-        secids = ",".join(_secid(c) for c in chunk)
-        url = ("https://push2.eastmoney.com/api/qt/ulist.np/get?secids=" + secids
-               + "&fields=f12,f62,f184,f66,f72&invt=2&fltt=2")
-        j = None
-        # v118: push2 偶发「连接级拒绝」(RemoteDisconnected, 快速即断)时，旧逻辑外层 3 次重试
-        # × 内部 _em_json 的 3 次退避，单只最多空转 7s+。_http_get 内部已自带 3 次尝试+退避，
-        # 外层改为单次调用：成功即得，失败即放弃（源不可达时整块 ≤ ~2s，绝不拖慢列表页）。
-        j = _em_json(url)
-        diff = (((j or {}).get("data") or {}).get("diff")) or []
-        if isinstance(diff, dict):
-            diff = list(diff.values())
-        for it in diff:
-            if not isinstance(it, dict):
-                continue
-            code = str(it.get("f12") or "")
-            main_net = _as_float(it.get("f62"))
-            if not code or main_net is None:
-                continue
-            rec = {
-                "main_net": main_net,                    # 主力(超大单+大单)净额
-                "main_pct": _as_float(it.get("f184")),   # 主力净流入占比(%)
-                "xl_net": _as_float(it.get("f66")),      # 超大单净额
-                "l_net": _as_float(it.get("f72")),       # 大单净额(不含超大单)
-            }
-            _FUND_INTRADAY_CACHE[code] = (now, rec)
-            out[code] = rec
+    # v175：主源 = fflow/kline（单只请求，实测可达），逐只取当日累计资金流
+    _today = dt.datetime.now(dt.timezone(dt.timedelta(hours=8))).strftime("%Y-%m-%d")
+    missing: list[str] = []
+    for c in todo:
+        rec = _fund_from_fflow(c, _today)
+        if rec:
+            _FUND_INTRADAY_CACHE[c] = (now, rec)
+            out[c] = rec
+        else:
+            missing.append(c)
+    # 兜底：fflow 路径不可达时，回落旧批量接口 ulist.np（多域名逐个尝试）
+    if missing:
+        for host in _EM_PUSH_HOSTS:
+            secids = ",".join(_secid(c) for c in missing)
+            url = ("https://" + host + "/api/qt/ulist.np/get?secids=" + secids
+                   + "&fields=f12,f62,f184,f66,f72&invt=2&fltt=2")
+            j = _em_json(url)
+            diff = (((j or {}).get("data") or {}).get("diff")) or []
+            if isinstance(diff, dict):
+                diff = list(diff.values())
+            got = 0
+            for it in diff:
+                if not isinstance(it, dict):
+                    continue
+                code = str(it.get("f12") or "")
+                # v174：必须严格判空——东财无数据时字段为 "-"，旧 _as_float 会返回 0.0，
+                # 使「无数据」被误判为「净流入 0」并落库显示 0.00%
+                main_net = _as_float_or_none(it.get("f62"))
+                if not code or main_net is None:
+                    continue
+                rec = {
+                    "main_net": main_net,                            # 主力(超大单+大单)净额
+                    "main_pct": _as_float_or_none(it.get("f184")),   # 主力净流入占比(%)
+                    "xl_net": _as_float(it.get("f66")),      # 超大单净额
+                    "l_net": _as_float(it.get("f72")),       # 大单净额(不含超大单)
+                }
+                _FUND_INTRADAY_CACHE[code] = (now, rec)
+                out[code] = rec
+                got += 1
+            if got:
+                break   # 该域名拿到了有效数据，不再尝试其余域名
     return out
 
 
@@ -2408,7 +2570,11 @@ def get_pool_track(code: str, db, position: dict | None = None, deadline: float 
             _today = _bj_now.strftime("%Y-%m-%d")
             _last_date = str((quotes[-1].date if quotes else "") or "")[:10]
             # 今天有日线 => 今天是交易日；日线缺失时退化为工作日判断
-            _is_trading_today = (_last_date == _today) if _last_date else (_bj_now.weekday() < 5)
+            # v175：原判断严格要求「当日日线已落地」才算交易日，但开盘初期日线常未更新
+            # （实测 09:32 线上 price_date 仍为 09-08），导致整个交易日都不进入资金流
+            # 取数分支、三列全空。改为：当日日线已落地 或 实时盘口可用(spot_ok) 即视为交易中；
+            # 休市日由 _fund_from_fflow 的「末条日期 == 今日」校验兜底，不会拿昨日冒充今日。
+            _is_trading_today = (_last_date == _today) or bool(spot_ok)
             # 未到开盘(北京时间 < 09:30)视为"当日资金流尚未产生"，三列一律留空
             _opened = _bj_now.time() >= _tt(9, 30)
             if _is_trading_today and _opened:
@@ -2421,10 +2587,17 @@ def get_pool_track(code: str, db, position: dict | None = None, deadline: float 
                 if _fund and _fund.get("main_net") is not None:
                     _main_pct = _fund.get("main_pct")
                     _big_net = _fund.get("main_net")   # 对齐同花顺"大单流向"：超大单+大单
-                    # 占比兜底依赖日线成交额做分母——qbad(日线不可信)时禁用，
-                    # 否则演示/过期成交额 ÷ 真实净流入 = 量级全错的百分比（v137）
-                    if _main_pct is None and not qbad:
-                        _main_pct = _pct_of_amount(_fund.get("main_net"), quotes)
+                    # 占比兜底：v175 优先用「当日实时成交额」作分母——早盘用昨日全天成交额
+                    # 会把占比算小一个量级（如净流入 100 万 ÷ 昨日全天 1 亿 = 1%，
+                    # 而当日实时成交额可能仅 1000 万，真实占比约 10%）。
+                    if _main_pct is None:
+                        _amt_now = float((spot or {}).get("amount") or 0)
+                        if _amt_now > 0 and _big_net is not None:
+                            _main_pct = round(_big_net / _amt_now * 100, 2)
+                        elif not qbad:
+                            # 日线成交额兜底——qbad(日线不可信)时禁用，否则演示/过期
+                            # 成交额 ÷ 真实净流入 = 量级全错的百分比（v137）
+                            _main_pct = _pct_of_amount(_fund.get("main_net"), quotes)
                 else:
                     # 盘后(push2 不可达/已停更时)回落日级报表：仅当该行是今日才可用
                     _cf = _fetch_capital_flow(code)

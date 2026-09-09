@@ -7,7 +7,6 @@ from concurrent.futures import ThreadPoolExecutor, as_completed, wait
 import io
 from urllib.parse import quote
 
-import pandas as pd
 from fastapi import APIRouter, Depends, File, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from typing import Optional
@@ -16,7 +15,7 @@ from app.db import SessionLocal, get_db
 from app.deps import get_current_user
 from app.models import DailyQuote, DayViewLog, DayViewRecap, PoolTag, SchemeType, Stock, TrackedPool, TrackedPoolTag, User, UserProfile, _now
 from app.schemas import (
-    DayViewIn, DayViewLogIn, DayViewLogOut, PoolBatchDeleteIn, PoolBatchTagsIn, PoolImportIn, PoolIn, PoolOut,
+    DayViewIn, DayViewLogIn, DayViewLogOut, MetricsSummaryOut, PoolBatchDeleteIn, PoolBatchTagsIn, PoolImportIn, PoolIn, PoolOut,
     RecapIn, TagIn, TagOut, WatchLogItem, WatchLogOut,
 )
 from app.services.data_fetcher import ensure_stock_name, get_pool_track, _fetch_intraday_fund, _market_return
@@ -117,11 +116,13 @@ def list_pool(
     page: int = Query(1, ge=1, description="页码，从 1 开始"),
     page_size: int = Query(15, ge=1, le=100, description="每页条数，默认 15"),
     today: str = Query("", description="v143: 当前日期 YYYY-MM-DD,用于返回 day_view_today 字段;留空=服务器中国时区今日"),
+    light: int = Query(0, description="v180: 1=仅返回本地静态字段(代码/名称/标签/行业/日初判断/备注等),不拉行情行情评分,秒回;0=默认全量富化"),
     db: SessionLocal = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
     """列出当前用户的可投池（分页返回）。
     支持按证券代码/名称(q)、备注(note)、标签(tag)过滤；空值表示不过滤。
+    light=1 用于页面「静态秒开」:先渲染不依赖外部接口的信息,行情由定时刷新全量富化。
     返回: { items, total, page, page_size }
     """
     query = _user_pool_q(db, user.id)
@@ -170,17 +171,18 @@ def list_pool(
     positions = {p.code: {"cost_price": p.cost_price, "position_qty": p.position_qty} for p in page_rows}
     # v118: 先纯 DB 播种核心行情(现价/MA/箱体,零网络),保证首页绝不空白；
     # 富化线程完成后逐只覆盖为全量 track。
-    for p in page_rows:
-        _sd = _seed_from_db(p.code, db)
-        if _sd:
-            tracks[p.code] = _sd
+    if not light:
+        for p in page_rows:
+            _sd = _seed_from_db(p.code, db)
+            if _sd:
+                tracks[p.code] = _sd
     # v118: 冷启动性能(整页须稳定在网关 ~10s 内)——
     #   1) 每行一个 worker,避免 15 只挤 10 worker 变成「两轮」导致全部超预算;
     #   2) 盘中资金流批量预取 + 大盘收益预取也放进同一线程池(预算内),不再串行占用关键路径;
     #   3) 单只 get_pool_track 传 deadline=7.6s:可选扩展阶段(资金流/估值/板块/标签/财报风险)
     #      到点即放弃,核心字段(现价/MA/箱体/打分/建议)必回,整页稳定 ~9s 返回。
     #   4) 块9/块10 的 financials+news 已改为调用内复用(见 data_fetcher.get_pool_track)。
-    if page_rows:
+    if (not light) and page_rows:
         ex = ThreadPoolExecutor(max_workers=min(len(page_rows), 20))
         try:
             warm_futs: set = set()
@@ -579,6 +581,9 @@ def export_pool(
         cells = _exp(o, t)
         data.append({label: v for label, v in cells})
 
+    # v166: pandas 懒加载——本函数(导出)是唯一用到 DataFrame.to_excel 的地方，
+    #       放到函数内 import 可避免 FastAPI 启动即加载 pandas+numpy(常驻数百 MB)，降低沙箱 OOM 概率
+    import pandas as pd
     df = pd.DataFrame(data, dtype=object)  # dtype=object：证券代码等文本列保持字符串，避免前导0被吞
     buf = io.BytesIO()
     df.to_excel(buf, index=False, engine="openpyxl")
@@ -611,6 +616,7 @@ def import_pool(
     """
     filename = (file.filename or "").lower()
     try:
+        import pandas as pd  # v166: 懒加载，仅导入文件时加载 pandas
         if filename.endswith(".csv"):
             df = pd.read_csv(file.file, dtype=str)
         else:
@@ -780,6 +786,112 @@ def update_day_view(code: str, body: DayViewIn,
     return _to_out(exists, db)
 
 
+# v178: 录入日初判断前的预判参考信息快照端点（不写库,只读快照）
+@router.get("/{code}/day-view-log/preview", response_model=MetricsSummaryOut)
+def preview_day_view_log(code: str,
+                          db: SessionLocal = Depends(get_db), user: User = Depends(get_current_user)):
+    """v178: 录入日初判断前的预判参考信息快照——给前端录入弹窗的「综合评分 + 预判参考信息」两列
+    预览使用。来源是 get_pool_track() 的实时结果,日线/盘口缺失时字段退化(允许为 None)。
+
+    字段语义:
+      - composite_score: 默认用后端官方分 (track.total_score);前端可用列表里的
+        user_score 实时分覆盖该值(列表显示的就是 user_score)。
+      - reference_text: 按 6 个核心字段(量比/换手/日内振幅/MA5/MA20/箱体位置)拼成的
+        中文短句,作为弹窗预览 + 入库快照。任一字段缺失时只展示已有部分。
+      - metrics: 同一组数据,JSON 结构,前端可二次格式化兜底。
+      - official_score: track.total_score 原值,前端用来对照"实时 vs 官方"。
+    """
+    name = _name(code, db)
+    if not _user_pool_q(db, user.id).filter(TrackedPool.code == code).first():
+        raise HTTPException(status_code=404, detail="该股票不在可投池中")
+    try:
+        track = get_pool_track(code, db) or {}
+    except Exception:
+        track = {}
+
+    # 综合评分默认用后端官方分。允许 list 端用 user_score 覆盖(客户端自行决定)
+    composite = track.get("total_score")
+    official = track.get("total_score")
+    if composite is not None:
+        try:
+            composite = round(float(composite), 2)
+        except Exception:
+            composite = None
+    if official is not None:
+        try:
+            official = round(float(official), 2)
+        except Exception:
+            official = None
+
+    # 6 个指标取数 + 中文短句组装
+    def _f(x, n=2):
+        try:
+            if x is None: return None
+            v = float(x)
+            return round(v, n)
+        except Exception:
+            return None
+
+    vr = _f(track.get("vol_ratio"), 2)        # 量比
+    to = _f(track.get("turnover"), 2)         # 换手率(%)
+    # 日内振幅:优先用盘口 high/low - pre_close 实时计算;若不可用留 None
+    amp = None
+    try:
+        hi = track.get("today_high"); lo = track.get("today_low"); pc = track.get("pre_close")
+        if hi and lo and pc and pc > 0:
+            amp = round((float(hi) - float(lo)) / float(pc) * 100.0, 2)
+    except Exception:
+        amp = None
+    # 兜底:从 daily_quotes 最近一根日线拿 amplitude
+    if amp is None:
+        try:
+            recent = (db.query(DailyQuote)
+                      .filter(DailyQuote.code == code)
+                      .order_by(DailyQuote.date.desc()).first())
+            if recent and recent.high and recent.low and recent.pre_close and recent.pre_close > 0:
+                amp = round((float(recent.high) - float(recent.low)) / float(recent.pre_close) * 100.0, 2)
+        except Exception:
+            pass
+
+    ma5 = _f(track.get("ma5"), 3)
+    ma20 = _f(track.get("ma20"), 3)
+    bp = track.get("box_pos")
+    box_pct = None
+    if bp is not None:
+        try:
+            box_pct = round(float(bp) * 100, 0)  # 按百分制整数展示,与样例 "箱体位置:72%" 对齐
+        except Exception:
+            box_pct = None
+
+    metrics = {
+        "vol_ratio": vr,
+        "turnover": to,         # %
+        "amplitude": amp,       # %
+        "ma5": ma5,
+        "ma20": ma20,
+        "box_pos": bp,          # 0~1
+        "box_pos_pct": box_pct, # 0~100
+        "price": _f(track.get("price"), 3),
+        "change_pct": _f(track.get("change_pct"), 2),
+    }
+
+    parts = []
+    if vr is not None:            parts.append(f"量比:{vr:.2f}")
+    if to is not None:            parts.append(f"换手:{to:.2f}%")
+    if amp is not None:           parts.append(f"日内振幅:{amp:.2f}%")
+    if ma5 is not None:           parts.append(f"MA5:{ma5:.3f}")
+    if ma20 is not None:          parts.append(f"MA20:{ma20:.3f}")
+    if box_pct is not None:       parts.append(f"箱体位置:{box_pct:.0f}%")
+    ref_text = "、".join(parts)
+    if not ref_text:
+        ref_text = "暂无可用参考指标(日线/盘口均缺数据)"
+
+    return MetricsSummaryOut(
+        code=code, composite_score=composite, official_score=official,
+        reference_text=ref_text, metrics=metrics,
+    )
+
+
 @router.post("/{code}/day-view-log")
 def add_day_view_log(code: str, body: DayViewLogIn,
                      db: SessionLocal = Depends(get_db), user: User = Depends(get_current_user)):
@@ -787,6 +899,7 @@ def add_day_view_log(code: str, body: DayViewLogIn,
 
     校验:trend ∈ {看涨,看跌,风险,-};target_price ≥ 0;target_note ≤ 20 字;trade_date YYYY-MM-DD;
     同一交易日允许多次写入(append-only)。
+    v178: 顺便支持复合评分快照 + 预判参考信息文本 + 结构化指标 JSON 一并入库。
     """
     if not _RE_DATE.match(body.trade_date or ""):
         raise HTTPException(status_code=400, detail="trade_date 必须是 YYYY-MM-DD")
@@ -802,6 +915,23 @@ def add_day_view_log(code: str, body: DayViewLogIn,
     if not exists:
         raise HTTPException(status_code=404, detail="该股票不在可投池中")
 
+    # v178: 综合评分快照(0-100,允许为 None 表示不入快照——例如旧客户端未发该字段)
+    cs = body.composite_score
+    if cs is not None:
+        try:
+            cs = float(cs)
+        except Exception:
+            raise HTTPException(status_code=400, detail="composite_score 必须是数字")
+        if cs < 0 or cs > 100:
+            raise HTTPException(status_code=400, detail="composite_score 必须在 0-100 之间")
+    # 预判参考信息文本(默认 500 字封顶,与「偏离原因复盘」一致)
+    rt = (body.reference_text or "").strip()
+    if len(rt) > 500:
+        raise HTTPException(status_code=400, detail="reference_text 长度不能超过 500 字")
+    rj = (body.reference_metrics_json or "").strip()
+    if len(rj) > 4000:
+        raise HTTPException(status_code=400, detail="reference_metrics_json 长度过长(>4000 字节)")
+
     row = DayViewLog(
         user_id=user.id, code=code, trade_date=body.trade_date,
         trend=body.trend,
@@ -809,6 +939,10 @@ def add_day_view_log(code: str, body: DayViewLogIn,
         target_note=note[:20],
         operator=user.username or "", operator_id=user.id,
         operated_at=_now(),
+        # v178
+        composite_score=cs,
+        reference_text=rt[:500],
+        reference_metrics_json=rj[:4000],
     )
     db.add(row)
     db.commit()
@@ -817,6 +951,9 @@ def add_day_view_log(code: str, body: DayViewLogIn,
         id=row.id, code=row.code, trade_date=row.trade_date,
         trend=row.trend, target_price=row.target_price, target_note=row.target_note or "",
         operator=row.operator or "", operated_at=row.operated_at or "",
+        composite_score=row.composite_score,
+        reference_text=row.reference_text or "",
+        reference_metrics_json=row.reference_metrics_json or "",
     )
 
 
@@ -824,7 +961,9 @@ def add_day_view_log(code: str, body: DayViewLogIn,
 def list_day_view_log(code: str, trade_date: str = Query("", description="可选:YYYY-MM-DD 过滤单日"),
                       limit: int = Query(200, ge=1, le=2000),
                       db: SessionLocal = Depends(get_db), user: User = Depends(get_current_user)):
-    """v143: 列出该 code 的所有日初判断历史,按 trade_date desc, operated_at desc。"""
+    """v143: 列出该 code 的所有日初判断历史,按 trade_date desc, operated_at desc。
+    v178: 返回中携带 composite_score / reference_text / reference_metrics_json 3 个快照字段。
+    """
     q = (db.query(DayViewLog)
          .filter(DayViewLog.user_id == user.id, DayViewLog.code == code))
     if trade_date and _RE_DATE.match(trade_date):
@@ -835,6 +974,9 @@ def list_day_view_log(code: str, trade_date: str = Query("", description="可选
         trend=r.trend or "-", target_price=r.target_price,
         target_note=r.target_note or "",
         operator=r.operator or "", operated_at=r.operated_at or "",
+        composite_score=r.composite_score,
+        reference_text=r.reference_text or "",
+        reference_metrics_json=r.reference_metrics_json or "",
     ).model_dump() for r in rows]
 
 
@@ -954,6 +1096,10 @@ def watch_log(code: str, limit: int = Query(60, ge=1, le=500),
             recap=recap_text,
             recap_user=recap_user,
             recap_updated_at=recap_at,
+            # v178: 录入时刻的快照
+            composite_score=lg.composite_score,
+            reference_text=lg.reference_text or "",
+            reference_metrics_json=lg.reference_metrics_json or "",
         ))
     return WatchLogOut(code=code, name=name, items=items).model_dump()
 

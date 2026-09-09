@@ -177,6 +177,7 @@ class RuleSignalEngine:
                     risk_level=_risk_level(snap),
                     risk_advice=_risk_advice(_risk_level(snap), action),  # 风控前置文案
                     confidence=_confidence(len(passed)),
+                    rule_id=rule.get("id"),  # v173：回传规则 id，供信号表反查规则名称/等级/风控提示
                     metrics={"close": snap.close, "change_pct": snap.change_pct,
                              "vol_ratio": snap.vol_ratio, "turnover": snap.turnover,
                              "macd": snap.macd, "kdj": snap.kdj, "box": snap.box},

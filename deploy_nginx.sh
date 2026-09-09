@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================
-#  加油赚奶茶钱 · 云服务器一键部署脚本(nginx + HTTPS 生产模式)
+#  TR-个人学习版 · 云服务器一键部署脚本(nginx + HTTPS 生产模式)
 #  适用: Ubuntu/Debian 云服务器(阿里云/腾讯云/AWS 等),已备案或可解析域名
 #
 #  用法(在服务器上):
@@ -44,7 +44,7 @@ venv/bin/pip install -r backend/requirements.txt
 echo "==== [4/7] systemd 服务 ===="
 cat > /etc/systemd/system/milktea.service <<EOF
 [Unit]
-Description=MilkTea Trader (加油赚奶茶钱)
+Description=MilkTea Trader (TR-个人学习版)
 After=network.target
 
 [Service]

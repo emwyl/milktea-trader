@@ -45,7 +45,7 @@ def test(db: SessionLocal = Depends(get_db), user: User = Depends(get_current_us
     channel = r.channel if r else "console"
     cfg = json.loads(r.config_json) if r else {}
     notifier = get_notifier(channel)
-    result = notifier.send("加油赚奶茶钱 · 通知测试", "这是一条测试消息，说明通知通道可用。", cfg)
+    result = notifier.send("TR-个人学习版 · 通知测试", "这是一条测试消息，说明通知通道可用。", cfg)
     db.add(NotifyLog(user_id=user.id, channel=channel, content="测试消息", status="success" if result.get("ok") else "failed"))
     db.commit()
     return result

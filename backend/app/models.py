@@ -118,7 +118,10 @@ class TrackedPoolTag(Base):
 
 
 class DayViewLog(Base):
-    """日初判断修改记录（v143）：每次修改都追加一条；同一天允许多条；盯盘日志取当日最后一条。"""
+    """日初判断修改记录（v143）：每次修改都追加一条；同一天允许多条；盯盘日志取当日最后一条。
+    v178: 新增 composite_score(录入时的综合评分快照)、reference_text(录入时组装好的预判参考信息)、
+    reference_metrics_json(结构化指标,JSON),用于盯盘日志"综合评分/预判参考信息"两列展示。
+    """
     __tablename__ = "day_view_log"
     __table_args__ = (
         # 复合索引:按 (user, code, trade_date, operated_at) 高频查询
@@ -134,6 +137,10 @@ class DayViewLog(Base):
     operator: Mapped[str] = mapped_column(String(64), default="")  # 操作用户名(冗余便于历史回看)
     operator_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     operated_at: Mapped[str] = mapped_column(String(32), default=_now)  # ISO8601 UTC,带时区
+    # v178: 录入时的快照（用于盯盘日志表格展示"综合评分/预判参考信息"两列）
+    composite_score: Mapped[float | None] = mapped_column(Float, nullable=True)  # 综合评分(0-100),None=未录入/旧数据
+    reference_text: Mapped[str] = mapped_column(Text, default="")  # 预判参考信息(默认组装文本,如"量比:1.0、换手:3.01%…")
+    reference_metrics_json: Mapped[str] = mapped_column(Text, default="")  # 同一时刻的结构化指标(JSON),便于后续做准确率聚合
 
 
 class DayViewRecap(Base):
@@ -163,6 +170,7 @@ class PositionRule(Base):
     priority: Mapped[int] = mapped_column(Integer, default=0)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     scheme_type: Mapped[str] = mapped_column(String(32), default="custom")
+    risk_notice: Mapped[str] = mapped_column(Text, default="")  # v173：规则级风控提示（用户自定义，展示在信号表）
     created_at: Mapped[str] = mapped_column(String(32), default=_now)
 
 

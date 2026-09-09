@@ -1,0 +1,27 @@
+#!/bin/sh
+# 部署启动脚本模板（脱敏版）
+#
+# 正式文件位于 publish/start.sh —— 该文件含明文签名密钥，已被 .gitignore 排除，
+# 不入库。若沙箱环境丢失此文件，按本模板重建，并把 SECRET_KEY 换成你自己的固定值
+# （必须是固定值：沙箱多进程时若用默认随机密钥，A 进程签发的 token 在 B 进程验签会失败）。
+cd "$(dirname "$0")"
+
+# 固定会话密钥：多进程/多实例时避免跨进程验签失败（登录失效）
+export STOCK_ADVISOR_SECRET="<填入固定密钥,勿用随机值>"
+# 沙箱内不启用 akshare（依赖重、易超时）
+export STOCK_ADVISOR_AKSHARE="0"
+
+PY=$(command -v python3 || command -v python)
+echo "python=$PY PORT=${PORT:-8000}"
+
+# 启动前自愈行情库：把随包上传的干净日线种子 quotes.seed 合并进运行库，
+# 只覆盖缺失/滞后/带 demo 假行(成交量小数)的代码日线，不动业务数据。
+# 2026-09-08 教训：必须加硬超时 —— 该脚本慢/卡住会持有 SQLite 写锁，
+# 把需要写库的 /api/auth/login 一并堵死（曾造成部署后数分钟登录超时）。
+if command -v timeout >/dev/null 2>&1; then
+  timeout 150 "$PY" backend/seed_quotes.py || echo "WARN seed_quotes timeout/failed(忽略,继续启动)"
+else
+  "$PY" backend/seed_quotes.py || echo "WARN seed_quotes failed(忽略,继续启动)"
+fi
+
+exec "$PY" -m uvicorn --app-dir backend app.main:app --host 0.0.0.0 --port "${PORT:-8000}"

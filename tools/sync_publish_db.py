@@ -16,7 +16,7 @@
     避免整页“数据异常”）
 
 用法:
-  python tools/sync_publish_db.py                # 默认从 data/app.db 同步到 publish/backend/data/app.db
+  python tools/sync_publish_db.py                # 默认从 backend/data/app.db(权威主库)同步到 publish/backend/data/app.db
   python tools/sync_publish_db.py --src X.db --dst Y.db
   python tools/sync_publish_db.py --dry-run       # 只打印统计，不写文件
 """
@@ -33,8 +33,9 @@ KEEP_TABLES = [
     'day_view_recap',
     'daily_quotes',  # 打包最近 N 天缓存，防止线上无网时日线全异常
 ]
-# access_logs(访问日志/衍生日志)不打包;daily_quotes 全量 48MB 太大,只打包最近 60 天
-DAILY_QUOTES_DAYS = 60
+# access_logs(访问日志/衍生日志)不打包;daily_quotes 全量 48MB 太大,只打包最近 90 天
+# (60 天≈43 根交易日,次新/停牌股缓存会跌破阈值被逼进 demo;90 天≈65 根更稳)
+DAILY_QUOTES_DAYS = 90
 
 
 def sync(src_path: str, dst_path: str, dry_run: bool = False) -> dict:
@@ -104,10 +105,16 @@ def sync(src_path: str, dst_path: str, dry_run: bool = False) -> dict:
 
 
 def main():
+    # 以脚本所在目录推断项目根,不写死 D:\ 绝对路径(仓库换位置也能用)。
+    # 权威源必须是 backend/data/app.db(服务运行时 config BASE_DIR=backend 实际读取的库);
+    # 根目录 data/app.db 是旧架构遗留废库(2026-09-03 停更,多股仅 5 根日线),用它同步
+    # 会导致 publish 日线残缺 → 线上大面积「数据异常」。
+    _here = os.path.dirname(os.path.abspath(__file__))
+    _proj = os.path.dirname(_here)
     ap = argparse.ArgumentParser()
-    ap.add_argument('--src', default=r'D:\腾讯小龙虾\milktea-trader\data\app.db',
-                    help='源 db 路径（默认本地主库）')
-    ap.add_argument('--dst', default=r'D:\腾讯小龙虾\milktea-trader\publish\backend\data\app.db',
+    ap.add_argument('--src', default=os.path.join(_proj, 'backend', 'data', 'app.db'),
+                    help='源 db 路径（默认 backend/data/app.db 权威主库）')
+    ap.add_argument('--dst', default=os.path.join(_proj, 'publish', 'backend', 'data', 'app.db'),
                     help='目标 db 路径（默认 publish 包内）')
     ap.add_argument('--dry-run', action='store_true', help='只打印统计，不写文件')
     args = ap.parse_args()
