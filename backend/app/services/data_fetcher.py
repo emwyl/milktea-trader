@@ -573,17 +573,22 @@ def _sector_day_change(industry: str, db, min_samples: int = 3) -> float | None:
         return None
     if len(codes) < min_samples:
         return None
+    # v185: 原来对每只样本股各开一个 Session 拉全量日线(15 只 ≈ 15 次全量扫描 ≈ 35ms),
+    #   池接口每页 15 只就是 16 次查询。改为「一次分组查询取每只代码自己的最新一根」——
+    #   结果口径完全不变(仍是各代码自身最后一根日线),只是把 16 次查询压成 1 次。
     pcts: list[float] = []
-    for c in codes:
-        try:
-            qs = _get_cached_quotes(c, 5)
-        except Exception:
-            continue
-        if not qs:
-            continue
-        last = qs[-1]
-        if last.close and last.pre_close:
-            pcts.append((last.close - last.pre_close) / last.pre_close * 100)
+    try:
+        latest = (db.query(DailyQuote.code, func.max(DailyQuote.date).label("d"))
+                  .filter(DailyQuote.code.in_(codes))
+                  .group_by(DailyQuote.code).subquery())
+        rows = (db.query(DailyQuote.code, DailyQuote.close, DailyQuote.pre_close)
+                .join(latest, (DailyQuote.code == latest.c.code) & (DailyQuote.date == latest.c.d))
+                .all())
+    except Exception:
+        return None
+    for _c, close_p, pre_close in rows:
+        if close_p and pre_close:
+            pcts.append((close_p - pre_close) / pre_close * 100)
     if len(pcts) < min_samples:
         return None
     return round(sum(pcts) / len(pcts), 2)
