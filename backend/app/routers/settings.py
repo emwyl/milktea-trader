@@ -60,3 +60,44 @@ def save_risk_notice(payload: RiskNoticeIn, db: SessionLocal = Depends(get_db), 
     r.value_json = json.dumps({"content": content})
     db.commit()
     return {"ok": True, "content": content}
+
+
+class ColumnSettingsIn(BaseModel):
+    """v186: 表格列设置（按账号 + 表格 key 隔离）。
+
+    settings 形如: { "<表格key>": [{"key": "...", "visible": true, "frozen": false, "order": 0}, ...] }
+    表格 key 由前端定义(pool / pretrade / review / screens / adminUsers / accessLog ...)。
+    """
+    settings: dict = {}
+
+
+@router.get("/column_settings")
+def get_column_settings(db: SessionLocal = Depends(get_db), user: User = Depends(get_current_user)):
+    """读取当前账号的表格列设置；未设置过返回空对象（前端回落本地缓存/默认值）。"""
+    r = _setting(db, user.id, "column_settings")
+    if not r:
+        return {"settings": {}, "updated": False}
+    try:
+        raw = json.loads(r.value_json) or {}
+    except Exception:
+        raw = {}
+    # 兼容两种落库形态：{"settings": {...}} 或直接 {...}
+    data = raw.get("settings", raw) if isinstance(raw, dict) else {}
+    return {"settings": data if isinstance(data, dict) else {}, "updated": True}
+
+
+@router.put("/column_settings")
+def save_column_settings(payload: ColumnSettingsIn, db: SessionLocal = Depends(get_db), user: User = Depends(get_current_user)):
+    """整份覆盖式保存当前账号的列设置（前端每次改动都发全量，避免增量合并歧义）。"""
+    data = payload.settings if isinstance(payload.settings, dict) else {}
+    # 体积保护：最多 100 张表、每表 200 列，超出直接拒（防止异常数据撑爆单行文本）
+    if len(data) > 100 or any(isinstance(v, list) and len(v) > 200 for v in data.values()):
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail="列设置数据过大")
+    r = _setting(db, user.id, "column_settings")
+    if not r:
+        r = UserSetting(user_id=user.id, key="column_settings")
+        db.add(r)
+    r.value_json = json.dumps({"settings": data}, ensure_ascii=False)
+    db.commit()
+    return {"ok": True, "count": len(data)}

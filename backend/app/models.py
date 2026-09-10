@@ -258,6 +258,16 @@ class UserSetting(Base):
     value_json: Mapped[str] = mapped_column(Text, default="{}")
 
 
+class SystemSetting(Base):
+    """系统级（全局）键值配置（不按账号隔离）。
+    仅 admin 可写；任意已登录或未登录用户可读（如登录页判断是否显示游客入口）。"""
+    __tablename__ = "system_settings"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    key: Mapped[str] = mapped_column(String(64), unique=True)
+    value_json: Mapped[str] = mapped_column(Text, default="{}")
+    updated_at: Mapped[str] = mapped_column(String(32), default=_now)
+
+
 class StockTConfig(Base):
     """个股做T分析页的本地配置：自定义支撑/压力、特殊风控备注。
     存于本机数据库（仍不出本机），按 user_id 隔离，跨设备/浏览器都能读。"""

@@ -8,7 +8,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.config import FRONTEND_DIR
 from app.db import engine, Base, SessionLocal, run_migrations
-from app.models import AccessLog, User
+from app.models import AccessLog, User, SystemSetting
 from app.security import verify_token
 from app.seed import seed_all
 from app.scheduler import start_scheduler
@@ -16,7 +16,7 @@ from app.scheduler import start_scheduler
 import threading
 import datetime as dt
 
-from app.routers import auth, stocks, screens, pool, rules, analysis, preference, notify, settings, t_analysis, market
+from app.routers import auth, stocks, screens, pool, rules, analysis, preference, notify, settings, t_analysis, market, system as system_router
 from app.routers import engine as engine_router
 from app.routers import data as data_router
 
@@ -95,7 +95,7 @@ def _write_access_log(path, method, ip, ua, username, event_type):
         db.close()
 
 
-for r in (auth, stocks, screens, pool, rules, engine_router, analysis, preference, notify, settings, t_analysis, data_router, market):
+for r in (auth, stocks, screens, pool, rules, engine_router, analysis, preference, notify, settings, t_analysis, data_router, market, system_router):
     app.include_router(r.router)
 
 @app.get("/api/health")

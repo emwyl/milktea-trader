@@ -194,6 +194,102 @@ def guest_login(request: Request):
         db.close()
 
 
+@router.get("/access-events")
+def list_access_events(page: int = 1, page_size: int = 10,
+                        user: User = Depends(get_current_user)):
+    """访问记录（事件维度）：每次访问/登录/退出/注册都记一行，仅管理员可见。
+    按时间倒序分页（默认 10 条/页）。
+
+    字段：
+      - id: 事件 id
+      - ts: 当前行登录时间
+      - username/role/is_guest: 用户/角色/游客标记
+      - ip: 当前行客户端 IP
+      - prev_ts: 该用户上一次事件的时间（同 username 中 id < current.id 的最大 id 对应 ts）
+      - last_path: 当前行访问路径（最近停留页面）
+      - login_count: 该用户累计登录次数（event_type='login' 的总数）
+    """
+    _require_admin(user)
+    page = max(1, int(page))
+    page_size = min(max(1, int(page_size)), 200)
+
+    db = SessionLocal()
+    try:
+        # 1) 主查询：按 id 倒序分页（id 自增，id desc ≡ ts desc）
+        base_q = db.query(AccessLog).order_by(AccessLog.id.desc())
+        total_count = base_q.count()
+        rows: list[AccessLog] = base_q.offset((page - 1) * page_size).limit(page_size).all()
+        if not rows:
+            return {"total": total_count, "page": page, "page_size": page_size, "items": []}
+
+        # 2) 关联 users 表取角色（一次 LEFT JOIN，避免 N+1）
+        user_ids = {r.user_id for r in rows if r.user_id}
+        user_role_map: dict[int, str] = {}
+        user_guest_map: dict[int, int] = {}
+        if user_ids:
+            for u in db.query(User).filter(User.id.in_(user_ids)).all():
+                user_role_map[u.id] = u.role
+                user_guest_map[u.id] = int(bool(u.is_guest))
+
+        # 3) 批量拿本页相关 username 的 login_count（避免 10 次 count 查询）
+        page_usernames = {(r.username or None) for r in rows}
+        login_count_map: dict[str, int] = {}
+        if page_usernames:
+            # 用 OR (username IS NULL) 处理 None 的入参
+            null_in = None in page_usernames
+            non_null = [u for u in page_usernames if u is not None]
+            clauses = []
+            if non_null:
+                clauses.append(AccessLog.username.in_(non_null))
+            if null_in:
+                clauses.append(AccessLog.username.is_(None))
+            from sqlalchemy import or_
+            lc_q = (db.query(AccessLog.username, func.count(AccessLog.id))
+                    .filter(AccessLog.event_type == "login")
+                    .filter(or_(*clauses))
+                    .group_by(AccessLog.username))
+            for u, c in lc_q.all():
+                login_count_map[u or ""] = int(c or 0)
+
+        # 4) 逐行拿 prev_ts（一页最多 10 条，单条子查询走索引，可接受）
+        items: list[dict] = []
+        for r in rows:
+            u = r.username or None
+            prev_q = (db.query(AccessLog.ts)
+                      .filter(AccessLog.id < r.id))
+            if u is None:
+                prev_q = prev_q.filter(AccessLog.username.is_(None))
+            else:
+                prev_q = prev_q.filter(AccessLog.username == u)
+            prev_row = prev_q.order_by(AccessLog.id.desc()).first()
+            prev_ts = prev_row[0] if prev_row else None
+
+            # 角色：优先 user_id 查；user_id 为空（未登录访客）→ 'anonymous'
+            if r.user_id and r.user_id in user_role_map:
+                role = user_role_map[r.user_id]
+                is_guest = bool(user_guest_map.get(r.user_id, 0))
+            else:
+                role = "anonymous"
+                is_guest = True  # 未登录访客按游客口径展示
+
+            items.append({
+                "id": r.id,
+                "ts": r.ts,
+                "username": r.username or "未登录访客",
+                "role": role,
+                "is_guest": is_guest,
+                "ip": r.ip,
+                "prev_ts": prev_ts,
+                "last_path": r.path,
+                "login_count": int(login_count_map.get(r.username or "", 0)),
+                "event_type": r.event_type or "page",
+            })
+
+        return {"total": total_count, "page": page, "page_size": page_size, "items": items}
+    finally:
+        db.close()
+
+
 @router.get("/access-logs")
 def list_access_logs(page: int = 1, page_size: int = 10, user: User = Depends(get_current_user)):
     """访问记录（含游客/已注册用户/未登录访客），仅管理员可见。按用户最近活动时间倒序分页（默认10条/页）。每行展示一个用户/访客最近一次活动信息（含最新访问页面路径，供前端展示中文名）。"""

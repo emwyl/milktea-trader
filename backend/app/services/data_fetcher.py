@@ -2731,6 +2731,38 @@ def get_pool_track(code: str, db, position: dict | None = None, deadline: float 
             out["above_ma5"] = out["price"] > out["ma5"]
         if out.get("price") is not None and out.get("ma20") is not None:
             out["above_ma20"] = out["price"] > out["ma20"]
+        # ===== 当日最高 / 最低（可投池「最高」「最低」列）=====
+        # 口径（用户 2026-09-10 确认）：盘中+盘后显示「当日」高/低；盘前与非交易日不产出(前端显示 -)
+        #   盘中 09:30~15:00 → 实时盘口在跑的当日高/低（分钟级，与「日内振幅」同源）
+        #   收盘后(当日日线已落地) → 用日线当根 high/low（已定格、前复权，与「现价/MA5」同源）
+        #   盘前 / 非交易日 → 不产出（当日尚无数据，避免把 T-1 的高低当"当日"展示）
+        # 实时盘口是不复权价：与日线存在除权差异(≥5%)时按同一因子折算，与 get_t_realtime 保持一致
+        try:
+            _bj_h = dt.datetime.now(dt.timezone(dt.timedelta(hours=8)))
+            _date_h = _bj_h.strftime("%Y-%m-%d")
+            _has_bar_today = bool(last_q and str(last_q.date or "")[:10] == _date_h)
+            _in_session = dt.time(9, 30) <= _bj_h.time() < dt.time(15, 0)
+            _hi = _lo = None
+            if _in_session:
+                if spot_ok:
+                    _hi, _lo = spot.get("high"), spot.get("low")
+                if (_hi is None or _lo is None) and _has_bar_today:
+                    _hi, _lo = last_q.high, last_q.low
+            elif _has_bar_today:
+                _hi, _lo = last_q.high, last_q.low
+                if (_hi is None or _lo is None) and spot_ok:
+                    _hi, _lo = spot.get("high"), spot.get("low")
+            if (not _has_bar_today) and _hi and _lo and spot_ok and last_q and last_q.close:
+                _dv = abs(spot["price"] - last_q.close) / last_q.close * 100
+                if _dv >= 5:
+                    _fac = last_q.close / spot["price"]
+                    _hi, _lo = _hi * _fac, _lo * _fac
+            if _hi:
+                out["today_high"] = round(float(_hi), 2)
+            if _lo:
+                out["today_low"] = round(float(_lo), 2)
+        except Exception:
+            pass   # 高低价缺失不影响其它字段展示（前端回落显示 -）
         # 短线可投池三类达标项打分 + 操作建议：仅日线可信时产出——打分/MACD/振幅/建议
         # 全部依赖日线，演示/过期日线会算出假的分数与建议（v137 用户强调不可展示错误数据）
         if quotes and not qbad:

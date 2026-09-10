@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed, wait
 import io
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
 from typing import Optional
 
@@ -21,7 +21,7 @@ from app.schemas import (
 from app.services.data_fetcher import ensure_stock_name, get_pool_track, _fetch_intraday_fund, _market_return
 from app.services.preference import match_scheme
 from app.services.screener import get_screener
-from sqlalchemy import func, or_
+from sqlalchemy import and_, func, or_
 
 _CODE_RE = _re.compile(r'^\d{6}$')
 # 颜色格式校验（#RGB / #RRGGBB）
@@ -82,6 +82,15 @@ def _seed_from_db(code: str, db) -> dict | None:
             out["box_pos"] = round(max(0.0, min(1.0, (out["price"] - out["box_low"]) / (out["box_high"] - out["box_low"]))), 2)
         out["above_ma5"] = out["price"] > out["ma5"]
         out["above_ma20"] = out["price"] > out["ma20"]
+        # v186: 播种「当日最高/最低」——冷启动时富化常超 9.5s 墙钟预算,未完成的行会保留本播种值,
+        #   若播种里没有高/低,可投池「最高/最低」列会整列显示 "-"(用户实测)。
+        #   仅当 DB 已有【当日】日线时才播种,避免盘中/盘前把 T-1 的高低当"当日"展示。
+        #   口径与 get_pool_track 的盘后分支一致(当日日线已定格,前复权,与现价/MA 同源)。
+        if str(last.date or "")[:10] == _today_cn()[:10]:
+            if last.high:
+                out["today_high"] = round(last.high, 2)
+            if last.low:
+                out["today_low"] = round(last.low, 2)
         return out
     except Exception:
         return None
@@ -456,71 +465,102 @@ def batch_set_tags(body: PoolBatchTagsIn, db: SessionLocal = Depends(get_db), us
     return {"ok": True, "updated": len(rows)}
 
 
-# ===== 导出列定义 =====
-# key → [(excel表头, 取值函数(o: pool行dict, t: track dict)), ...]
-# 复合列(如 code_name)可拆成多列; select/ops 操作列不导出。
-def _exp(o: dict, t: dict) -> list[tuple[str, object]]:
-    """把一行(可投池+track)按表格列展开为 (表头, 值) 列表，所见即所得。
-    数值字段直接给数值，文本字段给字符串，缺失统一给空串；箱体给数值(0~1)。"""
-    cells: list[tuple[str, object]] = []
-    def add(label: str, value):
-        cells.append((label, "" if value is None else value))
-    # —— 基础(拆列) ——
-    add("证券代码", o.get("code"))
-    add("证券名称", o.get("name") or "")
-    add("行业", o.get("industry") or "")
-    # —— 实时/成交量 ——
-    add("现价", t.get("price"))
-    add("涨跌幅%", t.get("change_pct"))
-    add("当天实时成交量(万手)", t.get("realtime_volume"))
-    add("T-1同期成交量(万手)", t.get("yesterday_volume_at_time"))
-    add("20日平均成交量(万手)", t.get("avg_volume_20"))
-    add("T-1全天成交量(万手)", t.get("yesterday_volume_total"))
-    add("量比", t.get("vol_ratio"))
-    add("换手%", t.get("turnover"))
-    add("日内振幅%", t.get("intra_amplitude"))
-    add("MA5", t.get("ma5"))
-    add("MA20", t.get("ma20"))
-    # —— 箱体/趋势 ——
-    add("箱体位置(0~1)", t.get("box_pos"))
-    add("5日涨跌幅%", t.get("pct_5d"))
+# ===== 导出列定义(v186) =====
+# 每项是 (key, excel表头, 值)。key 与前端表格列 key 一一对应，前端传 cols 即可按
+# 「当前可见列 + 当前列序」导出（真正的所见即所得）；同一 key 可占多列(如 code_name
+# 拆成代码/名称)，只要 key 命中就整组导出。
+# 约定：key 为空字符串 "" 的列属于「仅全量导出」(前端没有对应列)，传 cols 时不导出。
+def _exp(o: dict, t: dict, user_score=None) -> list[tuple[str, str, object]]:
+    """把一行(可投池+track)展开为 (列key, 表头, 值) 列表。
+    数值直接给数值，文本给字符串，缺失统一给空串；箱体给 0~1 数值。"""
+    cells: list[tuple[str, str, object]] = []
+    def add(key: str, label: str, value):
+        cells.append((key, label, "" if value is None else value))
+
     gap = t.get("gap") or {}
-    add("跳空缺口", gap.get("text") if isinstance(gap, dict) else None)
-    # —— 资金流(当日) ——
-    add("主力净流入%", t.get("main_net_pct"))
     sig = t.get("main_signal") or {}
-    add("主力信号", sig.get("text") if isinstance(sig, dict) else None)
-    add("大单流向(万元)", t.get("big_order_net"))
-    # —— 估值/强弱/风险 ——
-    add("估值分位(近3年)%", t.get("valuation_pct_3y"))
     sec = t.get("sector_strength") or {}
-    add("板块强度", sec.get("text") if isinstance(sec, dict) else None)
     er = t.get("event_risk_tags") or {}
-    add("事件风险", "/".join(str(k) for k in er.keys()) if er else "")
     fr = t.get("finance_risk") or {}
-    add("财报风险", fr.get("summary") if isinstance(fr, dict) else None)
-    # —— 建议/信号/评分 ——
     adv = t.get("operation_advice") or {}
-    add("操作建议", adv.get("title") if isinstance(adv, dict) else None)
     ts = t.get("tech_signals") or {}
+    # —— 基础(复合列拆两列,保证 Excel 里代码/名称可各自排序筛选) ——
+    add("code_name", "证券代码", o.get("code"))
+    add("code_name", "证券名称", o.get("name") or "")
+    add("industry", "行业", o.get("industry") or "")
+    # —— 实时/成交量 ——
+    add("price", "现价", t.get("price"))
+    add("change_pct", "涨跌幅%", t.get("change_pct"))
+    # v186: 当日最高/最低(实时行情 track.today_high/today_low;盘间无数据 → 空)
+    add("high", "最高", t.get("today_high"))
+    add("low", "最低", t.get("today_low"))
+    add("realtime_volume", "当天实时成交量(万手)", t.get("realtime_volume"))
+    add("yesterday_volume_at_time", "T-1日同期成交量(万手)", t.get("yesterday_volume_at_time"))
+    add("avg_volume_20", "20日平均成交量(万手)", t.get("avg_volume_20"))
+    add("yesterday_volume_total", "T-1日全天成交量(万手)", t.get("yesterday_volume_total"))
+    add("vol_ratio", "量比", t.get("vol_ratio"))
+    add("turnover", "换手%", t.get("turnover"))
+    add("intra_amplitude", "日内振幅%", t.get("intra_amplitude"))
+    add("ma5", "MA5", t.get("ma5"))
+    add("ma20", "MA20", t.get("ma20"))
+    # —— 箱体/趋势 ——
+    add("box_pos", "箱体位置(0~1)", t.get("box_pos"))
+    add("pct_5d", "5日涨跌幅%", t.get("pct_5d"))
+    add("gap", "跳空缺口", gap.get("text") if isinstance(gap, dict) else None)
+    # —— 资金流(当日) ——
+    add("main_net_pct", "主力净流入%", t.get("main_net_pct"))
+    add("main_signal", "主力信号", sig.get("text") if isinstance(sig, dict) else None)
+    add("big_order_net", "大单流向(万元)", t.get("big_order_net"))
+    # —— 估值/强弱 ——
+    add("valuation_pct_3y", "估值分位(近3年)%", t.get("valuation_pct_3y"))
+    add("sector_strength", "板块强度", sec.get("text") if isinstance(sec, dict) else None)
+    add("pe_ttm", "市盈率TTM", t.get("pe_ttm"))
+    add("pb", "市净率", t.get("pb"))
+    add("pe_pct_3y", "PE近3年分位%", t.get("pe_pct_3y"))
+    # —— 财报(与页面口径一致:商誉转「亿元」) ——
+    add("net_profit_yoy", "净利同比%", t.get("net_profit_yoy"))
+    add("revenue_yoy", "营收同比%", t.get("revenue_yoy"))
+    add("report_date", "财报日期", t.get("report_date"))
+    gw = t.get("goodwill")
+    add("goodwill", "商誉(亿)", round(gw / 1e8, 2) if isinstance(gw, (int, float)) else None)
+    add("next_ratio", "解禁占比%", t.get("next_ratio"))
+    add("next_date", "解禁日期", t.get("next_date"))
+    # —— 评分/风险/建议 ——
+    # 综合评分:页面显示「实时重算分 user_score」,缺失才回落后端官方分
+    add("total_score", "综合评分",
+        user_score if user_score is not None else t.get("total_score"))
+    add("event_risk_tags", "事件风险", "/".join(str(k) for k in er.keys()) if er else "")
+    add("finance_risk", "财报风险", fr.get("summary") if isinstance(fr, dict) else None)
+    add("operation_advice", "操作建议", adv.get("title") if isinstance(adv, dict) else None)
     if isinstance(ts, dict) and ts:
-        add("MACD/KDJ/布林", "/".join(str(ts.get(k, "中")) for k in ("macd", "kdj", "boll")))
+        add("tech_signals", "MACD/KDJ/布林", "/".join(str(ts.get(k, "中")) for k in ("macd", "kdj", "boll")))
     else:
-        add("MACD/KDJ/布林", "")
-    add("必看-达标项(分)", t.get("must_pass_score"))
-    add("重要-达标项(分)", t.get("key_pass_score"))
-    add("辅助-达标项(分)", t.get("aux_pass_score"))
-    add("AI评等级", t.get("ai_grade"))
+        add("tech_signals", "MACD/KDJ/布林", "")
+    add("must_pass", "必看-达标项(分)", t.get("must_pass_score"))
+    add("key_pass", "重要-达标项(分)", t.get("key_pass_score"))
+    add("", "辅助-达标项(分)", t.get("aux_pass_score"))
+    add("", "AI评等级", t.get("ai_grade"))
     # —— 持仓/备注/标签 ——
-    add("持仓", o.get("position_qty"))
-    add("成本", o.get("cost_price"))
-    add("备注", o.get("note") or "")
-    add("标签", "/".join(str(x.get("name", "")) for x in (o.get("tags") or [])))
-    add("方案", o.get("scheme_type") or "")
-    # v143: 日初判断(当日最后一条) + 历史总条数
-    add("日初判断(当日)", o.get("day_view_today") or "")
-    add("日初判断历史数", o.get("day_view_log_count") or 0)
+    add("position_qty", "持仓", o.get("position_qty"))
+    add("cost_price", "成本", o.get("cost_price"))
+    add("note", "备注", o.get("note") or "")
+    add("tags", "标签", "/".join(str(x.get("name", "")) for x in (o.get("tags") or [])))
+    add("", "方案", o.get("scheme_type") or "")
+    # —— 日初判断 ——
+    add("day_view", "日初判断(当日)", o.get("day_view_today") or "")
+    add("", "日初判断历史数", o.get("day_view_log_count") or 0)
     return cells
+
+
+def _sort_value(v):
+    """导出排序用：空值恒排最后；数字比数字，其余按字符串。"""
+    if v is None or v == "":
+        return (1, 0.0, "")
+    if isinstance(v, bool):
+        return (0, float(v), "")
+    if isinstance(v, (int, float)):
+        return (0, float(v), "")
+    return (0, 0.0, str(v))
 
 
 @router.get("/export")
@@ -528,15 +568,21 @@ def export_pool(
     q: str = Query("", description="证券代码或名称模糊查询"),
     tag: str = Query("", description="按标签 ID 筛选(多个用逗号分隔)"),
     cols: str = Query("", description="按当前表格列序导出，逗号分隔的列 key；留空则导出全部列"),
+    sort: str = Query("", description="v186: 按当前排序列 key 导出；留空=默认序(加池顺序)"),
+    sort_dir: str = Query("asc", description="v186: 排序方向 asc|desc"),
+    view: str = Query("pool", description="v186: pool=盘间监控 | pretrade=盘前预判 | review=复盘管理"),
+    trade_date: str = Query("", description="v186: 交易日 YYYY-MM-DD（pretrade/review 视图使用）"),
     db: SessionLocal = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
     """导出当前用户可投池为 Excel（所见即所得）。
 
     - 按当前筛选(q/tag)导出【全部】匹配行（不只当前页）；
-    - 证券代码/名称拆成两列；箱体等只导数值；复合列拆开；
-    - 前端可传 cols(当前可见列 key 顺序)，后端只导出这些列(排除 select/ops)。
+    - v186: 按前端 cols(当前可见列+列序) 出列，按 sort/sort_dir 出行序；
+    - v186: view 决定数据源 —— pool(实时行情) / pretrade(盘前预判) / review(复盘对比)。
     """
+    if view in ("pretrade", "review"):
+        return _export_pretrade_or_review(view, q, tag, cols, sort, sort_dir, trade_date, db, user)
     # 筛选 + 去重（与 list_pool 口径一致：active + archive 有持仓）
     rows = _user_pool_q(db, user.id).order_by(TrackedPool.id).all()
     q = (q or "").strip()
@@ -582,14 +628,51 @@ def export_pool(
                 except Exception:
                     tracks[code] = {}
 
-    # 列展开：前端指定 cols 时按其顺序；否则用全部默认列
-    data: list[dict] = []
+    # 列展开：展开成 (key, 表头, 值)，再按前端 cols / sort 裁剪排序
+    rows_cells: list[list[tuple[str, str, object]]] = []
     for p in page_rows:
         o = _to_out(p, db).model_dump()
         o["code"] = p.code
         t = tracks.get(p.code, {}) or {}
-        cells = _exp(o, t)
-        data.append({label: v for label, v in cells})
+        rows_cells.append(_exp(o, t, user_score=o.get("user_score")))
+
+    # v186: 按当前可见列(及列序)裁剪 —— 真正「所见即所得」
+    keys = [k.strip() for k in (cols or "").split(",") if k.strip()]
+    if keys:
+        def _pick(cells: list[tuple[str, str, object]]):
+            picked: list[tuple[str, object]] = []
+            for k in keys:                       # 按前端列序，同一 key 可展开多列
+                for ck, cl, cv in cells:
+                    if ck == k:
+                        picked.append((cl, cv))
+            return picked
+        rows_cells = [_pick(c) for c in rows_cells]
+    else:
+        rows_cells = [[(cl, cv) for _k, cl, cv in c] for c in rows_cells]
+
+    # v186: 按当前表格排序导出（空值恒排最后）
+    if sort:
+        # 建立 key → 表头 映射(同一 key 展开多列时取第一列)，据此在每行里定位排序列
+        label_of_key: dict[str, str] = {}
+        for ck, cl, _cv in _exp({}, {}):
+            label_of_key.setdefault(ck, cl)
+        target_label = label_of_key.get(sort)
+        if target_label:
+            def _sv(cells: list[tuple[str, object]]):
+                for cl, cv in cells:
+                    if cl == target_label:
+                        return _sort_value(cv)
+                return _sort_value(None)
+            rows_cells.sort(key=_sv, reverse=(sort_dir.lower() == "desc"))
+
+    data: list[dict] = []
+    for cells in rows_cells:
+        row: dict[str, object] = {}
+        for cl, cv in cells:
+            if cl in row and row[cl] != "":
+                continue          # 重名表头(仅理论可能):保留首个非空值
+            row[cl] = cv
+        data.append(row)
 
     # v166: pandas 懒加载——本函数(导出)是唯一用到 DataFrame.to_excel 的地方，
     #       放到函数内 import 可避免 FastAPI 启动即加载 pandas+numpy(常驻数百 MB)，降低沙箱 OOM 概率
@@ -1128,27 +1211,8 @@ def watch_log(code: str, limit: int = Query(60, ge=1, le=500),
         #   C < B(收盘低于买入价) → (C-B)/B 为负: 比预判还能更低买入,预判偏乐观
         #   C > S(收盘高于卖出价) → (C-S)/S 为正: 比预判卖得更高(卖飞),预判偏保守
         #   只填一端 → 以该端为参考;两端都没填 → 回退旧的单一 target_price(视作卖出端)兼容历史数据
-        deviation = None
-        deviation_pct = None
-        buy_p = lg.target_buy if (lg.target_buy and lg.target_buy > 0) else None
-        sell_p = lg.target_sell if (lg.target_sell and lg.target_sell > 0) else None
-        if buy_p is None and sell_p is None:
-            sell_p = lg.target_price if (lg.target_price and lg.target_price > 0) else None
-        if close_p and (buy_p or sell_p):
-            if buy_p and sell_p:
-                if close_p < buy_p:
-                    ref = buy_p
-                elif close_p > sell_p:
-                    ref = sell_p
-                else:
-                    ref = None            # 区间内 → 偏离 0
-            else:
-                ref = buy_p or sell_p
-            if ref:
-                deviation = round((close_p - ref) / ref, 4)
-                deviation_pct = round(deviation * 100, 2)
-            else:
-                deviation, deviation_pct = 0.0, 0.0
+        # v186: 偏离算法抽成 _calc_deviation,与「复盘管理」页共用同一份实现
+        deviation, deviation_pct = _calc_deviation(lg, close_p)
         # v146:用户编辑的复盘优先;否则用模板话术
         rec = recaps_by_date.get(d)
         recap_text = (rec.recap or "") if rec else ""
@@ -1263,3 +1327,418 @@ def delete_tag(tid: int, db: SessionLocal = Depends(get_db), user: User = Depend
     db.delete(t)
     db.commit()
     return {"ok": True}
+
+
+# ==================== v186: 盘前预判 / 复盘管理 聚合接口 ====================
+# 背景：池内有 120+ 只票，若沿用单只接口(day-view-log / watch-log)按只轮询会退化成
+#       N×3 次请求，页面必然卡死。故这两个页面改为「一次分页 + 固定几次批量查询」。
+# 设计约束（长期扩展性）：
+#   1) 查询数恒定：无论多少只股票，都是 log / quote / recap 三次批量查询，不随 N 增长；
+#   2) 与列表页共用 _pool_rows_filtered，避免筛选/去重口径在三处漂移；
+#   3) 不调用 get_pool_track 实时富化：盘前/盘后场景实时价无意义且耗时数秒，
+#      价格类字段一律取 daily_quotes 日线，保证秒级响应；
+#   4) 排序在「全量组装后、分页前」执行，保证翻页时全局有序（与前端列表一致）。
+
+def _pool_rows_filtered(db, user_id: int, q: str = "", tag: str = "") -> list[TrackedPool]:
+    """用户的可投池行（与列表页/导出同一口径）：q 模糊 + tag 过滤 + 同代码去重。"""
+    rows = _user_pool_q(db, user_id).order_by(TrackedPool.id).all()
+    q = (q or "").strip()
+    if q:
+        rows = [p for p in rows if q in p.code or q in (_name(p.code, db) or "")]
+    tag_ids: list[int] = []
+    tag = (tag or "").strip()
+    if tag:
+        try:
+            tag_ids = [int(x) for x in tag.split(",") if x.strip()]
+        except ValueError:
+            raise HTTPException(status_code=400, detail="标签参数必须是数字 ID")
+    seen: dict[str, TrackedPool] = {}
+    for p in rows:
+        if tag_ids and not {t.id for t in p.tags}.intersection(tag_ids):
+            continue
+        cur = seen.get(p.code)
+        # 同代码多行(如归档+持仓)时保留持仓量最大的那行
+        if cur is None or (p.position_qty and (not cur.position_qty or p.position_qty > cur.position_qty)):
+            seen[p.code] = p
+    return list(seen.values())
+
+
+def _last_logs_of_date(db, user_id: int, codes: list[str], trade_date: str) -> dict[str, DayViewLog]:
+    """指定交易日每只代码「最后一条」日初判断（按 id desc 取首条）。"""
+    if not codes:
+        return {}
+    rows = (db.query(DayViewLog)
+            .filter(DayViewLog.user_id == user_id,
+                    DayViewLog.code.in_(codes),
+                    DayViewLog.trade_date == trade_date)
+            .order_by(DayViewLog.id.desc())
+            .all())
+    out: dict[str, DayViewLog] = {}
+    for r in rows:
+        out.setdefault(r.code, r)
+    return out
+
+
+def _log_counts_of_date(db, user_id: int, codes: list[str], trade_date: str) -> dict[str, int]:
+    """指定交易日每只代码录入了几条（同日多次修改会累加）。"""
+    if not codes:
+        return {}
+    rows = (db.query(DayViewLog.code, func.count(DayViewLog.id))
+            .filter(DayViewLog.user_id == user_id,
+                    DayViewLog.code.in_(codes),
+                    DayViewLog.trade_date == trade_date)
+            .group_by(DayViewLog.code).all())
+    return {c: int(n) for c, n in rows}
+
+
+def _latest_quotes(db, codes: list[str], on_or_before: str = "") -> dict[str, DailyQuote]:
+    """每只代码取 on_or_before(含)之前最近一根日线；留空则取各自最新一根。
+    用 group_by + max(date) 子查询一次拿全，避免每只拉全量历史。"""
+    if not codes:
+        return {}
+    sub = db.query(DailyQuote.code.label("code"), func.max(DailyQuote.date).label("mdate"))
+    sub = sub.filter(DailyQuote.code.in_(codes))
+    if on_or_before:
+        sub = sub.filter(DailyQuote.date <= on_or_before)
+    sub = sub.group_by(DailyQuote.code).subquery()
+    rows = (db.query(DailyQuote)
+            .join(sub, and_(DailyQuote.code == sub.c.code, DailyQuote.date == sub.c.mdate))
+            .all())
+    return {r.code: r for r in rows}
+
+
+def _quotes_on(db, codes: list[str], trade_date: str) -> dict[str, DailyQuote]:
+    """精确取指定交易日的日线（复盘页：该日无行情则返回空）。"""
+    if not codes:
+        return {}
+    rows = (db.query(DailyQuote)
+            .filter(DailyQuote.code.in_(codes), DailyQuote.date == trade_date)
+            .all())
+    return {r.code: r for r in rows}
+
+
+def _recaps_on(db, user_id: int, codes: list[str], trade_date: str) -> dict[str, DayViewRecap]:
+    if not codes:
+        return {}
+    rows = (db.query(DayViewRecap)
+            .filter(DayViewRecap.user_id == user_id,
+                    DayViewRecap.code.in_(codes),
+                    DayViewRecap.trade_date == trade_date)
+            .all())
+    return {r.code: r for r in rows}
+
+
+def _recent_trade_dates(db, user_id: int, limit: int = 30) -> list[str]:
+    """交易日下拉可选值：全市场有日线的日期 ∪ 该用户录入过日初判断的日期，倒序取最近 N 个。"""
+    ds: set[str] = set()
+    for (d,) in db.query(DailyQuote.date).distinct().order_by(DailyQuote.date.desc()).limit(limit).all():
+        ds.add(d)
+    for (d,) in (db.query(DayViewLog.trade_date)
+                 .filter(DayViewLog.user_id == user_id)
+                 .distinct().order_by(DayViewLog.trade_date.desc()).limit(limit).all()):
+        ds.add(d)
+    today = _today_cn()
+    ds.add(today)
+    return sorted(ds, reverse=True)[:limit]
+
+
+def _sort_items(items: list[dict], key: str, desc: bool) -> list[dict]:
+    """通用排序：空值恒排最后；数字比数字，其余按字符串。"""
+    if not key:
+        return items
+    def sv(v):
+        if v is None or v == "":
+            return (1, 0.0, "")
+        if isinstance(v, bool):
+            return (0, float(v), "")
+        if isinstance(v, (int, float)):
+            return (0, float(v), "")
+        return (0, 0.0, str(v))
+    items.sort(key=lambda it: sv(it.get(key)), reverse=desc)
+    return items
+
+
+# ===== v186: 盘前预判 / 复盘管理 共用的行组装（列表接口与导出接口同一口径，避免两套算法）=====
+def _build_pretrade_items(db, user, q, tag, trade_date) -> list[dict]:
+    """组装盘前预判全量行（不分页，导出直接用）。"""
+    rows = _pool_rows_filtered(db, user.id, q, tag)
+    codes = [p.code for p in rows]
+    logs = _last_logs_of_date(db, user.id, codes, trade_date)
+    counts = _log_counts_of_date(db, user.id, codes, trade_date)
+    quotes = _latest_quotes(db, codes, trade_date)
+    items: list[dict] = []
+    for p in rows:
+        it = _pool_base(p, db)
+        lg = logs.get(p.code)
+        qt = quotes.get(p.code)
+        close_p = qt.close if qt and qt.close else None
+        pre_close = qt.pre_close if qt and qt.pre_close else None
+        it.update({
+            "trade_date": trade_date,
+            "log_count": counts.get(p.code, 0),
+            "last_date": qt.date if qt else "",
+            "last_close": close_p,
+            "last_change_pct": (round((close_p - pre_close) / pre_close * 100, 2)
+                                if (close_p and pre_close) else None),
+            "trend": (lg.trend or "-") if lg else "-",
+            "target_buy": lg.target_buy if lg else None,
+            "target_sell": lg.target_sell if lg else None,
+            "target_note": (lg.target_note or "") if lg else "",
+            "composite_score": lg.composite_score if lg else None,
+            "reference_text": (lg.reference_text or "") if lg else "",
+            "operator": (lg.operator or "") if lg else "",
+            "operated_at": (lg.operated_at or "") if lg else "",
+        })
+        items.append(it)
+    return items
+
+
+def _build_review_items(db, user, q, tag, trade_date) -> list[dict]:
+    """组装复盘管理全量行（不分页，导出直接用）。"""
+    rows = _pool_rows_filtered(db, user.id, q, tag)
+    codes = [p.code for p in rows]
+    logs = _last_logs_of_date(db, user.id, codes, trade_date)
+    counts = _log_counts_of_date(db, user.id, codes, trade_date)
+    quotes = _quotes_on(db, codes, trade_date)
+    recaps = _recaps_on(db, user.id, codes, trade_date)
+    items: list[dict] = []
+    for p in rows:
+        it = _pool_base(p, db)
+        lg = logs.get(p.code)
+        qt = quotes.get(p.code)
+        rec = recaps.get(p.code)
+        open_p = qt.open if qt and qt.open else None
+        close_p = qt.close if qt and qt.close else None
+        high_p = qt.high if qt and qt.high else None
+        low_p = qt.low if qt and qt.low else None
+        pre_close = qt.pre_close if qt and qt.pre_close else None
+        intraday_avg = None
+        if qt and qt.volume and qt.volume > 0 and close_p:
+            try:
+                amt = qt.amount if (qt.amount and qt.amount > 0) else (qt.volume * close_p * 100.0)
+                intraday_avg = round(amt / (qt.volume * 100.0), 3)
+            except Exception:
+                intraday_avg = None
+        dev = dev_pct = None
+        if lg:
+            dev, dev_pct = _calc_deviation(lg, close_p)
+        it.update({
+            "trade_date": trade_date,
+            "log_count": counts.get(p.code, 0),
+            "open": open_p, "close": close_p, "high": high_p, "low": low_p,
+            "intraday_avg": intraday_avg,
+            "change_pct": (round((close_p - pre_close) / pre_close * 100, 2)
+                           if (close_p and pre_close) else None),
+            "trend": (lg.trend or "-") if lg else "-",
+            "target_price": lg.target_price if lg else None,
+            "target_buy": lg.target_buy if lg else None,
+            "target_sell": lg.target_sell if lg else None,
+            "target_note": (lg.target_note or "") if lg else "",
+            "composite_score": lg.composite_score if lg else None,
+            "reference_text": (lg.reference_text or "") if lg else "",
+            "deviation": dev, "deviation_pct": dev_pct,
+            "deviation_reason": (_deviation_reason(lg.trend or "-", dev, has_close=bool(close_p))
+                                 if lg else "当日未录入日初预判"),
+            "recap": (rec.recap or "") if rec else "",
+            "recap_user": (rec.operator or "") if rec else "",
+            "recap_updated_at": (rec.updated_at or "") if rec else "",
+        })
+        items.append(it)
+    return items
+
+
+# v186: 两个新页面的导出列映射（key → (Excel表头, 取值函数)），与前端列 key 一一对应
+_PRETRADE_EXP_COLS: dict[str, tuple[str, object]] = {
+    "code_name":       ("代码/名称",   lambda o: o.get("name") or ""),
+    "industry":        ("行业",        lambda o: o.get("industry") or ""),
+    "last_close":      ("参考价(最近收盘)", lambda o: o.get("last_close")),
+    "last_change_pct": ("参考涨跌幅%",  lambda o: o.get("last_change_pct")),
+    "trend":           ("涨跌趋势",    lambda o: o.get("trend") or ""),
+    "target_buy":      ("目标买入",    lambda o: o.get("target_buy")),
+    "target_sell":     ("目标卖出",    lambda o: o.get("target_sell")),
+    "target_note":     ("目标依据",    lambda o: o.get("target_note") or ""),
+    "composite_score": ("评分快照",    lambda o: o.get("composite_score")),
+    "reference_text":  ("参考信息",    lambda o: o.get("reference_text") or ""),
+    "log_count":       ("当日次数",    lambda o: o.get("log_count") or 0),
+    "operated_at":     ("最近操作",    lambda o: o.get("operated_at") or ""),
+}
+_REVIEW_EXP_COLS: dict[str, tuple[str, object]] = {
+    "code_name":     ("代码/名称",   lambda o: o.get("name") or ""),
+    "industry":      ("行业",        lambda o: o.get("industry") or ""),
+    "trend":         ("日初趋势",    lambda o: o.get("trend") or ""),
+    "target_buy":    ("目标买入",    lambda o: o.get("target_buy")),
+    "target_sell":   ("目标卖出",    lambda o: o.get("target_sell")),
+    "open":          ("开盘",        lambda o: o.get("open")),
+    "close":         ("收盘",        lambda o: o.get("close")),
+    "high":          ("最高",        lambda o: o.get("high")),
+    "low":           ("最低",        lambda o: o.get("low")),
+    "change_pct":    ("涨跌幅%",     lambda o: o.get("change_pct")),
+    "intraday_avg":  ("分时均价",    lambda o: o.get("intraday_avg")),
+    "deviation_pct": ("偏离度%",     lambda o: o.get("deviation_pct")),
+    "target_note":   ("目标依据",    lambda o: o.get("target_note") or ""),
+    "recap":         ("复盘思考",    lambda o: o.get("recap") or ""),
+}
+
+
+def _export_pretrade_or_review(view, q, tag, cols, sort, sort_dir, trade_date, db, user):
+    """v186: 盘前预判 / 复盘管理 导出（与各自页面同口径：同筛选、同列、同行序）。"""
+    is_review = (view == "review")
+    d = (trade_date or "").strip()
+    if is_review:
+        dates = _recent_trade_dates(db, user.id)
+        if d and _RE_DATE.match(d):
+            td = d
+        else:
+            today = _today_cn()
+            td = today if (today in dates or not dates) else dates[0]
+        items = _build_review_items(db, user, q, tag, td)
+        colmap, title = _REVIEW_EXP_COLS, "复盘管理"
+    else:
+        td = d if (d and _RE_DATE.match(d)) else _today_cn()
+        items = _build_pretrade_items(db, user, q, tag, td)
+        colmap, title = _PRETRADE_EXP_COLS, "盘前预判"
+
+    _sort_items(items, (sort or "").strip(), (sort_dir or "asc").lower() == "desc")
+
+    # 按前端传来的可见列 key 与顺序出列；未识别的 key 忽略；无 cols 则输出全部
+    keys = [k.strip() for k in (cols or "").split(",") if k.strip()]
+    keys = [k for k in keys if k in colmap]
+    if not keys:
+        keys = list(colmap.keys())
+    headers = [colmap[k][0] for k in keys]
+
+    # 与可投池导出保持同一套写法（pandas + openpyxl），避免引入额外依赖
+    import pandas as pd
+    df = pd.DataFrame(
+        [[("" if colmap[k][1](it) is None else colmap[k][1](it)) for k in keys] for it in items],
+        columns=headers,
+    )
+    buf = io.BytesIO()
+    df.to_excel(buf, index=False, engine="openpyxl")
+    buf.seek(0)
+    fname = f"{title}_{td}.xlsx"
+    encoded = quote(fname)
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{encoded}"},
+    )
+
+
+def _pool_base(p: TrackedPool, db) -> dict:
+    """一行里与场景无关的公共基本信息（两个页面共用，保证列口径一致）。"""
+    return {
+        "code": p.code,
+        "name": _name(p.code, db) or p.code,
+        "industry": _industry(p.code, db),
+        "note": p.note or "",
+        "cost_price": p.cost_price,
+        "position_qty": p.position_qty,
+        "scheme_type": p.scheme_type or "",
+        "status": p.status or "",
+        "tags": [{"id": t.id, "name": t.name, "color": t.color} for t in p.tags],
+    }
+
+
+def _calc_deviation(lg: DayViewLog, close_p):
+    """v185「买卖区间口径」偏离度抽成公共函数（盯盘日志 / 复盘管理共用同一算法）。
+
+    参考价 = 收盘低于买入预判取买入价 B；高于卖出预判取卖出价 S；落在 [B,S] 内 → 0
+    deviation = (收盘价 C − 参考价) / 参考价
+    返回 (deviation, deviation_pct)，两者可能为 None（无收盘价或没填目标价）。
+    """
+    buy_p = lg.target_buy if (lg.target_buy and lg.target_buy > 0) else None
+    sell_p = lg.target_sell if (lg.target_sell and lg.target_sell > 0) else None
+    if buy_p is None and sell_p is None:
+        # 历史数据兼容：旧的单值 target_price 视作卖出端
+        sell_p = lg.target_price if (lg.target_price and lg.target_price > 0) else None
+    if not close_p or (not buy_p and not sell_p):
+        return None, None
+    if buy_p and sell_p:
+        if close_p < buy_p:
+            ref = buy_p
+        elif close_p > sell_p:
+            ref = sell_p
+        else:
+            return 0.0, 0.0        # 落在预判区间内 → 预判准确
+    else:
+        ref = buy_p or sell_p
+    dev = round((close_p - ref) / ref, 4)
+    return dev, round(dev * 100, 2)
+
+
+@router.get("/pretrade")
+def list_pretrade(
+    date: str = Query("", description="交易日 YYYY-MM-DD；留空=中国时区今日"),
+    trade_date_q: str = Query("", alias="trade_date", description="同 date(前端参数名)"),
+    q: str = Query("", description="证券代码或名称模糊查询"),
+    tag: str = Query("", description="按标签 ID 筛选(多个用逗号分隔)"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(15, ge=1, le=100),
+    sort: str = Query("", description="排序列 key；留空=按加池顺序"),
+    sort_dir: str = Query("asc", description="asc|desc"),
+    db: SessionLocal = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """v186 盘前预判：可投池基本信息 + 指定交易日的日初判断，一次请求拿全。
+
+    每行 = 一只股票。日初判断取该交易日【最后一条】记录（同日可多次修改，append-only），
+    未录入过则该组字段为空，前端行内填写后调用 POST /pool/{code}/day-view-log 落库。
+    另附 last_close/last_change_pct 作为「填目标价时的参考价」（取 <= 该日最近一根日线）。
+    """
+    _d = (date or trade_date_q or "").strip()
+    trade_date = _d if (_d and _RE_DATE.match(_d)) else _today_cn()
+    items = _build_pretrade_items(db, user, q, tag, trade_date)
+
+    total_before = len(items)
+    _sort_items(items, (sort or "").strip(), (sort_dir or "asc").lower() == "desc")
+    start = (page - 1) * page_size
+    return {
+        "items": items[start:start + page_size],
+        "total": total_before, "page": page, "page_size": page_size,
+        "trade_date": trade_date,
+        "available_dates": _recent_trade_dates(db, user.id),
+    }
+
+
+@router.get("/review")
+def list_review(
+    date: str = Query("", description="交易日 YYYY-MM-DD；留空=最近有行情的交易日"),
+    trade_date_q: str = Query("", alias="trade_date", description="同 date(前端参数名)"),
+    q: str = Query("", description="证券代码或名称模糊查询"),
+    tag: str = Query("", description="按标签 ID 筛选(多个用逗号分隔)"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(15, ge=1, le=100),
+    sort: str = Query("", description="排序列 key；留空=按加池顺序"),
+    sort_dir: str = Query("asc", description="asc|desc"),
+    db: SessionLocal = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """v186 复盘管理：某交易日下，每只股票的「日初预判 vs 当日收盘」对比 + 复盘输入。
+
+    每行 = 一只股票 × 一个交易日。字段覆盖原「盯盘日志弹窗」全部内容（开/收/高/低/
+    分时均价/综合评分/预判参考信息/趋势/目标买卖/依据/偏离度/偏离原因复盘），
+    行内编辑复盘后调用 POST /pool/{code}/watch-log/{trade_date}/recap 落库。
+    """
+    dates = _recent_trade_dates(db, user.id)
+    _d = (date or trade_date_q or "").strip()
+    if _d and _RE_DATE.match(_d):
+        trade_date = _d
+    else:
+        # 默认「当天」；若当天尚无行情则回落到最近一个交易日，避免默认空表
+        today = _today_cn()
+        trade_date = today
+        if today not in dates and dates:
+            trade_date = dates[0]
+
+    items = _build_review_items(db, user, q, tag, trade_date)
+
+    total_before = len(items)
+    _sort_items(items, (sort or "").strip(), (sort_dir or "asc").lower() == "desc")
+    start = (page - 1) * page_size
+    return {
+        "items": items[start:start + page_size],
+        "total": total_before, "page": page, "page_size": page_size,
+        "trade_date": trade_date,
+        "available_dates": dates or [trade_date],
+    }
