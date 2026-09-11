@@ -24,9 +24,9 @@
     s.src = './vue.global.prod.js?v=20260909178' + Date.now();
     s.onload = function(){
       if (typeof Vue !== 'undefined' && Vue.createApp) { location.reload(); }
-      else { hint.innerHTML = '重试仍失败,请按 Ctrl+F5 强制刷新<br><span style="font-size:12px;color:#9ca3af">(v20260908169)</span>'; }
+      else { hint.innerHTML = '重试仍失败,请按 Ctrl+F5 强制刷新<br><span style="font-size:12px;color:#9ca3af">(v20260911145)</span>'; }
     };
-    s.onerror = function(){ hint.innerHTML = '重试仍失败,请按 Ctrl+F5 强制刷新<br><span style="font-size:12px;color:#9ca3af">(v20260908169)</span>'; };
+    s.onerror = function(){ hint.innerHTML = '重试仍失败,请按 Ctrl+F5 强制刷新<br><span style="font-size:12px;color:#9ca3af">(v20260911145)</span>'; };
     (document.head || document.documentElement).appendChild(s);
   }catch(e){ /* 兜底若失败也别抛,留给用户 Ctrl+F5 */ }
 })();
@@ -83,8 +83,10 @@
   nav a.active{background:var(--tea);color:#fff}
   .subnav{display:flex;gap:4px;padding:9px 16px 0;background:#fff;border-bottom:1px solid var(--line);flex-wrap:wrap}
   .subnav button{padding:7px 16px;border-radius:9px 9px 0 0;font-size:14px;cursor:pointer;border:1px solid var(--line);border-bottom:0;background:#eff6ff;color:var(--tea-d)}
-  .subnav button.active{background:var(--tea);color:#fff;border-color:var(--tea)}
-  .subnav button.ghost{background:#eff6ff;color:var(--tea-d);border:1px solid var(--line);border-bottom:0}
+  /* v188: 当前页签=主色实心+白字+加粗(突出);未选中=白底灰字(退后),hover 淡蓝提示可点 —— 解决「看不出当前页签是哪个」 */
+  .subnav button.active{background:var(--tea);color:#fff;border-color:var(--tea);font-weight:600}
+  .subnav button.ghost{background:#fff;color:#6b7280;border:1px solid var(--line);border-bottom:0}
+  .subnav button.ghost:hover{background:#eff6ff;color:var(--tea-d)}
   .subnav button.pooltab-label{background:var(--tea);color:#fff;border-color:var(--tea);cursor:default}
   .subnav button.pooltab-label:hover{background:var(--tea);color:#fff}
   main{padding:12px 16px;max-width:none;margin:0 auto}
@@ -716,6 +718,19 @@
   .sd-veto-box{background:#fef2f2;border:1px solid #fecaca;border-left:4px solid #dc2626;padding:10px 14px;border-radius:6px;margin-bottom:14px}
   .sd-veto-box ul{margin:6px 0 0 18px}
   .sd-veto-box li{color:#dc2626;margin:2px 0;font-size:13px}
+  /* v188: D类 基本面/合规否决 三态展示(后端算好,前端仅展示) */
+  .sd-rc-box{background:#fffbeb;border:1px solid #fde68a;border-left:4px solid #d97706;padding:10px 14px;border-radius:6px;margin-bottom:14px}
+  .sd-rc-head b{color:#b45309;font-size:13px}
+  .sd-rc-head .muted{font-size:11px;margin-left:6px}
+  .sd-rc-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:8px}
+  .sd-rc-row{display:flex;align-items:flex-start;gap:8px;background:#fff;border:1px solid #f5e8c8;border-radius:6px;padding:7px 10px;font-size:12px}
+  .sd-rc-badge{flex-shrink:0;display:inline-block;min-width:54px;text-align:center;padding:2px 6px;border-radius:4px;font-size:11px;font-weight:700}
+  .sd-rc-veto{background:#dc2626;color:#fff}
+  .sd-rc-ok{background:#16a34a;color:#fff}
+  .sd-rc-na{background:#f59e0b;color:#fff}
+  .sd-rc-body{min-width:0;flex:1}
+  .sd-rc-label{font-weight:600;color:#334155}
+  .sd-rc-note{color:#64748b;font-size:11px;margin-top:1px;word-break:break-all}
   /* v162: 一票否决标记(评分弹窗标题 / 列表综合评分列共用) */
   .sd-veto-tag{display:inline-block;margin-left:4px;padding:1px 6px;border-radius:4px;background:#dc2626;color:#fff;font-size:11px;font-weight:600;vertical-align:middle;cursor:help}
   .sd-dim-row{display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding:10px 14px;background:#f8fafc;border-radius:6px;margin-bottom:14px}
@@ -857,7 +872,7 @@
     <header>
       <h1>🧋 TR-个人学习版</h1>
       <span class="sub">个人学习用 · 先控风险再谈收益</span>
-      <span class="version" id="appVersion">v20260909178</span>
+      <span class="version" id="appVersion">v20260911145</span>
       <button class="ghost auto-refresh-btn" :class="{active:autoRefresh}" @click="toggleAutoRefresh" :title="autoRefresh?'自动刷新开启中，每5秒更新当前页面数据':'点击开启每5秒自动刷新'">
         {{autoRefresh?'⏸':'▶'}} 自动 5s
       </button>
@@ -880,13 +895,13 @@
     </nav>
     <!-- 智能选股：二级 tab 页签 -->
     <div class="subnav" v-if="topMenu==='smart'">
-      <button :class="view==='pref'?'':'ghost'" @click="go('pref')">偏好分析</button>
-      <button :class="view==='screens'?'':'ghost'" @click="go('screens')">选股模型</button>
+      <button :class="view==='pref'?'active':'ghost'" @click="go('pref')">偏好分析</button>
+      <button :class="view==='screens'?'active':'ghost'" @click="go('screens')">选股模型</button>
     </div>
     <!-- 可投池追踪：二级 tab 页签 -->
     <div class="subnav" v-if="topMenu==='pool'">
-      <button :class="view==='pool'?'':'ghost'" @click="go('pool')">短线可投池</button>
-      <button :class="view==='t'?'':'ghost'" @click="go('t')">个股分析</button>
+      <button :class="view==='pool'?'active':'ghost'" @click="go('pool')">短线可投池</button>
+      <button :class="view==='t'?'active':'ghost'" @click="go('t')">个股分析</button>
     </div>
     <main>
       <!-- 看板总览 -->
@@ -2341,6 +2356,31 @@
               <div class="muted" style="margin-top:4px;font-size:11px">否决项命中后总分强制为 0,下方分项得分仅作诊断参考,不再参与总分计算</div>
             </div>
 
+            <!-- v188: D类 基本面/合规否决(6条,独立于一票否决技术面项;命中任意一条总分强制0) -->
+            <div v-if="scoreDetailModal._result && scoreDetailModal._result.riskChecks && scoreDetailModal._result.riskChecks.length" class="sd-rc-box">
+              <div class="sd-rc-head">
+                <b>🛡 D类 基本面/合规否决</b>
+                <span class="muted">独立于一票否决技术面项 · 命中任意一条 → 总分强制 0(与权重/分项无关)</span>
+              </div>
+              <div class="sd-rc-list">
+                <div class="sd-rc-row" v-for="rc in scoreDetailModal._result.riskChecks" :key="rc.id">
+                  <span class="sd-rc-badge"
+                        :class="{'sd-rc-veto': rc.state==='veto', 'sd-rc-ok': rc.state==='ok', 'sd-rc-na': rc.state==='na'}">
+                    <template v-if="rc.state==='veto'">✗ 否决命中</template>
+                    <template v-else-if="rc.state==='ok'">✓ 通过</template>
+                    <template v-else>⚠ 待复核</template>
+                  </span>
+                  <div class="sd-rc-body">
+                    <div class="sd-rc-label">{{ rc.label }}</div>
+                    <div class="sd-rc-note">{{ rc.note || (rc.state==='na' ? '数据未接入,需人工复核' : (rc.state==='veto' ? '命中风险条件' : '未命中风险条件')) }}</div>
+                  </div>
+                </div>
+              </div>
+              <div class="muted" style="margin-top:6px;font-size:11px">
+                状态说明:✓ 通过(数据可用且未命中) · ✗ 否决命中(数据可用且命中风险) · ⚠ 待复核(数据源未接入,绝不因取数失败误杀,需人工核实)。前 3 条技术面否决见上方「一票否决」红框。
+              </div>
+            </div>
+
             <!-- 三维度权重编辑 -->
             <div class="sd-dim-row">
               <span class="muted" style="font-weight:600">维度权重(可调,默认 A40+B35+C25=100):</span>
@@ -3544,6 +3584,7 @@ const app = createApp({
           officialScore: track && track.total_score != null ? track.total_score : null,
           officialGrade: track && track.ai_grade || null,
           officialVetos: track && track.veto_reasons || [],
+          riskChecks: (track && track.veto_checks) || [],
           officialPenalty: track && track.penalty || 0,
           userScore: +total.toFixed(0),
           vetoed: vetoed,

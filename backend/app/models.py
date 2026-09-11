@@ -55,6 +55,11 @@ class DailyQuote(Base):
     amount: Mapped[float] = mapped_column(Float, default=0.0)
     turnover: Mapped[float] = mapped_column(Float, default=0.0)  # 换手率 %
     pre_close: Mapped[float] = mapped_column(Float, default=0.0)
+    # v189 主力资金「今日起落库」：系统只有当日实时资金流接口，没有历史源。
+    #   每次取到当日主力净流入就写进当日日线行，盘前预判即可取 T-1 的静态值（全天不变）。
+    #   今天之前的历史行为 NULL → 前端显示 "-"，用上几天后自动补全。
+    main_net_pct: Mapped[float | None] = mapped_column(Float, nullable=True)   # 主力净流入占成交额 %
+    main_signal: Mapped[str] = mapped_column(String(64), default="")           # 主力信号文本，如「主力流入」
 
 
 class Screen(Base):
@@ -94,6 +99,15 @@ class TrackedPool(Base):
     scheme_type: Mapped[str] = mapped_column(String(32), default="custom")
     status: Mapped[str] = mapped_column(String(16), default="active")  # active/archive
     day_view: Mapped[str] = mapped_column(String(16), default="")  # 日初判断：看涨/看跌/不动/风险/空
+    # v189 监控链路：盘前预判的股票点「加入监控」后才进入盘间监控/复盘管理。
+    #   monitored: 1=已加入监控(盘间监控+复盘管理可见)；0=只在盘前预判可见。
+    #   source:    新增来源 pretrade/pool/review —— 决定该行在哪些页面可见。
+    #     盘前预判可见 = source!='pool'（盘间监控自行新增的只在盘间监控显示）
+    #     盘间监控可见 = (source=='pretrade' and monitored==1) or source=='pool'
+    #     复盘管理可见 = (source=='pretrade' and monitored==1) or source=='review'
+    #   存量数据迁移时两列分别填 1 / 'pretrade'，保证老数据三页都照常可见、不丢。
+    monitored: Mapped[int | None] = mapped_column(Integer, default=1, nullable=True)
+    source: Mapped[str] = mapped_column(String(16), default="pretrade")
     tags: Mapped[list["PoolTag"]] = relationship("PoolTag", secondary="tracked_pool_tags", back_populates="pools")
 
 

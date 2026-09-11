@@ -24,9 +24,9 @@
     s.src = './vue.global.prod.js?v=20260909152' + Date.now();
     s.onload = function(){
       if (typeof Vue !== 'undefined' && Vue.createApp) { location.reload(); }
-      else { hint.innerHTML = '重试仍失败,请按 Ctrl+F5 强制刷新<br><span style="font-size:12px;color:#9ca3af">(v20260910186)</span>'; }
+      else { hint.innerHTML = '重试仍失败,请按 Ctrl+F5 强制刷新<br><span style="font-size:12px;color:#9ca3af">(v20260911145)</span>'; }
     };
-    s.onerror = function(){ hint.innerHTML = '重试仍失败,请按 Ctrl+F5 强制刷新<br><span style="font-size:12px;color:#9ca3af">(v20260910186)</span>'; };
+    s.onerror = function(){ hint.innerHTML = '重试仍失败,请按 Ctrl+F5 强制刷新<br><span style="font-size:12px;color:#9ca3af">(v20260911145)</span>'; };
     (document.head || document.documentElement).appendChild(s);
   }catch(e){ /* 兜底若失败也别抛,留给用户 Ctrl+F5 */ }
 })();
@@ -83,8 +83,10 @@
   nav a.active{background:var(--tea);color:#fff}
   .subnav{display:flex;gap:4px;padding:9px 16px 0;background:#fff;border-bottom:1px solid var(--line);flex-wrap:wrap}
   .subnav button{padding:7px 16px;border-radius:9px 9px 0 0;font-size:14px;cursor:pointer;border:1px solid var(--line);border-bottom:0;background:#eff6ff;color:var(--tea-d)}
-  .subnav button.active{background:var(--tea);color:#fff;border-color:var(--tea)}
-  .subnav button.ghost{background:#eff6ff;color:var(--tea-d);border:1px solid var(--line);border-bottom:0}
+  /* v188: 当前页签=主色实心+白字+加粗(突出);未选中=白底灰字(退后),hover 淡蓝提示可点 —— 解决「看不出当前页签是哪个」 */
+  .subnav button.active{background:var(--tea);color:#fff;border-color:var(--tea);font-weight:600}
+  .subnav button.ghost{background:#fff;color:#6b7280;border:1px solid var(--line);border-bottom:0}
+  .subnav button.ghost:hover{background:#eff6ff;color:var(--tea-d)}
   .subnav button.pooltab-label{background:var(--tea);color:#fff;border-color:var(--tea);cursor:default}
   .subnav button.pooltab-label:hover{background:var(--tea);color:#fff}
   main{padding:12px 16px;max-width:none;margin:0 auto}
@@ -663,6 +665,14 @@
   .dv-chip.tag-看跌.active{background:#ecfdf5;border-color:#16a34a;font-weight:600}
   .dv-chip.tag-风险.active{background:#fef3c7;border-color:#b45309;font-weight:600}
   .dv-chip.tag--.active{background:#f3f4f6;border-color:#6b7280;font-weight:600}
+  /* v189 盘前预判：可编辑列蓝色表头 / 历史按钮蓝色数字 / 行内下拉与输入 / 编辑行高亮 */
+  .tracktbl th.col-editable{background:#eff6ff !important;color:var(--tea-d) !important;border-bottom:2px solid var(--tea) !important}
+  .tracktbl th.col-editable .th-label{color:var(--tea-d);font-weight:600}
+  .pt-log-badge{display:inline-block;min-width:16px;padding:0 4px;margin-left:3px;border-radius:8px;
+    background:var(--tea);color:#fff;font-size:11px;line-height:16px;text-align:center;font-weight:600}
+  .pt-select{width:100%;max-width:132px;padding:4px 6px;border:1px solid var(--line);border-radius:6px;font-size:12px;background:#fff;color:#374151}
+  .pt-input{width:100%;max-width:132px;padding:4px 6px;border:1px solid var(--line);border-radius:6px;font-size:12px}
+  tr.pt-editing > td{background:#fffbeb !important}
   .dv-note-counter{font-size:11px;color:#9ca3af;text-align:right;margin-top:2px}
   .dv-note-counter.over{color:#dc2626;font-weight:600}
   /* v178: 综合评分/预判参考信息 只读预览区(灰色背景,系统快照) */
@@ -721,6 +731,19 @@
   .sd-veto-box{background:#fef2f2;border:1px solid #fecaca;border-left:4px solid #dc2626;padding:10px 14px;border-radius:6px;margin-bottom:14px}
   .sd-veto-box ul{margin:6px 0 0 18px}
   .sd-veto-box li{color:#dc2626;margin:2px 0;font-size:13px}
+  /* v188: D类 基本面/合规否决 三态展示(后端算好,前端仅展示) */
+  .sd-rc-box{background:#fffbeb;border:1px solid #fde68a;border-left:4px solid #d97706;padding:10px 14px;border-radius:6px;margin-bottom:14px}
+  .sd-rc-head b{color:#b45309;font-size:13px}
+  .sd-rc-head .muted{font-size:11px;margin-left:6px}
+  .sd-rc-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:8px}
+  .sd-rc-row{display:flex;align-items:flex-start;gap:8px;background:#fff;border:1px solid #f5e8c8;border-radius:6px;padding:7px 10px;font-size:12px}
+  .sd-rc-badge{flex-shrink:0;display:inline-block;min-width:54px;text-align:center;padding:2px 6px;border-radius:4px;font-size:11px;font-weight:700}
+  .sd-rc-veto{background:#dc2626;color:#fff}
+  .sd-rc-ok{background:#16a34a;color:#fff}
+  .sd-rc-na{background:#f59e0b;color:#fff}
+  .sd-rc-body{min-width:0;flex:1}
+  .sd-rc-label{font-weight:600;color:#334155}
+  .sd-rc-note{color:#64748b;font-size:11px;margin-top:1px;word-break:break-all}
   /* v162: 一票否决标记(评分弹窗标题 / 列表综合评分列共用) */
   .sd-veto-tag{display:inline-block;margin-left:4px;padding:1px 6px;border-radius:4px;background:#dc2626;color:#fff;font-size:11px;font-weight:600;vertical-align:middle;cursor:help}
   .sd-dim-row{display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding:10px 14px;background:#f8fafc;border-radius:6px;margin-bottom:14px}
@@ -863,7 +886,7 @@
     <header>
       <h1>🧋 TR-个人学习版</h1>
       <span class="sub">个人学习用 · 先控风险再谈收益</span>
-      <span class="version" id="appVersion">v20260910186</span>
+      <span class="version" id="appVersion">v20260911145</span>
       <button class="ghost auto-refresh-btn" :class="{active:autoRefresh}" @click="toggleAutoRefresh" :title="autoRefresh?'自动刷新开启中，每10秒更新当前页面数据':'点击开启每10秒自动刷新'">
         {{autoRefresh?'⏸':'▶'}} 自动 5s
       </button>
@@ -886,15 +909,15 @@
     </nav>
     <!-- 智能选股：二级 tab 页签 -->
     <div class="subnav" v-if="topMenu==='smart'">
-      <button :class="view==='pref'?'':'ghost'" @click="go('pref')">偏好分析</button>
-      <button :class="view==='screens'?'':'ghost'" @click="go('screens')">选股模型</button>
+      <button :class="view==='pref'?'active':'ghost'" @click="go('pref')">偏好分析</button>
+      <button :class="view==='screens'?'active':'ghost'" @click="go('screens')">选股模型</button>
     </div>
     <!-- 可投池追踪：二级 tab 页签（v186: 盘前做预判 → 盘中做监控 → 盘后做复盘） -->
     <div class="subnav" v-if="topMenu==='pool'">
-      <button :class="view==='pretrade'?'':'ghost'" @click="go('pretrade')">盘前预判</button>
-      <button :class="view==='pool'?'':'ghost'" @click="go('pool')">盘间监控</button>
-      <button :class="view==='review'?'':'ghost'" @click="go('review')">复盘管理</button>
-      <button :class="view==='t'?'':'ghost'" @click="go('t')">个股分析</button>
+      <button :class="view==='pretrade'?'active':'ghost'" @click="go('pretrade')">盘前预判</button>
+      <button :class="view==='pool'?'active':'ghost'" @click="go('pool')">盘间监控</button>
+      <button :class="view==='review'?'active':'ghost'" @click="go('review')">复盘管理</button>
+      <button :class="view==='t'?'active':'ghost'" @click="go('t')">个股分析</button>
     </div>
     <main>
       <!-- 看板总览 -->
@@ -1106,7 +1129,7 @@
             <table class="tracktbl">
               <thead>
                 <tr>
-                  <th style="width:30px"><input type="checkbox" :checked="screenSelected.length===screenResult.length" @change="selectAllScreen" /></th>
+                  <th style="width:30px"><input type="checkbox" :checked="screenPageAllSelected" @change="selectAllScreen" title="全选/取消全选本页" /></th>
                   <th>序号</th>
                   <th>证券代码</th>
                   <th>证券名称</th>
@@ -1117,9 +1140,9 @@
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="(c,i) in screenResult" :key="c.code">
+                <tr v-for="(c,i) in pagedScreenResult" :key="c.code">
                   <td><input type="checkbox" :checked="isScreenSelected(c.code)" @change="toggleScreenSelect(c.code)" :disabled="poolCodes.includes(c.code)" /></td>
-                  <td>{{i+1}}</td>
+                  <td>{{(screenPage-1)*screenPageSize + i + 1}}</td>
                   <td><b>{{c.code}}</b></td>
                   <td>{{c.name}} <span v-if="poolCodes.includes(c.code)" class="pill" style="background:#d8f0e4;color:var(--ok);margin-left:4px">已在池</span></td>
                   <td>{{c.metrics.price}}</td>
@@ -1140,6 +1163,15 @@
                 </tr>
               </tbody>
             </table>
+            <div class="row" style="justify-content:flex-end;gap:8px;margin-top:10px;align-items:center;flex-wrap:wrap">
+              <span class="muted">共 {{screenResult.length}} 条 · {{screenTotalPages}} 页</span>
+              <select :value="screenPageSize" @change="setScreenPageSize(Number($event.target.value))" style="width:auto;min-width:92px" title="每页显示行数">
+                <option v-for="n in pageSizeOptions" :key="n" :value="n">{{n}} 行/页</option>
+              </select>
+              <button class="ghost btn-sm" :disabled="screenPage<=1" @click="screenPage--">上一页</button>
+              <span class="muted">第 {{screenPage}} 页</span>
+              <button class="ghost btn-sm" :disabled="screenPage>=screenTotalPages" @click="screenPage++">下一页</button>
+            </div>
           </div>
           <p v-else-if="screenResult && screenResult.length===0" class="muted" style="margin-top:8px">无符合条件标的(可回②放宽参数再试)</p>
         </div>
@@ -1174,7 +1206,14 @@
               </span>
             </div>
             <div class="batchbar" style="margin:0;padding-bottom:0;border-bottom:0;display:flex;gap:6px;flex-wrap:wrap">
+              <button @click="openAddPoolModal">新增</button>
+              <button class="ghost" @click="openImportPool">导入新增</button>
+              <input type="file" ref="poolImportFile" style="display:none" accept=".xlsx,.xls,.csv" @change="onImportPoolFile" />
+              <button class="ghost" :disabled="!pretradeSelected.length" @click="batchDeletePool" style="color:var(--danger);border-color:var(--danger)">删除</button>
+              <button class="ghost" :disabled="!pretradeSelected.length" @click="batchMonitor" title="把勾选的证券加入监控，之后会出现在「盘间监控」和「复盘管理」">批量加入监控</button>
               <button class="ghost" @click="exportPretrade">导出</button>
+              <button class="ghost" :disabled="!pretradeSelected.length" @click="openBatchTagModal">打标签</button>
+              <button class="ghost" @click="openTagManager">标签配置</button>
               <button class="ghost" @click="openColumnSetting('pretrade','盘前预判列设置')">列设置</button>
             </div>
           </div>
@@ -1182,7 +1221,9 @@
             <p class="scroll-hint">左右滑动查看全部字段 ↔</p>
             <div class="tracktbl-wrap">
               <table class="tracktbl pool-tbl"><thead><tr>
-                <th v-for="col in visiblePretradeColumns" :key="col.key" :class="{frozen: col.frozen, sortable: col.sortable===true, sorted: col.sortable===true && pretradeSort.key===col.key}" :style="thStyle(pretradeColMetrics, col)" @click="col.sortable===true && sortPretrade(col)">
+                <th v-for="col in visiblePretradeColumns" :key="col.key" :class="{frozen: col.frozen, sortable: col.sortable===true, sorted: col.sortable===true && pretradeSort.key===col.key, 'col-editable': col.editable===true}" :style="thStyle(pretradeColMetrics, col)" @click="col.sortable===true && sortPretrade(col)">
+                  <template v-if="col.key==='select'"><input v-if="pretrade.length" type="checkbox" :checked="pretradeSelected.length===pretrade.length && pretrade.length>0" @click.stop @change="selectAllPretrade" title="全选/取消全选" /></template>
+                  <template v-else>
                   <span class="th-label" :title="col.label">
                     <template v-for="(ln, i) in col.label.split('\n')" :key="i">
                       <template v-if="i > 0"><br></template>{{ ln }}
@@ -1190,68 +1231,86 @@
                     <i v-if="col.help" class="info" :title="col.help">?</i>
                     <span v-if="col.sortable===true" class="sort-arrow">{{ pretradeSort.key===col.key ? (pretradeSort.dir==='asc' ? '▲' : '▼') : '⇅' }}</span>
                   </span>
+                  </template>
                 </th>
               </tr></thead>
               <tbody>
                 <tr v-if="!pretrade.length"><td :colspan="visiblePretradeColumns.length" class="muted" style="text-align:center;padding:18px 0">该交易日暂无可投池数据</td></tr>
-                <tr v-for="p in pretrade" :key="p.code" :class="{'pt-dirty': p._dirty}">
+                <tr v-for="(p, pidx) in pretrade" :key="p.code" :class="{'pt-dirty': p._dirty, 'pt-editing': p._editing}">
                   <td v-for="col in visiblePretradeColumns" :key="col.key" :class="{frozen: col.frozen}" :style="tdStyle(pretradeColMetrics, col)">
+                    <template v-if="col.key==='select'">
+                      <input type="checkbox" :checked="pretradeSelected.includes(p.code)"
+                        @click.stop @change="togglePretradeSelect(p.code, $event.target.checked)" />
+                    </template>
+                    <template v-else-if="col.key==='idx'">{{(pretradePage-1)*pretradePageSize + pidx + 1}}</template>
                     <template v-if="col.key==='code_name'">
                       <b>{{p.name}}</b>
                       <div class="clickable-link" style="font-size:11px" @click.stop="openAnalysis(p.code)">{{p.code}}</div>
                     </template>
                     <template v-else-if="col.key==='industry'">{{p.industry||'-'}}</template>
-                    <template v-else-if="col.key==='last_close'">
-                      <span v-if="p.last_close!=null" :title="'参考价(截至 '+p.last_date+' 最近一根日线收盘)'">{{p.last_close}}</span>
-                      <span v-else class="muted">-</span>
+                    <!-- 盘前静态行情（T-1）：全部来自已定格日线，9:30 后也不变；无数据显示 - -->
+                    <template v-else-if="['prev_open','prev_close','prev_high','prev_low','ma5','ma20','prev_volume','avg_vol5','avg_vol20'].includes(col.key)">
+                      <span v-if="p[col.key]!=null">{{p[col.key]}}</span><span v-else class="muted">-</span>
                     </template>
-                    <template v-else-if="col.key==='last_change_pct'">
-                      <span v-if="p.last_change_pct!=null" :class="ui.classOf(p.last_change_pct)">{{ui.fmtPct(p.last_change_pct)}}</span>
-                      <span v-else class="muted">-</span>
+                    <template v-else-if="col.key==='prev_amplitude'">
+                      <span v-if="p.prev_amplitude!=null">{{p.prev_amplitude}}%</span><span v-else class="muted">-</span>
                     </template>
-                    <!-- 行内录入区：改完点该行「保存」 -->
+                    <template v-else-if="col.key==='prev_turnover'">
+                      <span v-if="p.prev_turnover!=null">{{p.prev_turnover}}%</span><span v-else class="muted">-</span>
+                    </template>
+                    <template v-else-if="col.key==='main_signal'">
+                      <span v-if="p.main_signal">{{p.main_signal}}</span><span v-else class="muted">-</span>
+                    </template>
+                    <template v-else-if="col.key==='main_net_pct'">
+                      <span v-if="p.main_net_pct!=null" :class="ui.classOf(p.main_net_pct)">{{ui.fmtPct(p.main_net_pct)}}</span><span v-else class="muted">-</span>
+                    </template>
+                    <template v-else-if="col.key==='box_pos'">
+                      <span v-if="p.box_pos!=null">{{Math.round(p.box_pos*100)}}%</span><span v-else class="muted">-</span>
+                    </template>
+                    <template v-else-if="col.key==='score'">
+                      <span v-if="p.score!=null">{{p.score}}</span><span v-else class="muted">-</span>
+                    </template>
+                    <!-- 可编辑列：只有点「新增」进入编辑态才可改，其余时候展示最后一次保存结果 -->
                     <template v-else-if="col.key==='trend'">
-                      <div class="pt-trend-chips">
-                        <button type="button" v-for="t in dayViewTrends" :key="t"
-                          :class="['dv-chip','tag-'+t,{active: p._d.trend===t}]"
-                          @click.stop="p._d.trend=t; markPretradeDirty(p)">{{t}}</button>
-                      </div>
+                      <select v-if="p._editing" class="pt-select" v-model="p._d.trend" @change="markPretradeDirty(p)" @click.stop>
+                        <option value="">（留空）</option>
+                        <option v-for="t in dayViewTrends" :key="t" :value="t">{{t}}</option>
+                      </select>
+                      <span v-else :class="(p.trend && p.trend!=='-') ? 'tag-'+p.trend : 'muted'">{{(p.trend && p.trend!=='-') ? p.trend : '-'}}</span>
                     </template>
                     <template v-else-if="col.key==='target_buy'">
-                      <input type="number" step="0.01" min="0" class="pt-input" placeholder="买入价"
+                      <input v-if="p._editing" type="number" step="0.01" min="0" class="pt-input" placeholder="买入价"
                         v-model.number="p._d.target_buy" @input="markPretradeDirty(p)" @click.stop />
+                      <span v-else :class="p.target_buy!=null?'':'muted'">{{p.target_buy!=null?p.target_buy:'-'}}</span>
                     </template>
                     <template v-else-if="col.key==='target_sell'">
-                      <input type="number" step="0.01" min="0" class="pt-input" placeholder="卖出价"
+                      <input v-if="p._editing" type="number" step="0.01" min="0" class="pt-input" placeholder="卖出价"
                         v-model.number="p._d.target_sell" @input="markPretradeDirty(p)" @click.stop />
+                      <span v-else :class="p.target_sell!=null?'':'muted'">{{p.target_sell!=null?p.target_sell:'-'}}</span>
                     </template>
                     <template v-else-if="col.key==='target_note'">
-                      <input type="text" maxlength="20" class="pt-input" placeholder="例:突破前高,缺口支撑"
+                      <input v-if="p._editing" type="text" maxlength="20" class="pt-input" placeholder="例:突破前高,缺口支撑"
                         v-model="p._d.target_note" @input="markPretradeDirty(p)" @click.stop />
-                    </template>
-                    <template v-else-if="col.key==='composite_score'">
-                      <span v-if="p.composite_score!=null">{{(+p.composite_score).toFixed(2)}}</span>
-                      <span v-else class="muted" title="保存时会取当时的评分快照">-</span>
-                    </template>
-                    <template v-else-if="col.key==='reference_text'">
-                      <div class="pt-ref" :title="p.reference_text||''">{{p.reference_text||'-'}}</div>
-                    </template>
-                    <template v-else-if="col.key==='log_count'">
-                      <span v-if="p.log_count>0" class="day-view-count" :title="'该交易日已录入 '+p.log_count+' 次修改'">{{p.log_count}}</span>
-                      <span v-else class="muted">-</span>
+                      <span v-else :class="p.target_note?'':'muted'" :title="p.target_note||''">{{p.target_note||'-'}}</span>
                     </template>
                     <template v-else-if="col.key==='operated_at'">
-                      <span v-if="p.operated_at" class="muted" style="font-size:11px">{{fmtTimeShort(p.operated_at)}} · {{p.operator||'-'}}</span>
+                      <span v-if="p.operated_at" class="muted" style="font-size:11px">{{fmtDateTimeFull(p.operated_at)}}</span>
                       <span v-else class="muted">-</span>
                     </template>
                     <template v-else-if="col.key==='ops'">
                       <div class="ops-cell" style="display:flex;gap:4px;flex-wrap:wrap">
-                        <button class="ghost btn-sm" :disabled="!p._dirty || p._saving" @click.stop="savePretradeRow(p)"
-                          :title="p._dirty ? '保存该行日初判断(追加一条修改记录)' : '该行无修改'">
-                          {{ p._saving ? '保存中...' : '保存' }}
-                        </button>
-                        <button class="ghost btn-sm" :disabled="!p._dirty || p._saving" @click.stop="resetPretradeRow(p)">撤销</button>
-                        <button class="ghost btn-sm" @click.stop="openDayViewModal({code:p.code,name:p.name})" title="用弹窗查看该股日初判断历史">历史</button>
+                        <template v-if="p._editing">
+                          <button class="btn-sm" :disabled="p._saving" @click.stop="savePretradeRow(p)">{{ p._saving ? '保存中...' : '保存' }}</button>
+                          <button class="ghost btn-sm" :disabled="p._saving" @click.stop="cancelPretradeEdit(p)">取消</button>
+                        </template>
+                        <template v-else>
+                          <button class="ghost btn-sm" @click.stop="startPretradeEdit(p)" title="维护该行的涨跌趋势 / 目标买入 / 目标卖出 / 目标依据">新增</button>
+                          <button v-if="p.log_count>0" class="ghost btn-sm" @click.stop="openDayViewModal({code:p.code,name:p.name})"
+                            :title="'查看当天保存的 '+p.log_count+' 条预判历史'">历史<span class="pt-log-badge">{{p.log_count}}</span></button>
+                          <button v-if="!p.monitored" class="ghost btn-sm" @click.stop="monitorOne(p)"
+                            title="加入监控后，该股会出现在「盘间监控」和「复盘管理」">加入监控</button>
+                          <button v-else class="ghost btn-sm" disabled title="已在监控中">已监控</button>
+                        </template>
                       </div>
                     </template>
                   </td>
@@ -1259,9 +1318,12 @@
               </tbody></table>
             </div>
           </div>
-          <p class="muted" style="margin-top:6px">共 {{pretradeTotal}} 只 · 参考价取「截至该交易日的最近一根日线收盘」；改完务必点该行「保存」。</p>
-          <div v-if="pretradeTotal>pretradePageSize" class="row" style="justify-content:flex-end;gap:8px;margin-top:10px">
-            <span class="muted">共 {{pretradeTotal}} 条 · {{Math.ceil(pretradeTotal/pretradePageSize)}} 页</span>
+          <p class="muted" style="margin-top:6px">共 {{pretradeTotal}} 只 · 行情为上一交易日(T-1)定格数据，9:30 后不再变动；点「新增」维护该行预判，改完点「保存」。</p>
+          <div class="row" style="justify-content:flex-end;gap:8px;margin-top:10px;align-items:center;flex-wrap:wrap">
+            <span class="muted">共 {{pretradeTotal}} 条 · {{Math.max(1,Math.ceil(pretradeTotal/pretradePageSize))}} 页</span>
+            <select :value="pretradePageSize" @change="setPretradePageSize(Number($event.target.value))" style="width:auto;min-width:92px" title="每页显示行数">
+              <option v-for="n in pageSizeOptions" :key="n" :value="n">{{n}} 行/页</option>
+            </select>
             <button class="ghost btn-sm" :disabled="pretradePage<=1" @click="pretradePage--; loadPretrade()">上一页</button>
             <span class="muted">第 {{pretradePage}} 页</span>
             <button class="ghost btn-sm" :disabled="pretradePage*pretradePageSize>=pretradeTotal" @click="pretradePage++; loadPretrade()">下一页</button>
@@ -1641,8 +1703,11 @@
           </div>
 
           <p v-if="pool.length" class="muted" style="margin-top:6px">数据源: {{pool[0]&&pool[0].track&&pool[0].track.src||'加载中'}} · 60s 缓存 · 单击进个股分析</p>
-          <div v-if="poolTotal>poolPageSize" class="row" style="justify-content:flex-end;gap:8px;margin-top:10px">
-            <span class="muted">共 {{poolTotal}} 条 · {{Math.ceil(poolTotal/poolPageSize)}} 页</span>
+          <div v-if="poolTotal>0" class="row" style="justify-content:flex-end;gap:8px;margin-top:10px;align-items:center;flex-wrap:wrap">
+            <span class="muted">共 {{poolTotal}} 条 · {{Math.max(1,Math.ceil(poolTotal/poolPageSize))}} 页</span>
+            <select :value="poolPageSize" @change="setPoolPageSize(Number($event.target.value))" style="width:auto;min-width:92px" title="每页显示行数">
+              <option v-for="n in pageSizeOptions" :key="n" :value="n">{{n}} 行/页</option>
+            </select>
             <button class="ghost btn-sm" :disabled="poolPage<=1" @click="poolPage--; loadPool()">上一页</button>
             <span class="muted">第 {{poolPage}} 页</span>
             <button class="ghost btn-sm" :disabled="poolPage*poolPageSize>=poolTotal" @click="poolPage++; loadPool()">下一页</button>
@@ -1681,7 +1746,13 @@
               </span>
             </div>
             <div class="batchbar" style="margin:0;padding-bottom:0;border-bottom:0;display:flex;gap:6px;flex-wrap:wrap">
+              <button @click="openAddPoolModal">新增</button>
+              <button class="ghost" @click="openImportPool">导入新增</button>
+              <input type="file" ref="poolImportFile" style="display:none" accept=".xlsx,.xls,.csv" @change="onImportPoolFile" />
+              <button class="ghost" :disabled="!(reviewSelected||[]).length" @click="batchDeletePool" style="color:var(--danger);border-color:var(--danger)">删除</button>
               <button class="ghost" @click="exportReview">导出</button>
+              <button class="ghost" :disabled="!(reviewSelected||[]).length" @click="openBatchTagModal">打标签</button>
+              <button class="ghost" @click="openTagManager">标签配置</button>
               <button class="ghost" @click="openColumnSetting('review','复盘管理列设置')">列设置</button>
             </div>
           </div>
@@ -1690,6 +1761,8 @@
             <div class="tracktbl-wrap">
               <table class="tracktbl pool-tbl"><thead><tr>
                 <th v-for="col in visibleReviewColumns" :key="col.key" :class="{frozen: col.frozen, sortable: col.sortable===true, sorted: col.sortable===true && reviewSort.key===col.key}" :style="thStyle(reviewColMetrics, col)" @click="col.sortable===true && sortReview(col)">
+                  <template v-if="col.key==='select'"><input v-if="review.length" type="checkbox" :checked="reviewSelected.length===review.length && review.length>0" @click.stop @change="selectAllReview" title="全选/取消全选" /></template>
+                  <template v-else>
                   <span class="th-label" :title="col.label">
                     <template v-for="(ln, i) in col.label.split('\n')" :key="i">
                       <template v-if="i > 0"><br></template>{{ ln }}
@@ -1697,13 +1770,18 @@
                     <i v-if="col.help" class="info" :title="col.help">?</i>
                     <span v-if="col.sortable===true" class="sort-arrow">{{ reviewSort.key===col.key ? (reviewSort.dir==='asc' ? '▲' : '▼') : '⇅' }}</span>
                   </span>
+                  </template>
                 </th>
               </tr></thead>
               <tbody>
                 <tr v-if="!review.length"><td :colspan="visibleReviewColumns.length" class="muted" style="text-align:center;padding:18px 0">该交易日尚无复盘数据</td></tr>
                 <tr v-for="p in review" :key="p.code" :class="{'pt-dirty': p._dirty}">
                   <td v-for="col in visibleReviewColumns" :key="col.key" :class="{frozen: col.frozen}" :style="tdStyle(reviewColMetrics, col)">
-                    <template v-if="col.key==='code_name'">
+                    <template v-if="col.key==='select'">
+                      <input type="checkbox" :checked="reviewSelected.includes(p.code)"
+                        @click.stop @change="toggleReviewSelect(p.code, $event.target.checked)" />
+                    </template>
+                    <template v-else-if="col.key==='code_name'">
                       <b>{{p.name}}</b>
                       <div class="clickable-link" style="font-size:11px" @click.stop="openAnalysis(p.code)">{{p.code}}</div>
                     </template>
@@ -1761,8 +1839,11 @@
             </div>
           </div>
           <p class="muted" style="margin-top:6px">共 {{reviewTotal}} 只 · 偏离度 = 收盘价相对你预判的「买入~卖出」区间的偏离，鼠标悬停可看口径说明。</p>
-          <div v-if="reviewTotal>reviewPageSize" class="row" style="justify-content:flex-end;gap:8px;margin-top:10px">
-            <span class="muted">共 {{reviewTotal}} 条 · {{Math.ceil(reviewTotal/reviewPageSize)}} 页</span>
+          <div v-if="reviewTotal>0" class="row" style="justify-content:flex-end;gap:8px;margin-top:10px;align-items:center;flex-wrap:wrap">
+            <span class="muted">共 {{reviewTotal}} 条 · {{Math.max(1,Math.ceil(reviewTotal/reviewPageSize))}} 页</span>
+            <select :value="reviewPageSize" @change="setReviewPageSize(Number($event.target.value))" style="width:auto;min-width:92px" title="每页显示行数">
+              <option v-for="n in pageSizeOptions" :key="n" :value="n">{{n}} 行/页</option>
+            </select>
             <button class="ghost btn-sm" :disabled="reviewPage<=1" @click="reviewPage--; loadReview()">上一页</button>
             <span class="muted">第 {{reviewPage}} 页</span>
             <button class="ghost btn-sm" :disabled="reviewPage*reviewPageSize>=reviewTotal" @click="reviewPage++; loadReview()">下一页</button>
@@ -2631,6 +2712,31 @@
               <div class="muted" style="margin-top:4px;font-size:11px">否决项命中后总分强制为 0,下方分项得分仅作诊断参考,不再参与总分计算</div>
             </div>
 
+            <!-- v188: D类 基本面/合规否决(6条,独立于一票否决技术面项;命中任意一条总分强制0) -->
+            <div v-if="scoreDetailModal._result && scoreDetailModal._result.riskChecks && scoreDetailModal._result.riskChecks.length" class="sd-rc-box">
+              <div class="sd-rc-head">
+                <b>🛡 D类 基本面/合规否决</b>
+                <span class="muted">独立于一票否决技术面项 · 命中任意一条 → 总分强制 0(与权重/分项无关)</span>
+              </div>
+              <div class="sd-rc-list">
+                <div class="sd-rc-row" v-for="rc in scoreDetailModal._result.riskChecks" :key="rc.id">
+                  <span class="sd-rc-badge"
+                        :class="{'sd-rc-veto': rc.state==='veto', 'sd-rc-ok': rc.state==='ok', 'sd-rc-na': rc.state==='na'}">
+                    <template v-if="rc.state==='veto'">✗ 否决命中</template>
+                    <template v-else-if="rc.state==='ok'">✓ 通过</template>
+                    <template v-else>⚠ 待复核</template>
+                  </span>
+                  <div class="sd-rc-body">
+                    <div class="sd-rc-label">{{ rc.label }}</div>
+                    <div class="sd-rc-note">{{ rc.note || (rc.state==='na' ? '数据未接入,需人工复核' : (rc.state==='veto' ? '命中风险条件' : '未命中风险条件')) }}</div>
+                  </div>
+                </div>
+              </div>
+              <div class="muted" style="margin-top:6px;font-size:11px">
+                状态说明:✓ 通过(数据可用且未命中) · ✗ 否决命中(数据可用且命中风险) · ⚠ 待复核(数据源未接入,绝不因取数失败误杀,需人工核实)。前 3 条技术面否决见上方「一票否决」红框。
+              </div>
+            </div>
+
             <!-- 三维度权重编辑 -->
             <div class="sd-dim-row">
               <span class="muted" style="font-weight:600">维度权重(可调,默认 A40+B35+C25=100):</span>
@@ -3467,6 +3573,7 @@ const app = createApp({
     t:{code:'',data:null,pos:{qty:'',cost:''},cfg:{custom_support:'',custom_pressure:'',risk_note:''},saveMsg:''},
     ext:{data:null},  // 个股分析日线走势+引擎信号数据
     screens:[], schemeTypes:[], screenResult:[], screenSelected:[], showSchemeTypes:false, ns:{name:'',scheme:'steady'},
+    screenPage:1, screenPageSize:15,   // v189: 选股结果也统一 15 行/页 + 15/30/50 切换
     // 选股模型「引导式建模」状态
     build:{scheme:'steady', name:'稳健型', risk:'低', riskJson:{max_position_pct:15,stop_loss_pct:3,max_total_pct:40},
       params:{price_max:30, amplitude_avg_min:2, amplitude_avg_max:4, industries:[],
@@ -3486,9 +3593,11 @@ const app = createApp({
     pretrade:[], pretradeFilter:{q:'',tag:'',date:''}, pretradePage:1, pretradePageSize:15,
     pretradeTotal:0, pretradeLoading:false, pretradeErr:null, pretradeSort:{key:'',dir:'desc'},
     pretradeDates:[], _pretradeSeq:0,
+    // v189: 盘前预判行勾选(用于批量加入监控/删除/打标签)
+    pretradeSelected:[], pageSizeOptions:[15,30,50],
     review:[], reviewFilter:{q:'',tag:'',date:''}, reviewPage:1, reviewPageSize:15,
     reviewTotal:0, reviewLoading:false, reviewErr:null, reviewSort:{key:'',dir:'desc'},
-    reviewDates:[], _reviewSeq:0,
+    reviewDates:[], _reviewSeq:0, reviewSelected:[],   // v189: 复盘管理行勾选
     // v186: 日初判断趋势枚举（与日初弹窗、后端校验保持一致：看涨/看跌/风险/-）
     dayViewTrends:['看涨','看跌','风险','-'],
     // v186: 系统级业务参数(游客功能开关)：默认否；登录页据此决定是否显示游客入口
@@ -3927,6 +4036,7 @@ const app = createApp({
           officialScore: track && track.total_score != null ? track.total_score : null,
           officialGrade: track && track.ai_grade || null,
           officialVetos: track && track.veto_reasons || [],
+          riskChecks: (track && track.veto_checks) || [],
           officialPenalty: track && track.penalty || 0,
           userScore: +total.toFixed(0),
           vetoed: vetoed,
@@ -4025,6 +4135,22 @@ const app = createApp({
 
     // 选股模型运行结果中,尚未加入可投池的 code(用于"一键全部加入"按钮)
     pendingCodes(){ return (this.screenResult||[]).filter(c=>!this.poolCodes.includes(c.code)).map(c=>c.code); },
+    // v189: 选股结果分页（客户端分页，与池子表格统一 15 行/页）
+    screenTotalPages(){ return Math.max(1, Math.ceil((this.screenResult||[]).length / (this.screenPageSize||15))); },
+    pagedScreenResult(){
+      const arr = this.screenResult||[];
+      const ps = this.screenPageSize||15;
+      // 页码越界(切行数/重跑后)自动收敛到最后一页
+      const maxPage = Math.max(1, Math.ceil(arr.length/ps));
+      if(this.screenPage > maxPage) this.screenPage = maxPage;
+      const start = (this.screenPage-1)*ps;
+      return arr.slice(start, start+ps);
+    },
+    screenPageAllSelected(){
+      const pg = this.pagedScreenResult||[];
+      if(!pg.length) return false;
+      return pg.every(c => this.poolCodes.includes(c.code) || this.screenSelected.includes(c.code));
+    },
     // 投资偏好画像与当前选股风格是否一致
     prefMatch(){
       if(!this.prefDone || !this.pref || !this.pref.archetype) return {matched:true, noData:true};
@@ -4287,19 +4413,33 @@ const app = createApp({
       // v186: 盘前预判 —— 独立列配置(不共用 pool 的列设置，互不影响)
       if(key==='pretrade'){
         return [
+          {key:'select',           label:'',            width:48,  visible:true, frozen:true,  sortable:false, hideable:false},
+          {key:'idx',              label:'序号',         width:60,  visible:true, frozen:true,  sortable:false},
           {key:'code_name',        label:'代码/名称',     width:144, visible:true, frozen:true,  sortable:true},
           {key:'industry',         label:'行业',         width:120, visible:true, frozen:false, sortable:true},
-          {key:'last_close',       label:'参考价\n(最近收盘)', width:108, visible:true, frozen:false, sortable:true, help:'截至所选交易日的最近一根日线收盘价，用于填目标买卖价时参考'},
-          {key:'last_change_pct',  label:'参考\n涨跌幅',   width:96,  visible:true, frozen:false, sortable:true, help:'与「参考价」同一根日线的涨跌幅(%)'},
-          {key:'trend',            label:'涨跌趋势',       width:210, visible:true, frozen:false, sortable:true, help:'你今天的方向判断。看涨=准备买入，看跌=准备卖出，风险=有事件风险，-=仅设目标位不表态。系统不会据此自动触发动作'},
-          {key:'target_buy',       label:'目标买入\n(元,可选)', width:120, visible:true, frozen:false, sortable:true, help:'你计划买入的价位。留空表示今天不打算买'},
-          {key:'target_sell',      label:'目标卖出\n(元,可选)', width:120, visible:true, frozen:false, sortable:true, help:'你计划卖出的价位。留空表示今天不打算卖'},
-          {key:'target_note',      label:'目标依据',       width:200, visible:true, frozen:false, sortable:false, help:'为什么这么判断(≤20字)，例如「突破前高，缺口支撑」'},
-          {key:'composite_score',  label:'评分\n快照',     width:90,  visible:true, frozen:false, sortable:true, help:'保存这条预判时系统给的综合评分快照，便于事后回看当时的分'},
-          {key:'reference_text',   label:'参考信息',       width:220, visible:true, frozen:false, sortable:false, help:'保存时系统自动带上的行情/技术面参考摘要'},
-          {key:'log_count',        label:'当日\n次数',     width:80,  visible:true, frozen:false, sortable:true, help:'该交易日在盘前预判页已录入的次数(每保存一次 +1)'},
-          {key:'operated_at',      label:'最近操作',       width:150, visible:true, frozen:false, sortable:true},
-          {key:'ops',              label:'操作',          width:170, visible:true, frozen:false, sortable:false, hideable:false},
+          // —— 盘前静态行情：全部取上一交易日(T-1)已定格日线，9:30 后乃至全天都不再变动 ——
+          {key:'prev_open',        label:'昨日\n开盘价',   width:92,  visible:true, frozen:false, sortable:true},
+          {key:'prev_close',       label:'昨日\n收盘价',   width:92,  visible:true, frozen:false, sortable:true},
+          {key:'prev_high',        label:'昨日\n最高价',   width:92,  visible:true, frozen:false, sortable:true},
+          {key:'prev_low',         label:'昨日\n最低价',   width:92,  visible:true, frozen:false, sortable:true},
+          {key:'prev_amplitude',   label:'昨日\n振幅',     width:88,  visible:true, frozen:false, sortable:true, help:'(昨日最高 − 昨日最低) ÷ 昨收 × 100%'},
+          {key:'prev_turnover',    label:'昨日\n换手%',    width:88,  visible:true, frozen:false, sortable:true},
+          {key:'ma5',              label:'MA5',         width:88,  visible:true, frozen:false, sortable:true, help:'截至昨日的 5 日均线'},
+          {key:'ma20',             label:'MA20',        width:92,  visible:true, frozen:false, sortable:true, help:'截至昨日的 20 日均线'},
+          {key:'prev_volume',      label:'昨日成交量\n(万手)',  width:110, visible:true, frozen:false, sortable:true},
+          {key:'avg_vol5',         label:'5日均量\n(万手)',    width:104, visible:true, frozen:false, sortable:true},
+          {key:'avg_vol20',        label:'20日均量\n(万手)',   width:104, visible:true, frozen:false, sortable:true},
+          {key:'main_signal',      label:'主力信号',      width:104, visible:true, frozen:false, sortable:true, help:'上一交易日主力资金方向。数据自启用之日起逐日积累，之前显示 -'},
+          {key:'main_net_pct',     label:'主力净流入\n(%)',  width:104, visible:true, frozen:false, sortable:true, help:'上一交易日主力净流入占成交额比例'},
+          {key:'box_pos',          label:'箱体位置',      width:104, visible:true, frozen:false, sortable:true, help:'昨收在近 20 日高低区间中的位置：<25% 接近下沿，>75% 接近上沿'},
+          {key:'score',            label:'综合评分',      width:92,  visible:true, frozen:false, sortable:true, help:'用截至昨日的静态数据算出的综合评分（非实时）'},
+          // —— 可编辑字段（表头蓝色）：默认取当天该股票最后一次保存的预判 ——
+          {key:'trend',            label:'涨跌趋势',      width:150, visible:true, frozen:false, sortable:true, editable:true, help:'下拉选择：看涨 / 看跌 / 风险，默认留空'},
+          {key:'target_buy',       label:'目标买入',      width:104, visible:true, frozen:false, sortable:true, editable:true},
+          {key:'target_sell',      label:'目标卖出',      width:104, visible:true, frozen:false, sortable:true, editable:true},
+          {key:'target_note',      label:'目标依据',      width:190, visible:true, frozen:false, sortable:false, editable:true},
+          {key:'operated_at',      label:'最后更改时间',   width:150, visible:true, frozen:false, sortable:true, editable:true, help:'该预判最后一次保存的时间'},
+          {key:'ops',              label:'操作',         width:250, visible:true, frozen:false, sortable:false, hideable:false},
         ];
       }
       // v186: 复盘管理 —— 独立列配置(不共用 pool 的列设置，互不影响)
@@ -5027,6 +5167,16 @@ const app = createApp({
         const m = String(d.getMinutes()).padStart(2,'0');
         return `${h}:${m}`;
       }catch(e){ return iso; }
+    },
+    // v189: 完整「年-月-日 时:分:秒」，用于盘前预判「最后更改时间」
+    fmtDateTimeFull(iso){
+      if(!iso) return '-';
+      try{
+        const d = new Date(iso);
+        if(isNaN(d.getTime())) return String(iso);
+        const p = n => String(n).padStart(2,'0');
+        return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+      }catch(e){ return String(iso); }
     },
     fmtDateShort(date){
       if(!date) return '-';
@@ -6115,6 +6265,7 @@ const app = createApp({
       try{
         const r=await API('/screens/run-config',{method:'POST',body:JSON.stringify(this.build.params)});
         // 兼容:可能返数组(老)或 {items,meta}(新)
+        this.screenPage=1;   // v189: 新结果从第 1 页开始
         if(Array.isArray(r)) this.screenResult=r;
         else { this.screenResult=r.items||[]; this.cachedCount=r.meta?.evaluated||0; this.stocksCount=r.meta?.total_stocks||this.stocksCount; }
       }catch(e){ this.showAlert('运行失败: '+(e.message||'参数可能有误')); }
@@ -6175,7 +6326,7 @@ const app = createApp({
         }catch(e){}
       }, 2000);
     },
-    async runScreen(id){ const r=await API('/screens/'+id+'/run',{method:'POST'}); this.screenResult=r; },
+    async runScreen(id){ const r=await API('/screens/'+id+'/run',{method:'POST'}); this.screenPage=1; this.screenResult=r; },
     async createScreen(){ if(!this.ns.name)return; const st=this.schemeTypes.find(s=>s.key===this.ns.scheme); await API('/screens',{method:'POST',body:JSON.stringify({name:this.ns.name,description:'',config:st?st.screener_json:{},scheme_type:this.ns.scheme})}); this.ns.name=''; this.loadScreens(); },
     async addFromScreen(code){ await API('/pool',{method:'POST',body:JSON.stringify({code})}); this.loadPool(); },
     async addAllToPool(){ const codes=this.pendingCodes.slice(); if(!codes.length)return; for(const code of codes){ await API('/pool',{method:'POST',body:JSON.stringify({code})}); } this.loadPool(); },
@@ -6186,9 +6337,13 @@ const app = createApp({
       if(i>=0) this.screenSelected.splice(i,1); else this.screenSelected.push(code);
     },
     selectAllScreen(){
-      const all=(this.screenResult||[]).map(c=>c.code);
-      if(this.screenSelected.length===all.length) this.screenSelected=[]; else this.screenSelected=all.slice();
+      // v189: 全选只作用于「当前页」未入池的标的，符合分页后的直觉
+      const page = (this.pagedScreenResult||[]).map(c=>c.code).filter(c=>!this.poolCodes.includes(c));
+      const allOn = page.length>0 && page.every(c=>this.screenSelected.includes(c));
+      if(allOn) this.screenSelected = this.screenSelected.filter(c=>!page.includes(c));
+      else this.screenSelected = Array.from(new Set(this.screenSelected.concat(page)));
     },
+    setScreenPageSize(n){ this.screenPageSize = n || 15; this.screenPage = 1; },
     async addSelectedToPool(){
       const codes=this.screenSelected.slice();
       if(!codes.length){ this.showAlert('请先勾选要加入的标的'); return; }
@@ -6216,6 +6371,9 @@ const app = createApp({
         const r = await API('/pool/pretrade?' + p.toString());
         if(seq !== this._pretradeSeq) return;   // 竞态:丢弃过期响应
         this.pretrade = (r.items||[]).map(x=>this._normPretradeRow(x));
+        // v189: 只保留当前页仍存在的勾选,避免翻页/筛选后误操作到看不见的行
+        const cur = new Set(this.pretrade.map(x=>x.code));
+        this.pretradeSelected = (this.pretradeSelected||[]).filter(c=>cur.has(c));
         this.pretradeTotal = r.total || 0;
         this.pretradeDates = r.available_dates || [];
         if(r.trade_date) this.pretradeFilter.date = r.trade_date;
@@ -6232,16 +6390,79 @@ const app = createApp({
       return {
         ...x,
         _d: {
-          trend: (x.trend && x.trend!=='-') ? x.trend : null,
+          trend: (x.trend && x.trend!=='-') ? x.trend : '',
           target_buy: x.target_buy!=null ? x.target_buy : null,
           target_sell: x.target_sell!=null ? x.target_sell : null,
           target_note: x.target_note || '',
         },
-        _dirty:false, _saving:false,
+        _dirty:false, _saving:false, _editing:false,
       };
     },
     markPretradeDirty(p){ p._dirty = true; },
     resetPretradeRow(p){ const i=this.pretrade.indexOf(p); if(i<0) return; this.pretrade.splice(i,1,this._normPretradeRow({...p})); },
+    // ============ v189: 操作列状态机 新增 → 保存 → 新增+历史 ============
+    // 默认只显示「新增」；点新增进入编辑态(可编辑列变输入控件,按钮变「保存/取消」)；
+    // 保存成功后退出编辑态,显示「新增 + 历史(带当天累计保存次数)」。
+    startPretradeEdit(p){
+      if(p._editing) return;
+      p._editing = true; p._dirty = false;
+      // 每次进入编辑都从「最后一次保存结果」起填,符合"仅显示最后一次更新结果"
+      p._d = {
+        trend: (p.trend && p.trend!=='-') ? p.trend : '',
+        target_buy: p.target_buy!=null ? p.target_buy : null,
+        target_sell: p.target_sell!=null ? p.target_sell : null,
+        target_note: p.target_note || '',
+      };
+    },
+    cancelPretradeEdit(p){
+      p._editing = false; p._dirty = false;
+      p._d = {
+        trend: (p.trend && p.trend!=='-') ? p.trend : '',
+        target_buy: p.target_buy!=null ? p.target_buy : null,
+        target_sell: p.target_sell!=null ? p.target_sell : null,
+        target_note: p.target_note || '',
+      };
+    },
+    // 勾选（批量加入监控 / 删除 / 打标签）
+    togglePretradeSelect(code, on){
+      const i = this.pretradeSelected.indexOf(code);
+      if(on && i < 0) this.pretradeSelected.push(code);
+      else if(!on && i >= 0) this.pretradeSelected.splice(i, 1);
+    },
+    selectAllPretrade(){
+      this.pretradeSelected = (this.pretradeSelected.length === this.pretrade.length)
+        ? [] : this.pretrade.map(p => p.code);
+    },
+    // 单只加入监控
+    async monitorOne(p){
+      if(!p || p.monitored) return;
+      try{
+        await API('/pool/'+p.code+'/monitor', {method:'POST'});
+        p.monitored = true;
+        this.showToast(p.code+' 已加入监控，可在「盘间监控」「复盘管理」查看');
+      }catch(e){
+        this.showToast('加入监控失败：'+((e&&e.message)||'网络错误'));
+      }
+    },
+    // 批量加入监控
+    async batchMonitor(){
+      const codes = (this.pretradeSelected||[]).slice();
+      if(!codes.length){ this.showToast('请先勾选要加入监控的证券'); return; }
+      try{
+        const r = await API('/pool/batch-monitor?codes='+encodeURIComponent(codes.join(',')), {method:'POST'});
+        const n = (r && r.updated!=null) ? r.updated : codes.length;
+        this.showToast('已加入监控 '+n+' 只');
+        this.pretradeSelected = [];
+        this.loadPretrade();
+      }catch(e){
+        this.showToast('批量加入监控失败：'+((e&&e.message)||'网络错误'));
+      }
+    },
+    setPretradePageSize(n){
+      this.pretradePageSize = n || 15;
+      this.pretradePage = 1;
+      this.loadPretrade();
+    },
     async savePretradeRow(p){
       if(!p || p._saving) return;
       p._saving = true;
@@ -6259,6 +6480,7 @@ const app = createApp({
         };
         await API('/pool/'+p.code+'/day-view-log', {method:'POST', body: JSON.stringify(body)});
         p._dirty = false;
+        p._editing = false;      // v189: 保存成功后退出编辑态 → 操作列回到「新增 + 历史」
         this.showToast('已保存 '+p.code+' 的盘前预判');
         this.loadPretrade();     // 回读最新(次数/操作时间/评分快照)
       }catch(e){
@@ -6339,6 +6561,16 @@ const app = createApp({
     },
     searchReview(){ this.reviewPage=1; this.loadReview(); },
     resetReviewFilter(){ this.reviewFilter = {q:'', tag:'', date:this.reviewFilter.date}; this.reviewPage=1; this.loadReview(); },
+    setReviewPageSize(n){ this.reviewPageSize = n || 15; this.reviewPage = 1; this.loadReview(); },
+    toggleReviewSelect(code, on){
+      const i = this.reviewSelected.indexOf(code);
+      if(on && i < 0) this.reviewSelected.push(code);
+      else if(!on && i >= 0) this.reviewSelected.splice(i, 1);
+    },
+    selectAllReview(){
+      this.reviewSelected = (this.reviewSelected.length === this.review.length)
+        ? [] : this.review.map(p => p.code);
+    },
     onReviewDateChange(){ this.reviewPage=1; this.loadReview(); },
     sortReview(col){
       if(!col || col.sortable!==true) return;
@@ -6453,6 +6685,7 @@ const app = createApp({
       this._clrErr('poolErr');
     },
     searchPool(){ this.poolPage=1; this.loadPool(); },
+    setPoolPageSize(n){ this.poolPageSize = n || 15; this.poolPage = 1; this.loadPool(); },
     async loadPoolTags(){ try{ this.poolTags=await API('/pool/tags'); this._clrErr('tagsErr'); }catch(e){ this._setErr('tagsErr','标签加载失败：'+(e.message||'网络错误')+'，点击重试', ()=>this.loadPoolTags()); } },
     openTagManager(){ this.tagModal={show:true, id:null, name:'', color:'#3b82f6', saving:false}; },
     closeTagManager(){ this.tagModal={show:false, id:null, name:'', color:'#3b82f6', saving:false}; },
@@ -6502,9 +6735,10 @@ const app = createApp({
       this.addPoolModal.saving=true;
       let ok=0, skip=0, fail=0;
       const tagIds = this.addPoolModal.tag_ids||[];
+      const src = this._batchScope();   // v189: 按当前页面决定来源
       for(const c of codes){
         try{
-          const r = await API('/pool',{method:'POST',body:JSON.stringify({code:c, note:this.addPoolModal.note, tag_ids:tagIds})});
+          const r = await API('/pool?source='+src,{method:'POST',body:JSON.stringify({code:c, note:this.addPoolModal.note, tag_ids:tagIds})});
           if(r && (r.id || r.code)) ok++;
           else if(r && r.detail && r.detail.includes('已在')) skip++;
           else skip++;
@@ -6512,7 +6746,7 @@ const app = createApp({
       }
       this.poolMsg = `批量添加完成：成功 ${ok} 只，跳过/已存在 ${skip} 只，失败 ${fail} 只`;
       setTimeout(()=>{ this.poolMsg=''; }, 4000);
-      this.loadPool();
+      this._reloadActiveScope();
       this.closeAddPoolModal();
       this.addPoolModal.saving=false;
     },
@@ -6569,9 +6803,13 @@ const app = createApp({
         else { this.showAlert('未找到证券：'+rawCode); return; }
       }
       const ids = Array.isArray(tagIds) ? tagIds.filter(x=>x).map(x=>parseInt(x)) : [];
-      const r = await API('/pool',{method:'POST',body:JSON.stringify({code, note, tag_ids: ids})});
+      // v189: 带上来源，让后端决定「是否默认已监控」
+      const src = this._batchScope();
+      const r = await API('/pool?source='+src,{method:'POST',body:JSON.stringify({code, note, tag_ids: ids})});
       if(r && r.detail){ this.showAlert(r.detail); return; }
-      this.poolPage=1; this.loadPool();
+      if(src==='pretrade'){ this.pretradePage=1; this.loadPretrade(); }
+      else if(src==='review'){ this.reviewPage=1; this.loadReview(); }
+      else { this.poolPage=1; this.loadPool(); }
     },
     removePool(code, name){
       // 二次确认防误点(尤其 archive+持仓的会真删,不可恢复)
@@ -6598,10 +6836,24 @@ const app = createApp({
     selectAllPool(e){
       this.poolSelected = e.target.checked ? this.pool.map(p=>p.code) : [];
     },
+    // ============ v189: 批量操作作用域 ============
+    // 盘前预判 / 盘间监控 / 复盘管理共用「删除 / 打标签 / 标签配置」按钮，
+    // 但各自维护独立的勾选列表与刷新方法，这里统一按当前页面取用。
+    _batchScope(){ return (this.view==='pretrade') ? 'pretrade' : (this.view==='review' ? 'review' : 'pool'); },
+    _activeRows(){ const s=this._batchScope(); return s==='pretrade'?this.pretrade:(s==='review'?this.review:this.pool); },
+    _activeSel(){ const s=this._batchScope(); return s==='pretrade'?this.pretradeSelected:(s==='review'?(this.reviewSelected||[]):this.poolSelected); },
+    _clearActiveSel(){
+      const s=this._batchScope();
+      if(s==='pretrade') this.pretradeSelected=[];
+      else if(s==='review' && this.reviewSelected) this.reviewSelected=[];
+      else this.poolSelected=[];
+    },
+    _reloadActiveScope(){ const s=this._batchScope(); if(s==='pretrade') this.loadPretrade(); else if(s==='review') this.loadReview(); else this.loadPool(); },
     batchDeletePool(){
-      const codes = this.poolSelected.slice();
+      const codes = this._activeSel().slice();
       if(!codes.length){ this.showAlert('请先勾选要删除的记录'); return; }
-      const archiveCodes = codes.filter(c=>{ const p=this.pool.find(x=>x.code===c); return p && p.status==='archive'; });
+      const rows = this._activeRows();
+      const archiveCodes = codes.filter(c=>{ const p=rows.find(x=>x.code===c); return p && p.status==='archive'; });
       const detail = archiveCodes.length
         ? `其中 ${archiveCodes.length} 只已归档且有持仓，将彻底删除且无法恢复。`
         : '选中记录将软删除（可恢复），持仓数据保留。';
@@ -6620,8 +6872,8 @@ const app = createApp({
       this.deleteConfirmModal.show = false;
       this.deleteConfirmModal.saving = false;
       setTimeout(()=>{ this.poolMsg=''; }, 3000);
-      this.poolSelected=[];
-      this.loadPool();
+      this._clearActiveSel();
+      this._reloadActiveScope();
     },
     closeDeleteConfirm(){ this.deleteConfirmModal={show:false, codes:[], detail:'', saving:false}; },
     openBatchTagModal(){ this.batchTagModal={show:true, tag_ids:[], saving:false}; },
@@ -6712,7 +6964,8 @@ const app = createApp({
       form.append('file', file);
       try{
         const token = localStorage.getItem('tk') || '';
-        const resp = await fetch('/api/pool/import', {
+        // v189: 带上来源（盘前预判导入的股票默认未监控，须点「加入监控」）
+        const resp = await fetch('/api/pool/import?source='+this._batchScope(), {
           method:'POST',
           body:form,
           headers: token ? {Authorization: `Bearer ${token}`,'X-Auth-Token':token} : {}
@@ -6721,7 +6974,7 @@ const app = createApp({
         if(resp.ok && r && r.ok){
           this.importPoolModal.result = r;  // {ok, added:[], failed:[], msg}
           this.poolMsg = r.msg || `导入成功 ${(r.added||[]).length} 条`;
-          this.loadPool();
+          this._reloadActiveScope();
         } else {
           this.importPoolModal.error = (r && (r.detail||r.message)) || `导入失败（HTTP ${resp.status}）`;
         }
@@ -6741,7 +6994,7 @@ const app = createApp({
     },
     async saveBatchTags(){
       if(this.batchTagModal.saving) return;
-      const codes = this.poolSelected.slice();
+      const codes = this._activeSel().slice();
       if(!codes.length){ this.showAlert('请先勾选要设置标签的记录'); return; }
       this.batchTagModal.saving=true;
       try{
@@ -6753,8 +7006,8 @@ const app = createApp({
           const msg = names.length ? `已设置 ${n} 个证券为「${names.join('、')}」标签` : `已清空 ${n} 个证券的标签`;
           this.showToast(msg);
           this.closeBatchTagModal();
-          this.poolSelected=[];
-          this.loadPool();
+          this._clearActiveSel();
+          this._reloadActiveScope();
         } else {
           this.showAlert('设置失败：'+(r.detail||'请重试'));
         }

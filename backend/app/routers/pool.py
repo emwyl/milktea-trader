@@ -109,6 +109,52 @@ def _to_out(p: TrackedPool, db) -> PoolOut:
                    day_view_today="", day_view_log_count=0)
 
 
+def _persist_moneyflow(db, tracks: dict, trade_date: str) -> None:
+    """v189: 把当日主力资金流落库到 daily_quotes，供盘前预判取 T-1 的静态值。
+
+    背景：系统只有【当日实时】资金流接口、没有历史源，而盘前预判要的是「上一交易日」的
+    静态数据。于是每次富化拿到当日值就写进当日日线行，次日盘前即可读到（全天不变）。
+
+    约束（重要）：
+      1. 只 UPDATE 已存在的日线行，绝不新建 —— 没有日线的股票不凭空造一行；
+      2. 任何异常都静默忽略 —— 落库是「攒数据」，绝不能影响列表主流程或拖慢响应；
+      3. 今天之前的历史行没有值，前端按「-」展示，用上几天后自动补全。
+    """
+    if not tracks or not trade_date:
+        return
+    d = str(trade_date)[:10]
+    touched = False
+    for code, t in tracks.items():
+        if not t:
+            continue
+        pct = t.get("main_net_pct")
+        sig = t.get("main_signal") or {}
+        sig_text = sig.get("text", "") if isinstance(sig, dict) else (str(sig) if sig else "")
+        if pct is None and not sig_text:
+            continue
+        try:
+            row = (db.query(DailyQuote)
+                     .filter(DailyQuote.code == code, DailyQuote.date.like(f"{d}%"))
+                     .first())
+            if not row:
+                continue
+            if pct is not None:
+                row.main_net_pct = float(pct)
+            if sig_text:
+                row.main_signal = sig_text
+            touched = True
+        except Exception:
+            continue
+    if touched:
+        try:
+            db.commit()
+        except Exception:
+            try:
+                db.rollback()
+            except Exception:
+                pass
+
+
 def _user_pool_q(db, user_id: int):
     """当前用户在「可投池可见范围」内的基础查询：active + archive 但有持仓。"""
     return (db.query(TrackedPool)
@@ -167,7 +213,9 @@ def list_pool(
         cur = seen.get(p.code)
         if cur is None or (p.position_qty and (not cur.position_qty or p.position_qty > cur.position_qty)):
             seen[p.code] = p
-    rows = list(seen.values())
+    # v189 监控链路：盘间监控只显示「盘前来源且已加入监控」+「盘间监控自行新增」的行；
+    #   未监控的候选股留在盘前预判，不在这里出现。
+    rows = [p for p in seen.values() if _row_visible_in(p, "pool")]
     total = len(rows)
 
     # 分页(在合并重复 code 之后切分,保证总数准确)
@@ -230,6 +278,13 @@ def list_pool(
         finally:
             # 不等未完成任务：让慢请求在后台自行结束(结果进 60s 缓存，下次刷新秒回)
             ex.shutdown(wait=False, cancel_futures=False)
+
+    # v189: 主力资金「今日起落库」——本次富化拿到的当日资金流写进当日日线行，供盘前预判取 T-1 静态值
+    if tracks:
+        try:
+            _persist_moneyflow(db, tracks, _today_cn())
+        except Exception:
+            pass
 
     # v143: 批量拉 day_view_log 派生字段(today 最后一条 trend + 总计数),N 只股票 2 次查询
     today_map: dict[str, str] = {}
@@ -373,14 +428,29 @@ def _resolve_stock_code(raw: str, db) -> str:
 
 
 @router.post("")
-def add_to_pool(body: PoolIn, db: SessionLocal = Depends(get_db), user: User = Depends(get_current_user)):
+def add_to_pool(body: PoolIn,
+                source: str = Query("pretrade", description="v189 新增来源: pretrade(盘前预判)/pool(盘间监控)/review(复盘管理)"),
+                db: SessionLocal = Depends(get_db), user: User = Depends(get_current_user)):
     code = _resolve_stock_code(body.code, db)
-    if db.query(TrackedPool).filter(TrackedPool.user_id == user.id,
-                                     TrackedPool.code == code, TrackedPool.status == "active").first():
+    src = source if source in ("pretrade", "pool", "review") else "pretrade"
+    exist = db.query(TrackedPool).filter(TrackedPool.user_id == user.id,
+                                          TrackedPool.code == code, TrackedPool.status == "active").first()
+    if exist:
+        # v189: 已躺在盘前预判、但还没监控的股票，从盘间监控/复盘管理再次添加时，
+        #   直接置为「已监控」（等价于在盘前预判点了「加入监控」），
+        #   否则用户会被「已在可投池」卡住、又找不到入口去监控它。
+        if src != "pretrade" and (exist.source or "pretrade") == "pretrade" and int(exist.monitored or 0) != 1:
+            exist.monitored = 1
+            db.commit()
+            db.refresh(exist)
+            return _to_out(exist, db)
         raise HTTPException(400, "已在可投池")
+    # 盘前预判新增 → 默认「未监控」（须点「加入监控」才进盘间监控/复盘管理）；
+    # 盘间监控、复盘管理自行新增 → 直接可见（各自页面内立刻能看到）。
     p = TrackedPool(user_id=user.id, code=code, note=body.note, cost_price=body.cost_price,
                     position_qty=body.position_qty, position_pct=body.position_pct,
-                    scheme_type=body.scheme_type)
+                    scheme_type=body.scheme_type, source=src,
+                    monitored=0 if src == "pretrade" else 1)
     db.add(p)
     db.commit()
     db.refresh(p)
@@ -584,7 +654,9 @@ def export_pool(
     if view in ("pretrade", "review"):
         return _export_pretrade_or_review(view, q, tag, cols, sort, sort_dir, trade_date, db, user)
     # 筛选 + 去重（与 list_pool 口径一致：active + archive 有持仓）
-    rows = _user_pool_q(db, user.id).order_by(TrackedPool.id).all()
+    # v189: 导出同样只出「盘间监控可见」的行，与页面看到的完全一致（未监控的候选股不导出）
+    rows = [p for p in _user_pool_q(db, user.id).order_by(TrackedPool.id).all()
+            if _row_visible_in(p, "pool")]
     q = (q or "").strip()
     if q:
         rows = [p for p in rows
@@ -694,6 +766,7 @@ def export_pool(
 @router.post("/import")
 def import_pool(
     file: UploadFile = File(...),
+    source: str = Query("pretrade", description="v189 导入来源: pretrade/pool/review"),
     db: SessionLocal = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -758,7 +831,10 @@ def import_pool(
             # 已存在：跳过（保留其原标签），计入失败提示避免重复导入
             failed.append({"code": code, "name": name, "reason": "已在可投池，重复导入"})
             continue
-        p = TrackedPool(user_id=user.id, code=code, scheme_type="custom")
+        # v189：盘前预判导入 → 默认「未监控」（须点「加入监控」）；盘间/复盘导入 → 直接可见
+        _src = source if source in ("pretrade", "pool", "review") else "pretrade"
+        p = TrackedPool(user_id=user.id, code=code, scheme_type="custom",
+                        source=_src, monitored=0 if _src == "pretrade" else 1)
         db.add(p)
         existing_codes.add(code)
         # 标签：新导入才打标签
@@ -1339,8 +1415,34 @@ def delete_tag(tid: int, db: SessionLocal = Depends(get_db), user: User = Depend
 #      价格类字段一律取 daily_quotes 日线，保证秒级响应；
 #   4) 排序在「全量组装后、分页前」执行，保证翻页时全局有序（与前端列表一致）。
 
-def _pool_rows_filtered(db, user_id: int, q: str = "", tag: str = "") -> list[TrackedPool]:
-    """用户的可投池行（与列表页/导出同一口径）：q 模糊 + tag 过滤 + 同代码去重。"""
+def _row_visible_in(p: TrackedPool, scope: str) -> bool:
+    """v189 监控链路：判断一行在指定页面是否可见。
+
+    规则（与 models.py TrackedPool 注释一致）：
+      盘前预判 pretrade = 排除「盘间监控自行新增」的行(source=='pool')
+      盘间监控 pool     = (来源盘前 且 已监控) 或 来源就是盘间监控
+      复盘管理 review   = (来源盘前 且 已监控) 或 来源就是复盘管理
+
+    存量兼容：monitored/source 为 NULL 时按「已监控 + 盘前来源」处理，保证老数据不丢。
+    """
+    src = (p.source or "") or "pretrade"
+    monitored = 1 if p.monitored is None else int(p.monitored or 0)
+    if scope == "pretrade":
+        # 盘前预判 = 基础候选池：只显示「盘前来源」的行；
+        # 盘间监控 / 复盘管理 各自自行新增的证券不回流到盘前预判（页面各自独立）。
+        return src == "pretrade"
+    if scope == "pool":
+        return (src == "pretrade" and monitored == 1) or src == "pool"
+    if scope == "review":
+        return (src == "pretrade" and monitored == 1) or src == "review"
+    return True
+
+
+def _pool_rows_filtered(db, user_id: int, q: str = "", tag: str = "", scope: str = "") -> list[TrackedPool]:
+    """用户的可投池行（与列表页/导出同一口径）：q 模糊 + tag 过滤 + scope 可见性 + 同代码去重。
+
+    v189：scope 传 '' 表示不过滤（导出等要全量的场景保持原行为）。
+    """
     rows = _user_pool_q(db, user_id).order_by(TrackedPool.id).all()
     q = (q or "").strip()
     if q:
@@ -1355,6 +1457,8 @@ def _pool_rows_filtered(db, user_id: int, q: str = "", tag: str = "") -> list[Tr
     seen: dict[str, TrackedPool] = {}
     for p in rows:
         if tag_ids and not {t.id for t in p.tags}.intersection(tag_ids):
+            continue
+        if scope and not _row_visible_in(p, scope):
             continue
         cur = seen.get(p.code)
         # 同代码多行(如归档+持仓)时保留持仓量最大的那行
@@ -1459,9 +1563,85 @@ def _sort_items(items: list[dict], key: str, desc: bool) -> list[dict]:
 
 
 # ===== v186: 盘前预判 / 复盘管理 共用的行组装（列表接口与导出接口同一口径，避免两套算法）=====
+def _t1_static_metrics(db, code: str, trade_date: str) -> dict:
+    """v189: 盘前静态指标（T-1 口径）——取 trade_date 之前最近一根日线当「昨日」，
+    并基于它及更早的日线算 MA5/MA20/5日·20日均量/箱体位置/振幅。
+
+    为什么天然静态：所有输入都来自已定格的日线，不含任何实时行情，
+    因此 9:30 之后乃至全天都不会变动 —— 正是盘前预判要的「静态数据」。
+
+    主力净流入/主力信号取自当日日线行上已落库的值（每日富化时写入），
+    今天之前的历史行为 NULL → 返回 None，前端按「-」展示。
+    """
+    try:
+        qs = (db.query(DailyQuote)
+                .filter(DailyQuote.code == code, DailyQuote.date < trade_date)
+                .order_by(DailyQuote.date.desc())
+                .limit(60).all())
+    except Exception:
+        return {}
+    if not qs:
+        return {}
+    qs = qs[::-1]                      # 升序：旧 → 新
+    prev = qs[-1]
+    closes = [q.close for q in qs if q.close]
+    vols = [q.volume for q in qs if q.volume]
+
+    out: dict = {
+        "prev_date": str(prev.date or "")[:10],
+        "prev_open": round(prev.open, 2) if prev.open else None,
+        "prev_close": round(prev.close, 2) if prev.close else None,
+        "prev_high": round(prev.high, 2) if prev.high else None,
+        "prev_low": round(prev.low, 2) if prev.low else None,
+        "prev_turnover": round(prev.turnover, 2) if prev.turnover else None,
+        "prev_volume": round(prev.volume / 1e4, 2) if prev.volume else None,  # 万手(与 5日/20日均量同口径)
+        "main_net_pct": prev.main_net_pct,                                  # 主力净流入%（可能 None）
+        "main_signal": prev.main_signal or "",                              # 主力信号文本
+    }
+    # 振幅 = (最高 − 最低) / 昨收 × 100
+    if prev.high and prev.low and prev.pre_close:
+        out["prev_amplitude"] = round((prev.high - prev.low) / prev.pre_close * 100, 2)
+    if closes:
+        out["ma5"] = round(sum(closes[-5:]) / min(5, len(closes)), 2)
+        out["ma20"] = round(sum(closes[-20:]) / min(20, len(closes)), 2)
+    if vols:
+        # 均量统一「万手」口径，与可投池现有列一致
+        out["avg_vol5"] = round(sum(vols[-5:]) / min(5, len(vols)) / 1e4, 2)
+        out["avg_vol20"] = round(sum(vols[-20:]) / min(20, len(vols)) / 1e4, 2)
+    highs = [q.high for q in qs[-20:] if q.high]
+    lows = [q.low for q in qs[-20:] if q.low]
+    if highs and lows:
+        bh, bl = max(highs), min(lows)
+        out["box_high"] = round(bh, 2)
+        out["box_low"] = round(bl, 2)
+        if bh > bl and prev.close:
+            out["box_pos"] = round(max(0.0, min(1.0, (prev.close - bl) / (bh - bl))), 2)
+
+    # 综合评分：用同一套评分规则、但输入换成「截断到 T-1」的日线 → 得到静态评分。
+    # spot 传 None 会让量比/实时资金维度缺失，规则本身给中性分(不误杀)；异常则留空。
+    try:
+        from app.services.data_fetcher import _calc_pass_scores as _cps
+        _o = {
+            "code": code,
+            "price": prev.close,
+            "change_pct": (round((prev.close - prev.pre_close) / prev.pre_close * 100, 2)
+                           if (prev.close and prev.pre_close) else 0.0),
+            "turnover": prev.turnover or 0.0,
+            "amount": prev.amount or 0.0,
+            "volume": prev.volume or 0.0,
+        }
+        _cps(code, _o, qs, None, db)
+        if _o.get("total_score") is not None:
+            out["score"] = _o["total_score"]
+            out["grade"] = _o.get("ai_grade") or ""
+    except Exception:
+        pass
+    return out
+
+
 def _build_pretrade_items(db, user, q, tag, trade_date) -> list[dict]:
     """组装盘前预判全量行（不分页，导出直接用）。"""
-    rows = _pool_rows_filtered(db, user.id, q, tag)
+    rows = _pool_rows_filtered(db, user.id, q, tag, scope="pretrade")
     codes = [p.code for p in rows]
     logs = _last_logs_of_date(db, user.id, codes, trade_date)
     counts = _log_counts_of_date(db, user.id, codes, trade_date)
@@ -1473,6 +1653,8 @@ def _build_pretrade_items(db, user, q, tag, trade_date) -> list[dict]:
         qt = quotes.get(p.code)
         close_p = qt.close if qt and qt.close else None
         pre_close = qt.pre_close if qt and qt.pre_close else None
+        # v189: T-1 静态行情（昨日 OHLC/振幅/换手/量/均量/MA/箱体/主力/评分），全天不变
+        sm = _t1_static_metrics(db, p.code, trade_date) or {}
         it.update({
             "trade_date": trade_date,
             "log_count": counts.get(p.code, 0),
@@ -1488,6 +1670,9 @@ def _build_pretrade_items(db, user, q, tag, trade_date) -> list[dict]:
             "reference_text": (lg.reference_text or "") if lg else "",
             "operator": (lg.operator or "") if lg else "",
             "operated_at": (lg.operated_at or "") if lg else "",
+            # v189: 监控状态回传前端——决定「加入监控」按钮显示为「已监控」还是可点
+            "monitored": 1 if (p.monitored is None or int(p.monitored or 0) == 1) else 0,
+            **sm,
         })
         items.append(it)
     return items
@@ -1495,7 +1680,7 @@ def _build_pretrade_items(db, user, q, tag, trade_date) -> list[dict]:
 
 def _build_review_items(db, user, q, tag, trade_date) -> list[dict]:
     """组装复盘管理全量行（不分页，导出直接用）。"""
-    rows = _pool_rows_filtered(db, user.id, q, tag)
+    rows = _pool_rows_filtered(db, user.id, q, tag, scope="review")
     codes = [p.code for p in rows]
     logs = _last_logs_of_date(db, user.id, codes, trade_date)
     counts = _log_counts_of_date(db, user.id, codes, trade_date)
@@ -1665,6 +1850,51 @@ def _calc_deviation(lg: DayViewLog, close_p):
         ref = buy_p or sell_p
     dev = round((close_p - ref) / ref, 4)
     return dev, round(dev * 100, 2)
+
+
+@router.post("/batch-monitor")
+def batch_monitor(
+    codes: str = Query("", description="v189 逗号分隔的证券代码，如 000001,600000"),
+    monitored: bool = Query(True, description="true=加入监控 / false=取消监控"),
+    db: SessionLocal = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """v189: 批量加入/取消监控（盘前预判工具栏「批量加入监控」）。
+
+    盘前预判的股票加入监控后，才会出现在「盘间监控」和「复盘管理」的池子里。
+    """
+    code_list = [c.strip() for c in (codes or "").split(",") if c.strip()]
+    if not code_list:
+        raise HTTPException(400, "请先勾选要操作的证券")
+    rows = (db.query(TrackedPool)
+              .filter(TrackedPool.user_id == user.id,
+                      TrackedPool.code.in_(code_list),
+                      TrackedPool.status == "active").all())
+    val = 1 if monitored else 0
+    for p in rows:
+        p.monitored = val
+    db.commit()
+    return {"ok": True, "updated": len(rows), "monitored": val}
+
+
+@router.post("/{code}/monitor")
+def set_monitor(
+    code: str,
+    monitored: bool = Query(True, description="true=加入监控 / false=取消监控"),
+    db: SessionLocal = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """v189: 单只加入/取消监控（盘前预判操作列「加入监控」按钮）。"""
+    p = (db.query(TrackedPool)
+           .filter(TrackedPool.user_id == user.id,
+                   TrackedPool.code == code,
+                   TrackedPool.status == "active").first())
+    if not p:
+        raise HTTPException(404, "可投池中没有该证券")
+    p.monitored = 1 if monitored else 0
+    db.commit()
+    db.refresh(p)
+    return {"ok": True, "code": code, "monitored": p.monitored}
 
 
 @router.get("/pretrade")

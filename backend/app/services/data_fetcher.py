@@ -1543,21 +1543,111 @@ def _calc_pass_scores(code: str, out: dict, quotes: list[Quote], spot: dict | No
     detail: list[str] = []
     score_a = score_b = score_c = 0
 
-    # ===== 一票否决项 =====
+    # ===== 一票否决项(硬性风控):命中任意一条 → total_score 强制为 0 =====
+    # 两类:
+    #   A. 技术面否决(原有 3 条):流动性/趋势恶化,数据来自日线,基本可靠;
+    #   B. 基本面/合规否决(新增 6 条,v188):业绩/解禁/商誉/立案/质押/ST,
+    #      全部依赖财报/公告/质押等外源数据。数据缺失时一律「不否决 + 标记待复核」,
+    #      绝不因取数失败而误杀,也不假装安全 —— 前端对应显示「⚠ 数据未接入,需人工复核」。
     veto_reasons: list[str] = []
+    veto_checks: list[dict] = []
 
-    # 1) 日均成交量(20日)<5万手
+    def _chk(cid, label, hit, available, value=None, note=None):
+        """记录一条否决项的实际判定状态,供前端三态展示。
+        state: 'veto'(命中且数据可用) / 'ok'(数据可用且未命中) / 'na'(数据未接入)。"""
+        _hit = bool(hit and available)
+        state = 'veto' if _hit else ('ok' if available else 'na')
+        veto_checks.append({
+            "id": cid, "label": label,
+            "hit": _hit, "available": bool(available),
+            "state": state, "value": value, "note": note or "",
+        })
+        return _hit
+
+    # —— 原有技术面否决(3 条) ——
     if avg_volume_20 < 5.0:
         veto_reasons.append("日均成交量<5万手")
-    # 2) 日内振幅长期<2%(近5日平均<2%)
     if 0 < avg_amplitude_5 < 2.0:
         veto_reasons.append("日内振幅长期<2%")
-    # 3) 股价同时在MA5和MA20下方,且MACD绿柱放大
     if above_ma5 is False and above_ma20 is False and hist and len(hist) >= 2:
         if hist[-1] < hist[-2] < 0:  # 绿柱放大
             veto_reasons.append("MA5/MA20下方且MACD绿柱放大")
-    # 4) 题材处于全网热议的高潮末期(数据未接入,需人工复核)
-    # 5) 近期有重大利空(数据未接入,需人工复核)
+
+    # —— 新增基本面/合规否决(6 条,v188) ——
+    # 1) 业绩大额亏损:最新报告期归母净利润<0 且 扣非每股收益<0(盈利质量崩坏)
+    _np = out.get("net_profit")
+    _dep = out.get("deduct_eps")
+    _avail = _np is not None and _dep is not None
+    _hit = _avail and _np < 0 and _dep < 0
+    _note = (f"归母净利{_np/1e8:+.2f}亿, 扣非EPS{_dep:+.2f}") if _avail else "财报数据未接入(归母净利/扣非)"
+    if _chk('loss', '业绩大额亏损(归母亏+扣非为负)', _hit, _avail, value=_np, note=_note):
+        veto_reasons.append("业绩大额亏损(归母净利为负且扣非净利润为负)")
+
+    # 2) 即将大额解禁:未来60天内,解禁规模≥流通股本10%
+    _nd = out.get("next_date"); _nr = out.get("next_ratio")
+    _avail = bool(_nd) and _nr is not None
+    _hit = False; _note = "解禁数据未接入"
+    if _avail:
+        try:
+            _d = dt.datetime.strptime(_nd, "%Y-%m-%d").date()
+            _days = (_d - dt.date.today()).days
+            _hit = (0 <= _days <= 60) and _nr >= 10
+            _note = f"{_nd} 解禁占比{_nr:.1f}%, 距今{_days}天" + ("(命中:60日内且≥10%)" if _hit else "")
+        except Exception:
+            _avail = False; _note = "解禁日期解析失败"
+    if _chk('unlock', '即将大额解禁(60日内≥流通10%)', _hit, _avail, value=_nr, note=_note):
+        veto_reasons.append(f"即将大额解禁({_nd} 占比{_nr:.0f}%≥10%)")
+
+    # 3) 大额商誉占比:商誉/净资产 ≥ 50%
+    _gw = out.get("goodwill"); _eq = out.get("equity")
+    _avail = _gw is not None and _eq is not None and _eq > 0
+    _hit = False; _gr = None; _note = "商誉/净资产数据未接入"
+    if _avail:
+        _gr = _gw / _eq * 100
+        _hit = _gr >= 50
+        _note = f"商誉占净资产{_gr:.1f}%" + ("(命中≥50%)" if _hit else "")
+    if _chk('goodwill', '大额商誉占比(商誉/净资产≥50%)', _hit, _avail, value=_gr, note=_note):
+        veto_reasons.append(f"商誉占净资产过高({_gr:.0f}%≥50%)")
+
+    # 4) 立案调查/重大违规处罚:近8日公告命中强监管关键词
+    _news_raw = None
+    try:
+        _news_raw = _fetch_news(code, 8)
+    except Exception:
+        _news_raw = None
+    _avail = _news_raw is not None   # 取到列表(含空)即视为已接入;None=取数失败→数据未接入
+    _news = _news_raw or []
+    _kw = ["立案调查", "被立案调查", "行政处罚", "财务造假", "立案告知书", "处罚决定书", "监管立案"]
+    _hits = [n.get("title", "") for n in _news if any(k in (n.get("title") or "") for k in _kw)]
+    _hit = len(_hits) > 0
+    _note = ("命中:" + "；".join(_hits[:2])) if _hit else ("近8日无相关监管公告" if _avail else "新闻数据未接入")
+    if _chk('regulatory', '立案调查/重大违规处罚', _hit, _avail, note=_note):
+        veto_reasons.append(f"立案调查/重大违规处罚({_hits[0]})")
+
+    # 5) 实控人高比例质押:控股股东质押比例 > 70%
+    _pr = out.get("pledge_ratio")
+    _avail = _pr is not None
+    _hit = _avail and _pr > 70
+    _note = f"控股股东质押比例{_pr:.1f}%({'命中>70%' if _hit else '未超阈值'})" if _avail else "质押数据未接入"
+    if _chk('pledge', '实控人高比例质押(>70%)', _hit, _avail, value=_pr, note=_note):
+        veto_reasons.append(f"实控人质押比例过高({_pr:.0f}%>70%)")
+
+    # 6) ST/*ST 风险:名称含 ST/*ST/退,或财报触发 ST 预警(净资产为负)
+    _name = ""
+    try:
+        from app.models import Stock as _Stock
+        _stk = db.get(_Stock, code)
+        _name = (_stk.name or "") if _stk else ""
+    except Exception:
+        _name = ""
+    _is_st = ("ST" in _name) or ("退" in _name)
+    _eq2 = out.get("equity")
+    _st_warn = (_eq2 is not None and _eq2 < 0)
+    _hit = _is_st or _st_warn
+    _note = (f"名称含ST/退标记({_name})" if _is_st else
+             (f"净资产为负({_eq2/1e8:.2f}亿),触发ST预警" if _st_warn else "名称正常且净资产为正"))
+    if _chk('st', 'ST/*ST风险(或财报触发ST预警)', _hit, True, note=_note):
+        veto_reasons.append("ST/*ST风险(名称含ST/退 或 净资产为负触发ST预警)")
 
     # ===== A. 流动性与波动(40分) =====
     # v179: A 类 5 指标每个默认满分 8 分,权重均摊各 20%(iw 自动 even=100/5=20)
@@ -1933,6 +2023,7 @@ def _calc_pass_scores(code: str, out: dict, quotes: list[Quote], spot: dict | No
     out["score_c"] = score_c
     out["penalty"] = penalty
     out["veto_reasons"] = veto_reasons
+    out["veto_checks"] = veto_checks
     out["total_score"] = total
     if total >= 80:
         out["ai_grade"] = "A"
@@ -2418,6 +2509,11 @@ def _fetch_financials(code: str) -> dict | None:
             bps = _as_float(r.get("BPS"))            # 每股净资产
             if bps is not None:
                 out["bps"] = bps
+            # v188: 扣非基本每股收益(DEDUCT_BASIC_EPS)<0 即「扣非净利润为负」,
+            # 与 PARENT_NETPROFIT(归母净利)<0 共同构成「业绩大额亏损」否决项
+            dep = _as_float(r.get("DEDUCT_BASIC_EPS"))
+            if dep is not None:
+                out["deduct_basic_eps"] = dep
     except Exception:
         pass
     # 2) 商誉（资产负债表）：旧源 RPT_FCI_BUSINESSASSET 2024 起 9501 留 fallback
@@ -2435,7 +2531,68 @@ def _fetch_financials(code: str) -> dict | None:
                     out["goodwill_date"] = str(g["REPORT_DATE"])[:10]
     except Exception:
         pass
+    # 3) 净资产(所有者权益合计,元):RPT_FCI_MAINFINANCE。用于「商誉占净资产≥50%」否决。
+    #    best-effort:依次尝试多个可能的字段名(不同版本报表列名不一致),命中第一个正值即可。
+    #    云端/个别票源不可达时留 None → 该否决项标记「数据未接入」,绝不误杀也不假装安全。
+    try:
+        eq_url = ("https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_FCI_MAINFINANCE"
+                  "&columns=ALL&filter=(SECURITY_CODE%3D%22" + code + "%22)&pageSize=1"
+                  "&sortColumns=REPORTDATE&sortTypes=-1")
+        jq = _em_json(eq_url)
+        if jq and isinstance(jq.get("result"), dict) and jq["result"].get("data"):
+            eqr = jq["result"]["data"][0]
+            for _k in ("PARENT_EQUITY", "EQUITY", "TOTAL_EQUITY", "PARENT_NET_ASSETS", "TOTAL_NET_ASSETS"):
+                _v = _as_float(eqr.get(_k))
+                if _v is not None and _v > 0:
+                    out["equity"] = _v
+                    break
+    except Exception:
+        pass
     _FIN_CACHE[code] = out
+    return out
+
+
+_PLEDGE_CACHE: dict = {}
+
+
+def _fetch_pledge(code: str) -> dict | None:
+    """控股股东/实控人股权质押比例(%)，东方财富股权质押明细。
+
+    用于「实控人高比例质押(>70%)」否决项。RPT_FCI_PLEDGERATIO 按股东返回多行,
+    取各股东质押比例(PLEDGE_RATIO)的最大值作为「控股股东质押比例」代理(通常第一大股东即实控人);
+    若仅有整体质押比例(PLEDGE_RATIO_TOTAL)则回退使用。字段名在不同版本不全一致,做多键兜底。
+
+    数据不可达(云端/个别票)返回 None → 该否决项标记「数据未接入」,不误杀也不假装安全。
+    """
+    cached = _PLEDGE_CACHE.get(code)
+    if cached and (time.time() - cached.get("_t", 0)) < 86400:
+        return cached
+    out: dict = {"_t": time.time()}
+    try:
+        url = ("https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_FCI_PLEDGERATIO"
+               "&columns=ALL&filter=(SECURITY_CODE%3D%22" + code + "%22)&pageSize=10"
+               "&sortColumns=END_DATE&sortTypes=-1")
+        j = _em_json(url)
+        rows = (((j or {}).get("result") or {}).get("data")) if isinstance(j, dict) else None
+        if isinstance(rows, list) and rows:
+            best = None
+            total = None
+            for _r in rows:
+                if not isinstance(_r, dict):
+                    continue
+                _ratio = _as_float(_r.get("PLEDGE_RATIO"))
+                if _ratio is not None and 0 <= _ratio <= 100:
+                    if best is None or _ratio > best:
+                        best = _ratio
+                _tr = _as_float(_r.get("PLEDGE_RATIO_TOTAL"))
+                if _tr is not None and 0 <= _tr <= 100:
+                    total = _tr
+            _val = best if best is not None else total
+            if _val is not None:
+                out["pledge_ratio"] = _val
+    except Exception:
+        pass
+    _PLEDGE_CACHE[code] = out
     return out
 
 
@@ -2632,6 +2789,13 @@ def get_pool_track(code: str, db, position: dict | None = None, deadline: float 
             out["eps"] = fin["eps"]
         if fin.get("goodwill") is not None:
             out["goodwill"] = fin["goodwill"]
+        if fin.get("deduct_basic_eps") is not None:
+            out["deduct_eps"] = fin["deduct_basic_eps"]      # v188: 扣非每股收益(负值=扣非净利为负)
+        if fin.get("equity") is not None:
+            out["equity"] = fin["equity"]                    # v188: 净资产(元),商誉占比分母
+        pl = _fetch_pledge(code) or {}
+        if pl.get("pledge_ratio") is not None:
+            out["pledge_ratio"] = pl["pledge_ratio"]          # v188: 控股股东质押比例(%)
         unl = _fetch_unlock(code) or {}
         if unl.get("next_date"):
             out["next_date"] = unl["next_date"]

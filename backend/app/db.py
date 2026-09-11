@@ -228,6 +228,40 @@ def run_migrations(engine):
             except Exception:
                 pass
 
+        # v189：监控链路两列（详见 models.py TrackedPool 注释）。
+        #   monitored 默认 1、source 默认 'pretrade' —— 存量行一并填上，保证老数据三页照常可见。
+        if _has_col(conn, "tracked_pool", "id"):
+            try:
+                if not _has_col(conn, "tracked_pool", "monitored"):
+                    conn.execute(text("ALTER TABLE tracked_pool ADD COLUMN monitored INTEGER DEFAULT 1"))
+            except Exception:
+                pass
+            try:
+                if not _has_col(conn, "tracked_pool", "source"):
+                    conn.execute(text("ALTER TABLE tracked_pool ADD COLUMN source VARCHAR(16) DEFAULT 'pretrade'"))
+            except Exception:
+                pass
+            # 兜底：历史行若因任何原因落在 NULL，统一补成「已监控 + 盘前来源」，避免数据从三页消失
+            try:
+                conn.execute(text("UPDATE tracked_pool SET monitored=1 WHERE monitored IS NULL"))
+                conn.execute(text("UPDATE tracked_pool SET source='pretrade' WHERE source IS NULL OR source=''"))
+            except Exception:
+                pass
+
+        # v189：日线表补主力资金两列（盘前预判要取 T-1 静态值，只能靠每日落库积累）。
+        #   daily_quotes 行数很多，但 SQLite 的 ALTER ADD COLUMN 只改 schema、不重写数据，成本极低。
+        if _has_col(conn, "daily_quotes", "id"):
+            try:
+                if not _has_col(conn, "daily_quotes", "main_net_pct"):
+                    conn.execute(text("ALTER TABLE daily_quotes ADD COLUMN main_net_pct FLOAT"))
+            except Exception:
+                pass
+            try:
+                if not _has_col(conn, "daily_quotes", "main_signal"):
+                    conn.execute(text("ALTER TABLE daily_quotes ADD COLUMN main_signal VARCHAR(64) DEFAULT ''"))
+            except Exception:
+                pass
+
         # v143：日初判断修改记录表（day_view_log）。
         #   每次修改都追加一条（不删旧），同一天允许多条；
         #   「当日最新」=同日 operated_at 最大；盯盘日志按交易日聚合，每交易日取最后一条作为复盘输入。
