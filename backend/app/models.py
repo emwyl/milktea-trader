@@ -62,6 +62,23 @@ class DailyQuote(Base):
     main_signal: Mapped[str] = mapped_column(String(64), default="")           # 主力信号文本，如「主力流入」
 
 
+class StockFloatShares(Base):
+    """v190：流通股本缓存表（单位：股）。
+
+    背景：腾讯/新浪/东财的日 K 接口只回「日期,开,收,高,低,量」六字段，不含换手率，
+    导致 daily_quotes.turnover 长期全 0（实测 54 万行里 26 万行为 0），盘前预判的
+    「昨日换手」列、以及依赖换手率的评分维度全部失真。
+
+    解法：换手率 = 成交量(股) ÷ 流通股本(股) × 100。
+    流通股本从腾讯实时盘口 qt.gtimg.cn 反推（f[44]流通市值(亿) ÷ f[3]现价 = 亿股），
+    一只票只需拉一次并长期缓存（股本变动频率低，送转股才变）。
+    """
+    __tablename__ = "stock_float_shares"
+    code: Mapped[str] = mapped_column(String(16), primary_key=True)
+    shares: Mapped[float] = mapped_column(Float, default=0.0)      # 流通股本（股）
+    updated_at: Mapped[str] = mapped_column(String(32), default=_now)
+
+
 class Screen(Base):
     """选股模型定义（Screener 接口的参数化实例）。"""
     __tablename__ = "screens"

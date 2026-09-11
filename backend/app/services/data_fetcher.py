@@ -21,7 +21,7 @@ from sqlalchemy import func
 
 from app.config import AKSHARE_ENABLED
 from app.db import SessionLocal
-from app.models import DailyQuote, Stock
+from app.models import DailyQuote, Stock, StockFloatShares
 from app.services.interfaces import Quote
 
 # ============ HTTP 请求基础 ============
@@ -73,6 +73,212 @@ def _http_get(url: str, headers: dict | None = None, retries: int = 2) -> str | 
         if attempt < retries:
             time.sleep(0.3 * (attempt + 1))
     return None
+
+
+# ============ v190：流通股本 + 换手率自算 ============
+# 为什么需要：腾讯/新浪/东财日 K 只回「日期,开,收,高,低,量」，没有换手率也没成交额，
+# 日线解析时 turnover 被硬编码为 0.0 → 盘前预判「昨日换手」整列 0、评分里换手维度永远 0 分。
+# 换手率是可推导量：换手率% = 成交量(股) ÷ 流通股本(股) × 100。
+# 流通股本从腾讯实时盘口反推：f[44]=流通市值(亿元) ÷ f[3]=现价 → 亿股 → ×1e8 = 股
+#   （比 f[38]换手率反推更精确：f[38] 只保留两位小数，茅台 0.15% 反推误差约 1%）。
+# 股本长期稳定（仅送转股/解禁才变），故进程内 + DB 双层缓存，一只票基本只拉一次。
+_FS_MEM: dict[str, float] = {}      # code -> 流通股本(股)，>0 才算有效
+_FS_MISS: set[str] = set()          # 拉取失败过的 code，避免反复打 HTTP
+_FS_LOCK = __import__("threading").Lock()
+
+
+def _float_shares_from_qt_fields(f: list[str]) -> float | None:
+    """从腾讯 qt.gtimg.cn 字段数组反推流通股本（股）。"""
+    try:
+        # 主口径：流通市值(亿) ÷ 现价 = 流通股本(亿股)
+        mv = _as_float(f[44]) if len(f) > 44 else 0.0     # 流通市值，单位：亿元
+        price = _as_float(f[3]) if len(f) > 3 else 0.0
+        if mv > 0 and price > 0:
+            return mv * 1e8 / price
+        # 回退口径：成交量(手) 与 换手率(%) 同源自洽 → 股本 = 手×100 ÷ (换手率/100)
+        vol = _as_float(f[36]) if len(f) > 36 else 0.0     # 成交量，单位：手
+        tr = _as_float(f[38]) if len(f) > 38 else 0.0      # 换手率，单位：%
+        if vol > 0 and tr > 0:
+            return vol * 100.0 / (tr / 100.0)
+    except Exception:
+        pass
+    return None
+
+
+def _qt_batch_float_shares(codes: list[str]) -> dict[str, float]:
+    """批量拉腾讯 qt 盘口，反推流通股本。codes 最多 60 只/次（URL 长度与源限流考虑）。"""
+    out: dict[str, float] = {}
+    for i in range(0, len(codes), 60):
+        batch = codes[i:i + 60]
+        q = ",".join(f"{_market_of(c)}{c}" for c in batch)
+        txt = _http_get(f"https://qt.gtimg.cn/q={q}", headers={"Referer": "https://gu.qq.com/"})
+        if not txt or "=" not in txt:
+            continue
+        for line in txt.split(";"):
+            if "=" not in line:
+                continue
+            try:
+                payload = line.split("=", 1)[1].strip().strip('"\n')
+                f = payload.split("~")
+                if len(f) < 45:
+                    continue
+                code = str(f[2]).strip()
+                if not code or not code[0].isdigit():
+                    continue
+                sh = _float_shares_from_qt_fields(f)
+                if sh and sh > 0:
+                    out[code] = sh
+            except Exception:
+                continue
+    return out
+
+
+def _float_shares(code: str) -> float | None:
+    """取流通股本（股）。优先内存 → DB 缓存 → 腾讯 HTTP；取不到返回 None。"""
+    if code in _FS_MEM:
+        return _FS_MEM[code]
+    if code in _FS_MISS:
+        return None
+    with _FS_LOCK:
+        if code in _FS_MEM:
+            return _FS_MEM[code]
+        # 1. DB 缓存
+        db = None
+        try:
+            db = SessionLocal()
+            row = db.query(StockFloatShares).filter(StockFloatShares.code == code).first()
+            if row and (row.shares or 0) > 0:
+                _FS_MEM[code] = float(row.shares)
+                return _FS_MEM[code]
+        except Exception:
+            pass
+        finally:
+            if db is not None:
+                try:
+                    db.close()
+                except Exception:
+                    pass
+        # 2. HTTP
+        got = _qt_batch_float_shares([code])
+        sh = got.get(code)
+        if sh and sh > 0:
+            _FS_MEM[code] = sh
+            _persist_float_shares({code: sh})
+            return sh
+        _FS_MISS.add(code)
+        return None
+
+
+def _persist_float_shares(mapping: dict[str, float]) -> None:
+    """流通股本落库（忽略失败：缓存没写成功只是下次多拉一次 HTTP）。"""
+    if not mapping:
+        return
+    db = None
+    try:
+        db = SessionLocal()
+        now = dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        for code, sh in mapping.items():
+            row = db.query(StockFloatShares).filter(StockFloatShares.code == code).first()
+            if row:
+                row.shares = sh
+                row.updated_at = now
+            else:
+                db.add(StockFloatShares(code=code, shares=sh, updated_at=now))
+        db.commit()
+    except Exception:
+        if db is not None:
+            try:
+                db.rollback()
+            except Exception:
+                pass
+    finally:
+        if db is not None:
+            try:
+                db.close()
+            except Exception:
+                pass
+
+
+def prefetch_float_shares(codes: list[str]) -> dict[str, float]:
+    """批量预热流通股本（可投池一页 15~50 只时先调一次，避免逐只打 HTTP）。
+
+    只补「内存与 DB 都没有」的票；返回值 = 本次新拉到的 {code: 股本}。
+    """
+    todo = [c for c in dict.fromkeys(codes or []) if c and c not in _FS_MEM and c not in _FS_MISS]
+    if not todo:
+        return {}
+    # DB 里已有的直接进内存，不再走 HTTP
+    db = None
+    try:
+        db = SessionLocal()
+        rows = db.query(StockFloatShares).filter(StockFloatShares.code.in_(todo)).all()
+        for r in rows:
+            if (r.shares or 0) > 0:
+                _FS_MEM[r.code] = float(r.shares)
+    except Exception:
+        pass
+    finally:
+        if db is not None:
+            try:
+                db.close()
+            except Exception:
+                pass
+    todo = [c for c in todo if c not in _FS_MEM]
+    if not todo:
+        return {}
+    got = _qt_batch_float_shares(todo)
+    for code, sh in got.items():
+        _FS_MEM[code] = sh
+    for c in todo:
+        if c not in got:
+            _FS_MISS.add(c)
+    _persist_float_shares(got)
+    return got
+
+
+def _turnover_from_volume(volume: float | None, shares: float | None) -> float | None:
+    """成交量(手) + 流通股本(股) → 换手率(%)。任一缺失返回 None（不猜、不返回 0）。"""
+    if not volume or not shares or volume <= 0 or shares <= 0:
+        return None
+    try:
+        return volume * 100.0 / shares * 100.0
+    except Exception:
+        return None
+
+
+def _apply_turnover(code: str, quotes: list) -> list:
+    """给日线序列补齐换手率：日K接口不回换手率，这里用「成交量 ÷ 流通股本」现算。
+
+    只在原值为空/0 时补（akshare 等源自带真实值则保留）；补不出来保持原样，
+    绝不写成假 0 —— 前端对空值显示「-」，对 0 会当成「真的 0%」，后者是错误数据。
+    """
+    if not quotes:
+        return quotes
+    if any((getattr(q, "turnover", 0) or 0) > 0 for q in quotes):
+        return quotes                      # 已带真实换手率，无需补
+    shares = _float_shares(code)
+    if not shares:
+        return quotes
+
+    vals = [_turnover_from_volume(getattr(q, "volume", 0), shares) for q in quotes]
+    valid = [v for v in vals if v is not None]
+    if valid:
+        # 成交量单位自校正：A 股单日换手不可能超过 100%（流通筹码全换一遍）。
+        # 历史上部分源（新浪 K 线、早期回填）写入的 volume 单位是「股」而非「手」，
+        # 直接按手算会得到 1000%~9000% 这种荒谬值（实测 920176 曾算出 9884%）。
+        # 判定：整条序列里超 100% 的行占比过半 → 认定单位错了一档，统一按股折算重算。
+        bad = sum(1 for v in valid if v > 100.0)
+        if bad and bad / len(valid) > 0.5:
+            for q in quotes:
+                if getattr(q, "volume", 0):
+                    q.volume = round(q.volume / 100.0)   # 股 → 手（取整，避免小数被 seed_quotes 误判为 demo）
+            vals = [round(v / 100.0) if v is not None else None for v in vals]
+
+    for q, v in zip(quotes, vals):
+        # 上限闸门：仍超过 100% 说明股本或量本身异常，宁可留空（前端显示「-」）也不展示假值
+        if v is not None and 0 < v <= 100.0:
+            q.turnover = round(v, 2)
+    return quotes
 
 
 def _market_of(code: str) -> str:
@@ -246,7 +452,12 @@ def _fetch_daily_sina(code: str, days: int) -> list[Quote] | None:
     """新浪日线——北交所兜底。实测(2026-09-08):腾讯对 920xxx 一律只回最新 1 根,
     东财在本机常被网络掐断,akshare 亦依赖东财;新浪 CN_MarketDataService 支持
     bj920xxx 全史(datalen 约可到 500)。注意该接口为不复权日线,仅用于北交所,
-    与历史行同一口径自洽,不影响 MA/箱体等相对指标。"""
+    与历史行同一口径自洽,不影响 MA/箱体等相对指标。
+
+    v190 单位修正：新浪 K 线的 volume 单位是「股」，而腾讯/东财是「手」(1 手=100 股)。
+    实测 920176 流通股本仅 794 万股,新浪 09-09 volume=2374931 → 按股算是 29.9% 换手(合理),
+    按手算就成了 2990%(荒谬)。之前直接透传导致北交所日线量比/换手全部放大 100 倍,
+    故此处统一 ÷100 折算成手,与其余数据源口径一致。"""
     mkt = _market_of(code)
     try:
         url = ("https://quotes.sina.cn/cn/api/jsonp_v2.php/var%20_/"
@@ -265,7 +476,7 @@ def _fetch_daily_sina(code: str, days: int) -> list[Quote] | None:
         for r in arr:
             o = _as_float(r.get("open")); c = _as_float(r.get("close"))
             h = _as_float(r.get("high")); l = _as_float(r.get("low"))
-            v = _as_float(r.get("volume"))
+            v = round(_as_float(r.get("volume")) / 100.0)   # v190: 新浪单位是股,折算成手(取整,与腾讯/东财同口径)
             out.append(Quote(code=code, date=str(r.get("day")), open=o, high=h, low=l, close=c,
                              volume=v, amount=0.0, turnover=0.0,
                              pre_close=prev if prev is not None else c))
@@ -387,6 +598,8 @@ def ensure_quotes(code: str, days: int = 180, _prov: list | None = None) -> list
             if quotes and len(quotes) < 10:
                 quotes = None
         if quotes:
+            # v190：日K接口不含换手率，写入前按「成交量 ÷ 流通股本」补齐（自带真值的源不动）
+            _apply_turnover(code, quotes)
             # 写回缓存（先清旧，避免唯一约束重复 + 覆盖旧演示数据）
             db.query(DailyQuote).filter(DailyQuote.code == code).delete()
             for q in quotes:
@@ -409,6 +622,8 @@ def ensure_quotes(code: str, days: int = 180, _prov: list | None = None) -> list
             cached = [Quote(code=r.code, date=r.date, open=r.open, high=r.high, low=r.low,
                             close=r.close, volume=r.volume, amount=r.amount,
                             turnover=r.turnover, pre_close=r.pre_close) for r in rows[-days:]]
+            # v190：历史行的换手率可能是 0（老数据写入时还没这套算法），读出时现算补齐
+            _apply_turnover(code, cached)
             if _prov is not None:
                 _prov[:] = ["cache"]
             _daily_fresh_put(code, days, cached)
@@ -450,9 +665,11 @@ def _get_cached_quotes(code: str, days: int = 180) -> list[Quote]:
                 .order_by(DailyQuote.date).all())
         if not rows or len(rows) < 20:
             return []
-        return [Quote(code=r.code, date=r.date, open=r.open, high=r.high, low=r.low,
-                      close=r.close, volume=r.volume, amount=r.amount,
-                      turnover=r.turnover, pre_close=r.pre_close) for r in rows[-days:]]
+        out = [Quote(code=r.code, date=r.date, open=r.open, high=r.high, low=r.low,
+                     close=r.close, volume=r.volume, amount=r.amount,
+                     turnover=r.turnover, pre_close=r.pre_close) for r in rows[-days:]]
+        _apply_turnover(code, out)      # v190：历史 0 值换手率现算补齐
+        return out
     finally:
         db.close()
 
@@ -739,7 +956,7 @@ def _fetch_spot_sina(code: str) -> dict | None:
             "name": name, "price": price, "pre_close": pre_close, "open": open0,
             "change": round(price - pre_close, 2),
             "change_pct": round((price - pre_close) / pre_close * 100, 2) if pre_close else 0,
-            "high": high, "low": low, "volume": volume / 100.0, "volume_wan": volume_wan,
+            "high": high, "low": low, "volume": round(volume / 100.0), "volume_wan": volume_wan,
             "amount": amount,
             "turnover": 0.0, "vol_ratio": 0.0, "avg_price": price,
             "ts": f[30] if len(f) > 30 else "", "src": "sina",
@@ -947,7 +1164,7 @@ def _fetch_sina_minute_range_once(code: str, datalen: int) -> list[tuple[str, in
             #   → 89224752股×11.91 ≈ 10.63 亿，完全吻合；若按手算会大 100 倍；
             #   且 /100 = 892248 手 与腾讯日线 09-02 volume=892248 完全一致）。
             # 这里统一折算成「手」，与腾讯日线 / 盘口口径对齐，避免下游再踩单位坑。
-            vol = _as_float(a.get("volume", 0)) / 100.0
+            vol = round(_as_float(a.get("volume", 0)) / 100.0)
             cum_amt += amt
             cum_vol += vol
             # hm_int: HHMM 整数, 例 09:45 -> 945

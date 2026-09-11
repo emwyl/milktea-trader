@@ -18,7 +18,9 @@ from app.schemas import (
     DayViewIn, DayViewLogIn, DayViewLogOut, MetricsSummaryOut, PoolBatchDeleteIn, PoolBatchTagsIn, PoolImportIn, PoolIn, PoolOut,
     RecapIn, TagIn, TagOut, WatchLogItem, WatchLogOut,
 )
-from app.services.data_fetcher import ensure_stock_name, get_pool_track, _fetch_intraday_fund, _market_return
+from app.services.data_fetcher import (ensure_stock_name, get_pool_track, _fetch_intraday_fund,
+                                        _market_return, _float_shares, _turnover_from_volume,
+                                        prefetch_float_shares)
 from app.services.preference import match_scheme
 from app.services.screener import get_screener
 from sqlalchemy import and_, func, or_
@@ -1563,6 +1565,20 @@ def _sort_items(items: list[dict], key: str, desc: bool) -> list[dict]:
 
 
 # ===== v186: 盘前预判 / 复盘管理 共用的行组装（列表接口与导出接口同一口径，避免两套算法）=====
+def _turnover_of_row(row) -> float | None:
+    """v190：取日线行的换手率。日K接口不回换手率，历史行多为 0，
+    这里用「成交量(手) ÷ 流通股本(股)」现算兜底；算不出来返回 None（前端显示「-」，不显示假 0）。"""
+    t = getattr(row, "turnover", 0) or 0
+    if 0 < t <= 100.0:                       # A股单日换手上界 100%，越过即数据不可信
+        return round(t, 2)
+    try:
+        t2 = _turnover_from_volume(getattr(row, "volume", 0), _float_shares(getattr(row, "code", "")))
+        # 现算同样受上界约束：成交量单位异常（股/手混淆）时会算出 1000%+ 的值，宁可留空
+        return round(t2, 2) if (t2 and 0 < t2 <= 100.0) else None
+    except Exception:
+        return None
+
+
 def _t1_static_metrics(db, code: str, trade_date: str) -> dict:
     """v189: 盘前静态指标（T-1 口径）——取 trade_date 之前最近一根日线当「昨日」，
     并基于它及更早的日线算 MA5/MA20/5日·20日均量/箱体位置/振幅。
@@ -1593,7 +1609,7 @@ def _t1_static_metrics(db, code: str, trade_date: str) -> dict:
         "prev_close": round(prev.close, 2) if prev.close else None,
         "prev_high": round(prev.high, 2) if prev.high else None,
         "prev_low": round(prev.low, 2) if prev.low else None,
-        "prev_turnover": round(prev.turnover, 2) if prev.turnover else None,
+        "prev_turnover": _turnover_of_row(prev),      # v190：0 值用「量÷流通股本」现算
         "prev_volume": round(prev.volume / 1e4, 2) if prev.volume else None,  # 万手(与 5日/20日均量同口径)
         "main_net_pct": prev.main_net_pct,                                  # 主力净流入%（可能 None）
         "main_signal": prev.main_signal or "",                              # 主力信号文本
@@ -1643,6 +1659,7 @@ def _build_pretrade_items(db, user, q, tag, trade_date) -> list[dict]:
     """组装盘前预判全量行（不分页，导出直接用）。"""
     rows = _pool_rows_filtered(db, user.id, q, tag, scope="pretrade")
     codes = [p.code for p in rows]
+    prefetch_float_shares(codes)        # v190：一次批量拉流通股本，避免逐只打 HTTP 算换手率
     logs = _last_logs_of_date(db, user.id, codes, trade_date)
     counts = _log_counts_of_date(db, user.id, codes, trade_date)
     quotes = _latest_quotes(db, codes, trade_date)

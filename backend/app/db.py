@@ -262,6 +262,19 @@ def run_migrations(engine):
             except Exception:
                 pass
 
+        # v190：流通股本缓存表（换手率 = 成交量 ÷ 流通股本，日K接口不含换手率，只能自算）。
+        if not _has_table(conn, "stock_float_shares"):
+            try:
+                conn.execute(text("""
+                    CREATE TABLE stock_float_shares (
+                        code VARCHAR(16) PRIMARY KEY,
+                        shares FLOAT DEFAULT 0.0,
+                        updated_at VARCHAR(32)
+                    )
+                """))
+            except Exception:
+                pass
+
         # v143：日初判断修改记录表（day_view_log）。
         #   每次修改都追加一条（不删旧），同一天允许多条；
         #   「当日最新」=同日 operated_at 最大；盯盘日志按交易日聚合，每交易日取最后一条作为复盘输入。
