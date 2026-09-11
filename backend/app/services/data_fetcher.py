@@ -1359,7 +1359,8 @@ _SINA_MIN_OHLC_CACHE: dict[str, tuple[float, list]] = {}
 _SINA_MIN_OHLC_TTL = 300.0
 
 
-def _fetch_sina_minute_ohlc(code: str, datalen: int = 1800) -> list[dict] | None:
+def _fetch_sina_minute_ohlc(code: str, datalen: int = 1800,
+                            symbol: str | None = None) -> list[dict] | None:
     """新浪 1 分钟 K 线的**完整字段**版本（含每分钟开高低收），供「定期复盘报告」画分时趋势图。
 
     与 `_fetch_sina_minute_range` 的区别：后者只需要「累计成交额/成交量」，
@@ -1372,17 +1373,21 @@ def _fetch_sina_minute_ohlc(code: str, datalen: int = 1800) -> list[dict] | None
     "=(null);"）。更早的日期拿不到分钟级数据，因此报表对超出窗口的日期只能不给分时图。
 
     缓存：_SINA_MIN_OHLC_CACHE（300s，历史数据不会变；仅当日数据最多滞后 5 分钟）。
+
+    `symbol`（0911批次4 Phase C 新增）：显式指定新浪代码（如指数 `sh000905`）。
+    指数的代码前缀**不能**由 `_market_of()` 推出 —— 中证500 是 `sh000905`，而 `_market_of('000905')`
+    会按「0 开头→深市」给出 `sz000905`（那是另一只股票），取回来的会是完全无关的序列。
     """
-    key = f"{code}:{datalen}"
+    sym = symbol or f"{_market_of(code)}{code}"
+    key = f"{sym}:{datalen}"
     cached = _SINA_MIN_OHLC_CACHE.get(key)
     now = time.time()
     if cached and (now - cached[0]) < _SINA_MIN_OHLC_TTL:
         return cached[1]
     datalen = min(int(datalen), 1800)          # 硬上限，超过会被上游拒绝
-    mkt = _market_of(code)
     url = (
         f"https://quotes.sina.cn/cn/api/jsonp_v2.php/="
-        f"/CN_MarketDataService.getKLineData?symbol={mkt}{code}&scale=1&datalen={datalen}"
+        f"/CN_MarketDataService.getKLineData?symbol={sym}&scale=1&datalen={datalen}"
     )
     txt = _http_get(url, headers={"Referer": "https://quotes.sina.cn/"})
     if not txt:

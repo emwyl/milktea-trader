@@ -34,4 +34,4 @@
 from __future__ import annotations
 
 # 修改版本请用 scripts/version_bump.py --bump（会同步改前端常量），不要只手改这里。
-APP_VERSION = "v20260911150"
+APP_VERSION = "v20260912151"

@@ -13,7 +13,7 @@
 // 正常运行时会用 /api/health 返回的**后端版本**覆盖它 —— 因为部署包 publish/ 同时含
 // frontend/ 与 backend/ 两份副本，只看前端硬编码的版本无法发现「后端副本忘记同步」。
 // 唯一权威来源是 backend/app/version.py；改版本请用 scripts/version_bump.py --bump。
-var FRONTEND_VERSION = 'v20260911150';
+var FRONTEND_VERSION = 'v20260912151';
 // v166 网关偶发 502 历史教训:vue.global.prod.js 加载失败会直接导致下方主脚本 `const {createApp}=Vue` 抛
 // ReferenceError,整页{{}}占位符/弹窗默认可见——表现就是"登录闪一下又回登录界面但 Vue 没渲染"。
 // v168 实施兜底:检测到 Vue 未定义时,提示用户并自动注入新 <script> 重试一次,成功后整页 reload 跑完整流程。
@@ -110,6 +110,18 @@ var FRONTEND_VERSION = 'v20260911150';
   .rep-chip.on{background:var(--tea);color:#fff;border-color:var(--tea)}
   .rep-chart-wrap{padding:10px;background:#fbfdff;text-align:center}
   .rep-note{font-size:12px;color:#64748b;margin-top:6px;line-height:1.6}
+  /* —— 报表2 回测统计 —— */
+  .bt-kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(178px,1fr));gap:8px;margin-bottom:10px}
+  .bt-kpi{border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:#fbfdff}
+  .bt-kpi-k{font-size:12px;color:#64748b}
+  .bt-kpi-v{font-size:20px;font-weight:700;line-height:1.3}
+  .bt-kpi-s{font-size:11px;color:#94a3b8;margin-top:2px;line-height:1.4}
+  /* N<20 灰显：样本太小时命中率波动极大，明确降低它的视觉权重，避免被当结论用 */
+  .bt-kpi.bt-low{background:#f8fafc;border-style:dashed}
+  .bt-kpi.bt-low .bt-kpi-v{color:#94a3b8}
+  .bt-dim{color:#b6c2d1;background:#fbfcfd}
+  .bt-cell{font-weight:600}
+  .bt-sec{font-size:13px;font-weight:700;color:var(--tea-d);margin:16px 0 6px;padding-left:8px;border-left:3px solid var(--tea)}
   nav{display:flex;gap:6px;padding:8px 16px;background:#fff;border-bottom:1px solid var(--line);flex-wrap:wrap}
   nav a{padding:6px 12px;border-radius:8px;cursor:pointer;font-size:14px;color:var(--ink);text-decoration:none}
   nav a.active{background:var(--tea);color:#fff}
@@ -796,6 +808,16 @@ var FRONTEND_VERSION = 'v20260911150';
   .sd-rc-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:8px}
   .sd-rc-row{display:flex;align-items:flex-start;gap:8px;background:#fff;border:1px solid #f5e8c8;border-radius:6px;padding:7px 10px;font-size:12px}
   .sd-rc-badge{flex-shrink:0;display:inline-block;min-width:54px;text-align:center;padding:2px 6px;border-radius:4px;font-size:11px;font-weight:700}
+  /* 0912批次5: D类区块「未返回数据」空态——用灰调与正常态区分,避免被误读成「全部通过」 */
+  .sd-rc-empty{background:#f9fafb;border-color:#e5e7eb;border-left-color:#9ca3af}
+  .sd-rc-empty .sd-rc-head b{color:#6b7280}
+  /* 0912批次5: 评分详情弹窗内的市场环境因子区块(蓝调,与 D 类的琥珀色区分) */
+  .sd-regime-box{background:#eff6ff;border:1px solid #bfdbfe;border-left:4px solid #2563eb;padding:10px 14px;border-radius:6px;margin-bottom:14px}
+  .sd-regime-box .sd-rc-head b{color:#1d4ed8;font-size:13px}
+  .sd-regime-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:8px}
+  .sd-regime-cell{background:#fff;border:1px solid #dbeafe;border-radius:6px;padding:7px 10px}
+  .sd-regime-k{font-size:11px;color:#6b7280;margin-bottom:3px}
+  .sd-regime-v{font-size:12px;display:flex;align-items:center;flex-wrap:wrap;gap:4px}
   .sd-rc-veto{background:#dc2626;color:#fff}
   .sd-rc-ok{background:#16a34a;color:#fff}
   .sd-rc-na{background:#f59e0b;color:#fff}
@@ -952,7 +974,7 @@ var FRONTEND_VERSION = 'v20260911150';
             :title="verMismatch
               ? ('⚠️ 前后端版本不一致！前端 ' + feVersion + ' / 后端 ' + (appVersion||'未知') + ' —— 说明发布包的两份副本没同步(publish/backend 或 publish/frontend 只更新了一份)，请勿据此判断功能是否已上线')
               : ('当前运行版本（后端自报）：' + (appVersion || feVersion) + (appVersion ? '' : ' · 后端未响应,显示前端兜底值'))">{{ appVersion || feVersion }}<b v-if="verMismatch"> ⚠ 前后端不一致</b></span>
-      <button class="ghost auto-refresh-btn" :class="{active:autoRefresh}" @click="toggleAutoRefresh" :title="autoRefresh?'自动刷新开启中，每10秒更新当前页面数据':'点击开启每10秒自动刷新'">
+      <button class="ghost auto-refresh-btn" :class="{active:autoRefresh}" @click="toggleAutoRefresh" :title="autoRefresh?'自动刷新开启中，每5秒更新当前页面数据':'点击开启每5秒自动刷新'">
         {{autoRefresh?'⏸':'▶'}} 自动 5s
       </button>
       <span class="sub">你好，{{me.username}} <span v-if="me.role==='admin'" class="pill">admin</span><span v-if="me.is_guest" class="pill">游客</span></span>
@@ -2882,6 +2904,70 @@ var FRONTEND_VERSION = 'v20260911150';
                 状态说明:✓ 通过(数据可用且未命中) · ✗ 否决命中(数据可用且命中风险) · ⚠ 待复核(数据源未接入,绝不因取数失败误杀,需人工核实)。前 3 条技术面否决见上方「一票否决」红框。
               </div>
             </div>
+            <!-- 0912批次5: 双保险——富化未就绪时明确说明原因,而不是整块凭空消失
+                 (原实现无此分支,用户只看到「D类区块不见了」,无法判断是「全部通过」还是「没数据」) -->
+            <div v-else-if="scoreDetailModal._result" class="sd-rc-box sd-rc-empty">
+              <div class="sd-rc-head"><b>🛡 D类 基本面/合规否决</b></div>
+              <div class="muted" style="margin-top:6px;font-size:12px">
+                本次未返回 D 类检查结果 —— 该股行情富化尚未完成或该时段数据源未接入。
+                <b>这不等于「全部通过」</b>,请稍后刷新页面重试。
+              </div>
+            </div>
+
+            <!-- 0912批次5: 市场环境因子 —— 之前只在列表页露了个小徽章,弹窗里完全没有,
+                 用户点开发现「分数被调低了却看不出为什么」。这里把换算过程整个摊开。 -->
+            <div v-if="scoreDetailModal._result" class="sd-regime-box">
+              <div class="sd-rc-head">
+                <b>🌐 市场环境因子（输出层调节）</b>
+                <span class="muted">只作用于「调整后分」与方向判定，不改动上方原始分</span>
+              </div>
+              <div class="sd-regime-grid">
+                <div class="sd-regime-cell">
+                  <div class="sd-regime-k">大盘档位</div>
+                  <div class="sd-regime-v">
+                    <span v-if="scoreDetailModal._result.marketRegime" class="env-badge"
+                          :class="'env-'+(scoreDetailModal._result.marketRegime.tier||'weak')">{{ scoreDetailModal._result.marketRegime.label || '-' }}</span>
+                    <span v-if="scoreDetailModal._result.marketRegime && scoreDetailModal._result.marketRegime.m!=null"
+                          class="muted" style="margin-left:6px">恐慌分 M={{ scoreDetailModal._result.marketRegime.m }}</span>
+                    <span v-else class="muted">未取到</span>
+                  </div>
+                </div>
+                <div class="sd-regime-cell">
+                  <div class="sd-regime-k">环境系数</div>
+                  <div class="sd-regime-v">
+                    M折扣 {{ (+scoreDetailModal._result.mDiscount).toFixed(3) }}
+                    × 风格 {{ (+scoreDetailModal._result.styleMult).toFixed(3) }}
+                    = <b>{{ (+scoreDetailModal._result.adjFactor).toFixed(3) }}</b>
+                  </div>
+                </div>
+                <div class="sd-regime-cell">
+                  <div class="sd-regime-k">分数换算</div>
+                  <div class="sd-regime-v">
+                    原始 <b>{{ scoreDetailModal._result.userRawScore }}</b>
+                    × {{ (+scoreDetailModal._result.adjFactor).toFixed(3) }}
+                    → 调整后 <b>{{ scoreDetailModal._result.userAdjScore }}</b>
+                    <span class="sd-grade" :class="'grade-'+scoreDetailModal._result.userAdjGrade">{{ scoreDetailModal._result.userAdjGrade }}</span>
+                  </div>
+                </div>
+                <div class="sd-regime-cell">
+                  <div class="sd-regime-k">方向判定</div>
+                  <div class="sd-regime-v">
+                    <span class="sem-chip" :class="scoreDetailModal._result.userSemantic==='看涨'?'sem-up':(scoreDetailModal._result.userSemantic==='看跌'?'sem-down':'sem-flat')">{{ scoreDetailModal._result.userSemantic }}</span>
+                    <span v-for="(f,fi) in (scoreDetailModal._result.regimeFlags||[])" :key="fi"
+                          class="flag-chip" :class="/屏蔽|环境崩坏/.test(f)?'flag-block':'flag-pulse'">{{ f }}</span>
+                  </div>
+                </div>
+              </div>
+              <div class="muted" style="margin-top:6px;font-size:11px">
+                个股属性：风格 {{ scoreDetailModal._result.styleTag || '-' }} ·
+                市值 {{ scoreDetailModal._result.mvTier || '-' }} ·
+                Beta {{ scoreDetailModal._result.beta != null ? scoreDetailModal._result.beta : '-' }} ·
+                20日相对强度 {{ scoreDetailModal._result.rs != null ? (scoreDetailModal._result.rs + '%') : '-' }}
+                <template v-if="scoreDetailModal._result.sectorRegime && scoreDetailModal._result.sectorRegime.tier">
+                  · 板块 {{ scoreDetailModal._result.sectorRegime.label || scoreDetailModal._result.sectorRegime.tier }}
+                </template>
+              </div>
+            </div>
 
             <!-- 三维度权重编辑 -->
             <div class="sd-dim-row">
@@ -3636,7 +3722,16 @@ var FRONTEND_VERSION = 'v20260911150';
           分时走势图仅近约 7 个交易日可回溯（上游限制）。
         </div>
 
-        <div class="card">
+        <!-- 报表切换：报表1 看「每一天每只票当时给了多少分」，报表2 看「这套打分规则到底准不准」 -->
+        <div class="row" style="gap:6px;margin-bottom:10px">
+          <button :class="rep.tab==='daily' ? '' : 'ghost'" @click="switchReportTab('daily')">个股明细</button>
+          <button :class="rep.tab==='backtest' ? '' : 'ghost'" @click="switchReportTab('backtest')">回测统计</button>
+          <span class="muted" style="margin-left:8px">
+            {{ rep.tab==='daily' ? '按日 × 个股看时点评分与方向' : '按样本统计命中率 / 超额 / IC，检验规则有效性' }}
+          </span>
+        </div>
+
+        <div class="card" v-if="rep.tab==='daily'">
           <!-- 筛选条件行（按项目约定：查询/重置相邻，操作按钮单独成行） -->
           <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
             <span class="muted">日期</span>
@@ -3774,6 +3869,304 @@ var FRONTEND_VERSION = 'v20260911150';
             <br>口径：时点评分来自后端落库快照（默认权重口径，保证整段时间可比）；「观望」= 市场环境崩坏或弱势市题材股逆势涨，只守不攻、不给方向。
           </div>
         </div>
+
+        <!-- ============ 报表 2：回测统计 ============ -->
+        <div class="card" v-if="rep.tab==='backtest'">
+          <div class="hintbar" style="margin-bottom:10px">
+            回测统计只回答一个问题：<b>「评分 ≥ 阈值就判看涨」这条规则，在过去这段时间到底准不准？</b>
+            每个样本用<b>入场时点的评分</b>定方向，用<b>下一个监控时点（最后一段取收盘）</b>算实际涨跌，再比对两者。
+            除绝对方向外，还给出<b>池内等权</b>与<b>指数</b>两套超额基准 —— 普跌行情里全体看跌会把「看跌命中率」抬得很高，
+            只有超额命中率能区分「真的会判」和「只是跟着大盘走」。
+            <b>N&lt;20 的格子会灰显</b>：样本太小时命中率波动极大，不要据此下结论。
+          </div>
+
+          <!-- 筛选条件行 -->
+          <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
+            <span class="muted">日期</span>
+            <input type="date" v-model="rep.bt.start" style="width:150px">
+            <span class="muted">~</span>
+            <input type="date" v-model="rep.bt.end" style="width:150px">
+            <button @click="btQuickRange(7)">近7日</button>
+            <button class="ghost" @click="btQuickRange(30)">近30日</button>
+            <span class="muted" style="margin-left:6px">看涨阈值</span>
+            <input type="number" v-model.number="rep.bt.threshold" step="1" min="0" max="100" style="width:70px"
+                   title="评分 ≥ 阈值 → 判看涨；否则判看跌">
+            <span class="muted">中性 ε(%)</span>
+            <input type="number" v-model.number="rep.bt.eps" step="0.1" min="0" style="width:70px"
+                   title="|区间涨跌幅| ≤ ε 视为无方向，剔出命中率分母">
+            <span class="muted">评分口径</span>
+            <select v-model="rep.bt.basis" style="width:200px">
+              <option value="raw">原始分（跨日可比·复盘首选）</option>
+              <option value="adj">调整后分（与盘间监控一致）</option>
+            </select>
+            <span class="muted">基准</span>
+            <select v-model="rep.bt.bench" style="width:200px">
+              <option value="pool">池内等权（横截面·看选股）</option>
+              <option v-for="o in btBenchOptions" :key="o.code" :value="o.code">{{ o.label }}（时序·看择时）</option>
+            </select>
+            <label style="display:flex;align-items:center;gap:4px">
+              <input type="checkbox" v-model="rep.bt.monitorOnly"> 仅看监控池
+            </label>
+            <button @click="loadReportBacktest">查询</button>
+            <button class="ghost" @click="resetBacktestFilters">重置</button>
+          </div>
+
+          <!-- 监控时点（chip 多选） -->
+          <div class="row" style="gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
+            <span class="muted">监控时点</span>
+            <button v-for="s in rep.bt.slotsAll" :key="s" class="rep-chip"
+                    :class="{'on': rep.bt.slots.indexOf(s) >= 0}" @click="btToggleSlot(s)">{{ reportSlotLabel(s) }}</button>
+            <button class="ghost" style="padding:2px 8px;font-size:11px" @click="btSlotsDefault">恢复默认</button>
+            <span class="muted">（入场时点 → 出场时点 = 下一个勾选时点；最后一个取当日收盘）</span>
+          </div>
+
+          <!-- 操作按钮区（单独成行） -->
+          <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid #e5e7eb">
+            <button class="ghost" @click="exportReportBacktest" :disabled="rep.bt.loading || !btHasData">导出 Excel</button>
+            <span class="muted">{{ rep.statusText }}</span>
+          </div>
+
+          <div v-if="rep.bt.err" class="data-err">⚠ {{ rep.bt.err }} <button @click="loadReportBacktest">重试</button></div>
+
+          <div v-if="rep.bt.loading" class="pool-loading-mask">
+            <div class="pool-loading-box"><span class="pool-loading-spin"></span>正在回测…</div>
+          </div>
+
+          <!-- 空态：原因必须原样传达，不编造数 -->
+          <div v-if="btEmpty" class="rep-note" style="margin-top:4px">
+            <b>本区间没有可回测的样本。</b><br>{{ btMeta.note }}
+          </div>
+
+          <template v-if="btHasData">
+            <!-- 摘要 KPI -->
+            <div class="bt-kpis">
+              <div class="bt-kpi">
+                <div class="bt-kpi-k">有效样本 N</div>
+                <div class="bt-kpi-v">{{ btSummary.n }}</div>
+                <div class="bt-kpi-s">{{ btMeta.codes }} 只 × {{ btMeta.dates }} 个交易日 × {{ rep.bt.slots.length }} 时点</div>
+              </div>
+              <div class="bt-kpi" :class="{'bt-low': btLow(btSummary.n)}">
+                <div class="bt-kpi-k">总命中率</div>
+                <div class="bt-kpi-v">{{ btPct(btSummary.hit) }}</div>
+                <div class="bt-kpi-s">可判方向 {{ btSummary.n_eval }}，中性剔出 {{ btSummary.n_flat }}</div>
+              </div>
+              <div class="bt-kpi" :class="{'bt-low': btLow(btSummary.bull_eval)}">
+                <div class="bt-kpi-k">看涨命中率</div>
+                <div class="bt-kpi-v" :class="btHitClass(btSummary.bull_hit)">{{ btPct(btSummary.bull_hit) }}</div>
+                <div class="bt-kpi-s">看涨样本 {{ btSummary.bull_n }}（可判 {{ btSummary.bull_eval }}）</div>
+              </div>
+              <div class="bt-kpi" :class="{'bt-low': btLow(btSummary.bear_eval)}">
+                <div class="bt-kpi-k">看跌命中率</div>
+                <div class="bt-kpi-v" :class="btHitClass(btSummary.bear_hit)">{{ btPct(btSummary.bear_hit) }}</div>
+                <div class="bt-kpi-s">看跌样本 {{ btSummary.bear_n }}（可判 {{ btSummary.bear_eval }}）</div>
+              </div>
+              <div class="bt-kpi">
+                <div class="bt-kpi-k">多空对称性</div>
+                <div class="bt-kpi-v">{{ btPct(btSummary.symmetry) }}</div>
+                <div class="bt-kpi-s">看涨−看跌，接近 0 才是双向都能判</div>
+              </div>
+              <div class="bt-kpi">
+                <div class="bt-kpi-k">池内超额命中率</div>
+                <div class="bt-kpi-v" :class="btHitClass(btSummary.p_hit)">{{ btPct(btSummary.p_hit) }}</div>
+                <div class="bt-kpi-s">衡量选股能力（横截面）</div>
+              </div>
+              <div class="bt-kpi">
+                <div class="bt-kpi-k">指数超额命中率</div>
+                <div class="bt-kpi-v" :class="btHitClass(btSummary.b_hit)">{{ btPct(btSummary.b_hit) }}</div>
+                <div class="bt-kpi-s">衡量择时能力（{{ btBenchLabel }}）</div>
+              </div>
+              <div class="bt-kpi" :class="{'bt-low': (btIc.periods||0) < 10}">
+                <div class="bt-kpi-k">IC 均值 / ICIR</div>
+                <div class="bt-kpi-v">{{ btNum(btIc.ic_mean, 3) }} / {{ btNum(btIc.icir, 2) }}</div>
+                <div class="bt-kpi-s">RankIC {{ btNum(btIc.rank_ic_mean, 3) }}，{{ btIc.periods }} 期</div>
+              </div>
+            </div>
+
+            <div class="rep-note" style="margin:2px 0 10px">
+              预测规则：评分 ≥ <b>{{ rep.bt.threshold }}</b> → 看涨，否则看跌（口径={{ rep.bt.basis==='adj' ? '调整后分' : '原始分' }}）·
+              中性区间 ε=<b>{{ rep.bt.eps }}%</b>（|区间涨跌幅| ≤ ε 视为无方向，不计入命中率）·
+              区间：<b>{{ btSegText }}</b>
+              <span v-if="btMeta.drop">
+                · 丢弃样本：无有效评分 {{ btMeta.drop.no_score }}、缺入场价 {{ btMeta.drop.no_entry }}、缺出场价 {{ btMeta.drop.no_exit }}
+              </span>
+            </div>
+
+            <div class="rep-note" style="margin:0 0 10px">
+              <b>基准：{{ btBenchLabel }}</b>
+              <span v-if="btBenchKind==='index'">
+                —— {{ btBenchAvailable ? ('指数分钟线可用，覆盖 ' + (btBenchWindow.from||'') + ' ~ ' + (btBenchWindow.to||'')) : '本次取不到指数分钟线，指数相关列为空（不猜、不近似）' }}
+              </span>
+              <span v-else>—— 同一时点全池样本的等权平均收益，不依赖外部数据、永远可用</span>
+              <br>{{ btBenchNote }}
+            </div>
+
+            <!-- 表1 按监控时点 -->
+            <div class="bt-sec">按监控时点</div>
+            <div class="rep-scroll" style="max-height:none">
+              <table class="rep-tbl">
+                <thead>
+                  <tr>
+                    <th>入场时点</th><th>区间</th><th>标的数</th><th>N</th>
+                    <th>看涨</th><th>看跌</th>
+                    <th>看涨命中</th><th>看跌命中</th><th>总命中</th>
+                    <th>精确率</th><th>召回率</th><th>F1</th><th>对称性</th>
+                    <th>平均收益%</th><th>采样振幅%</th><th>捕获比</th>
+                    <th>策略期望%</th><th>策略胜率</th><th>盈亏比</th>
+                    <th>池内超额命中</th><th>指数超额命中</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="r in btBySlot" :key="r.slot">
+                    <td>{{ reportSlotLabel(r.slot) }}</td>
+                    <td style="text-align:left">{{ r.seg }}</td>
+                    <td>{{ r.codes }}</td>
+                    <td>{{ r.n }}</td>
+                    <td>{{ r.bull_n }}</td><td>{{ r.bear_n }}</td>
+                    <td :class="['bt-cell', btLow(r.bull_eval) ? 'bt-dim' : '', btHitClass(r.bull_hit)]">{{ btPct(r.bull_hit) }}</td>
+                    <td :class="['bt-cell', btLow(r.bear_eval) ? 'bt-dim' : '', btHitClass(r.bear_hit)]">{{ btPct(r.bear_hit) }}</td>
+                    <td :class="['bt-cell', btLow(r.n_eval) ? 'bt-dim' : '', btHitClass(r.hit)]">{{ btPct(r.hit) }}</td>
+                    <td :class="btLow(r.n_eval) ? 'bt-dim' : ''">{{ btPct(r.precision) }}</td>
+                    <td :class="btLow(r.n_eval) ? 'bt-dim' : ''">{{ btPct(r.recall) }}</td>
+                    <td :class="btLow(r.n_eval) ? 'bt-dim' : ''">{{ btNum(r.f1, 3) }}</td>
+                    <td>{{ btPct(r.symmetry) }}</td>
+                    <td :class="btUpDown(r.avg_ret)">{{ btSigned(r.avg_ret) }}</td>
+                    <td>{{ btNum(r.avg_amp, 2) }}</td>
+                    <td>{{ btNum(r.amp_capture, 2) }}</td>
+                    <td :class="btUpDown(r.avg_pnl)">{{ btSigned(r.avg_pnl) }}</td>
+                    <td>{{ btPct(r.pnl_win) }}</td>
+                    <td>{{ btNum(r.profit_factor, 2) }}</td>
+                    <td :class="['bt-cell', btLow(r.p_hit_n) ? 'bt-dim' : '', btHitClass(r.p_hit)]">{{ btPct(r.p_hit) }}</td>
+                    <td :class="['bt-cell', btLow(r.b_hit_n) ? 'bt-dim' : '', btHitClass(r.b_hit)]">{{ btPct(r.b_hit) }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <!-- 表2 分桶有效性 -->
+            <div class="bt-sec">分桶有效性（评分越高是否越强）</div>
+            <div class="rep-scroll" style="max-height:none">
+              <table class="rep-tbl">
+                <thead>
+                  <tr><th>评分区间</th><th>N</th><th>标的数</th><th>上涨占比</th><th>命中率</th>
+                      <th>平均收益%</th><th>采样振幅%</th><th>池内超额命中</th><th>指数超额命中</th></tr>
+                </thead>
+                <tbody>
+                  <tr v-for="r in btByBucket" :key="r.bucket">
+                    <td><b>{{ r.bucket }}</b></td>
+                    <td>{{ r.n }}</td>
+                    <td>{{ r.codes }}</td>
+                    <td :class="['bt-cell', btLow(r.n) ? 'bt-dim' : '', btHitClass(r.up_share)]">{{ btPct(r.up_share) }}</td>
+                    <td :class="['bt-cell', btLow(r.n_eval) ? 'bt-dim' : '', btHitClass(r.hit)]">{{ btPct(r.hit) }}</td>
+                    <td :class="btUpDown(r.avg_ret)">{{ btSigned(r.avg_ret) }}</td>
+                    <td>{{ btNum(r.avg_amp, 2) }}</td>
+                    <td :class="['bt-cell', btLow(r.p_hit_n) ? 'bt-dim' : '', btHitClass(r.p_hit)]">{{ btPct(r.p_hit) }}</td>
+                    <td :class="['bt-cell', btLow(r.b_hit_n) ? 'bt-dim' : '', btHitClass(r.b_hit)]">{{ btPct(r.b_hit) }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="rep-note">理想形态是随评分升高<b>单调递增</b>；若到某桶之后走平或反转，说明该阈值之上区分度不够。</div>
+
+            <!-- 表3 分组透视 -->
+            <div class="bt-sec">分组透视</div>
+            <div v-for="g in btByDim" :key="g.dim" style="margin-bottom:10px">
+              <div class="muted" style="font-size:12px;margin:0 0 4px">按{{ g.label }}</div>
+              <div class="rep-scroll" style="max-height:none">
+                <table class="rep-tbl">
+                  <thead>
+                    <tr><th>分组</th><th>标的数</th><th>N</th><th>看涨</th><th>看跌</th>
+                        <th>总命中</th><th>看涨命中</th><th>看跌命中</th>
+                        <th>平均收益%</th><th>采样振幅%</th><th>池内超额命中</th><th>指数超额命中</th></tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="r in g.rows" :key="r.key">
+                      <td style="text-align:left"><b>{{ r.key }}</b></td>
+                      <td>{{ r.codes }}</td>
+                      <td>{{ r.n }}</td>
+                      <td>{{ r.bull_n }}</td><td>{{ r.bear_n }}</td>
+                      <td :class="['bt-cell', btLow(r.n_eval) ? 'bt-dim' : '', btHitClass(r.hit)]">{{ btPct(r.hit) }}</td>
+                      <td :class="['bt-cell', btLow(r.bull_eval) ? 'bt-dim' : '', btHitClass(r.bull_hit)]">{{ btPct(r.bull_hit) }}</td>
+                      <td :class="['bt-cell', btLow(r.bear_eval) ? 'bt-dim' : '', btHitClass(r.bear_hit)]">{{ btPct(r.bear_hit) }}</td>
+                      <td :class="btUpDown(r.avg_ret)">{{ btSigned(r.avg_ret) }}</td>
+                      <td>{{ btNum(r.avg_amp, 2) }}</td>
+                      <td :class="['bt-cell', btLow(r.p_hit_n) ? 'bt-dim' : '', btHitClass(r.p_hit)]">{{ btPct(r.p_hit) }}</td>
+                      <td :class="['bt-cell', btLow(r.b_hit_n) ? 'bt-dim' : '', btHitClass(r.b_hit)]">{{ btPct(r.b_hit) }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- 表4 时间稳健性 + 命中率曲线 -->
+            <div class="bt-sec">时间稳健性（逐日）</div>
+            <div class="rep-chart-wrap" style="margin-bottom:10px">
+              <canvas ref="btCurve" width="1000" height="200" style="width:100%;max-width:1000px;height:200px"></canvas>
+              <div class="muted" style="font-size:12px;margin-top:4px">
+                实线=总命中率，<span style="color:#dc2626">红=看涨命中率</span>，<span style="color:#16a34a">绿=看跌命中率</span>，
+                虚线=50% 抛硬币基准。单日高低说明不了问题，要看整段是否稳定地压在 50% 之上。
+              </div>
+            </div>
+            <div class="rep-scroll" style="max-height:none">
+              <table class="rep-tbl">
+                <thead>
+                  <tr><th>交易日</th><th>标的数</th><th>区间数</th><th>N</th>
+                      <th>总命中</th><th>看涨命中</th><th>看跌命中</th>
+                      <th>平均收益%</th><th>池内超额%</th><th>池内命中</th><th>指数超额%</th><th>指数命中</th></tr>
+                </thead>
+                <tbody>
+                  <tr v-for="r in btByTime" :key="r.date">
+                    <td>{{ r.date }}</td>
+                    <td>{{ r.codes }}</td>
+                    <td>{{ r.seg_n }}</td>
+                    <td>{{ r.n }}</td>
+                    <td :class="['bt-cell', btLow(r.n_eval) ? 'bt-dim' : '', btHitClass(r.hit)]">{{ btPct(r.hit) }}</td>
+                    <td :class="['bt-cell', btLow(r.bull_eval) ? 'bt-dim' : '', btHitClass(r.bull_hit)]">{{ btPct(r.bull_hit) }}</td>
+                    <td :class="['bt-cell', btLow(r.bear_eval) ? 'bt-dim' : '', btHitClass(r.bear_hit)]">{{ btPct(r.bear_hit) }}</td>
+                    <td :class="btUpDown(r.avg_ret)">{{ btSigned(r.avg_ret) }}</td>
+                    <td :class="btUpDown(r.p_excess_avg)">{{ btSigned(r.p_excess_avg) }}</td>
+                    <td :class="['bt-cell', btLow(r.p_hit_n) ? 'bt-dim' : '', btHitClass(r.p_hit)]">{{ btPct(r.p_hit) }}</td>
+                    <td :class="btUpDown(r.b_excess_avg)">{{ btSigned(r.b_excess_avg) }}</td>
+                    <td :class="['bt-cell', btLow(r.b_hit_n) ? 'bt-dim' : '', btHitClass(r.b_hit)]">{{ btPct(r.b_hit) }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <!-- 表5 语义分组（验证「观望」） -->
+            <div class="bt-sec">语义分组（验证「观望」值不值）</div>
+            <div class="rep-scroll" style="max-height:none">
+              <table class="rep-tbl">
+                <thead>
+                  <tr><th>落库语义</th><th>N</th><th>标的数</th><th>上涨占比</th>
+                      <th>平均收益%</th><th>采样振幅%</th><th>命中率</th></tr>
+                </thead>
+                <tbody>
+                  <tr v-for="r in btBySemantic" :key="r.key">
+                    <td style="text-align:left">{{ r.label }}</td>
+                    <td>{{ r.n }}</td>
+                    <td>{{ r.codes }}</td>
+                    <td :class="['bt-cell', btLow(r.n) ? 'bt-dim' : '', btHitClass(r.up_share)]">{{ btPct(r.up_share) }}</td>
+                    <td :class="btUpDown(r.avg_ret)">{{ btSigned(r.avg_ret) }}</td>
+                    <td>{{ btNum(r.avg_amp, 2) }}</td>
+                    <td :class="['bt-cell', btLow(r.n_eval) ? 'bt-dim' : '', btHitClass(r.hit)]">{{ btPct(r.hit) }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="rep-note">
+              若「观望」组平均收益确实 ≈0 且明显弱于看涨组，说明「崩坏市 / 弱势逆势涨 → 不给方向」这条规则有效；
+              若观望组与看涨组一样强，说明观望过严、错过了机会。本表用<b>落库语义</b>分组（不受当前阈值影响），
+              因此是验证规则本身、而不是验证阈值。
+            </div>
+
+            <div class="rep-note">
+              {{ btMeta.note }}
+              <br><b>口径：</b>方向目标 =（出场价 − 入场价）/ 入场价，出场价为下一个监控时点价，最后一段取收盘（优先 15:00 快照，缺失回退日线收盘）。
+              <b>采样振幅</b>=区间内 11 个落库时点价的最大最小差 / 入场价（不是逐笔振幅）—— 振幅本身没有方向，只作波动维度。
+              策略期望/盈亏比按信号方向操作一次测算，<b>不含手续费与滑点</b>，且未考虑个股实际无法做空。
+            </div>
+          </template>
+        </div>
       </div>
     </main>
     <div class="fixfoot">⚠️ 本工具仅用于个人学习与研究，所有行情、信号、回测与策略均为辅助参考，不构成任何投资建议。</div>
@@ -3881,7 +4274,15 @@ const app = createApp({
       // 评分口径：'raw'=原始分（跨日/跨风格可比，复盘首选）、'score'=环境调整后分（与盘间监控页一致）。
       // 两者都在同一份响应里，切换只影响展示，不需要重新请求。
       scoreBasis:'raw',
-      withIntraday:false   // 导出时是否附「分时明细」sheet（需逐只拉分时，勾选后导出会慢一些）
+      withIntraday:false,   // 导出时是否附「分时明细」sheet（需逐只拉分时，勾选后导出会慢一些）
+      tab:'daily',          // 'daily'=报表1 个股明细；'backtest'=报表2 回测统计
+      bt:{
+        start:'', end:'', monitorOnly:false,
+        slots:['0945','1345'],                 // 入场时点（出场 = 下一个时点；最后一个取收盘）
+        slotsAll:['0925','0930','0945','1100','1130','1315','1330','1345','1400','1445','1500'],
+        threshold:60, eps:0.2, basis:'raw', bench:'pool',
+        data:null, loading:false, err:''
+      }
     },
     login:{u:'',p:''}, dash:{market_env:{}, recent_signals:[]}, dashMsg:'',
     ui:{ // 格式化/样式工具(避免与个股分析状态 t 冲突)
@@ -4469,6 +4870,9 @@ const app = createApp({
           regimeFlags: regimeFlags,
           mDiscount: mDiscount,
           styleMult: styleMult,
+          // 0912批次5: 补出 adjFactor —— 弹窗要展示「原始分 × 环境系数 = 调整后分」的换算过程,
+          //   之前只返回了 mDiscount/styleMult,前端无法还原系数本身(只能自己再乘一遍,易漂移)。
+          adjFactor: adjFactor,
           styleTag: styleTag,
           beta: (track && track.beta != null) ? track.beta : null,
           mvTier: (track && track.mv_tier) || null,
@@ -4813,6 +5217,33 @@ const app = createApp({
       return all.filter(c => (c.code||'').toLowerCase().indexOf(kw)>=0
                           || (c.name||'').toLowerCase().indexOf(kw)>=0);
     },
+    // ===== 0911批次4: 报表2 回测统计（computed 只读视图，全部容错取空，避免接口未返回时整页白屏）=====
+    btHasData(){ const d = this.rep.bt.data; return !!(d && d.samples_n > 0 && d.summary); },
+    btMeta(){ return (this.rep.bt.data && this.rep.bt.data.meta) || {}; },
+    btEmpty(){ return !this.rep.bt.loading && !!(this.rep.bt.data && (this.rep.bt.data.meta||{}).empty); },
+    btSummary(){ return (this.rep.bt.data && this.rep.bt.data.summary) || {}; },
+    btIc(){ return this.btSummary.ic || {}; },
+    btTables(){ return (this.rep.bt.data && this.rep.bt.data.tables) || {}; },
+    btBySlot(){ return this.btTables.by_slot || []; },
+    btByBucket(){ return this.btTables.by_bucket || []; },
+    btByDim(){ return this.btTables.by_dim || []; },
+    btByTime(){ return this.btTables.by_time || []; },
+    btBySemantic(){ return this.btTables.by_semantic || []; },
+    btBench(){ return (this.rep.bt.data && this.rep.bt.data.bench) || {}; },
+    btBenchLabel(){ return this.btBench.label || '池内等权'; },
+    btBenchKind(){ return this.btBench.kind || 'pool'; },
+    btBenchAvailable(){ return !!this.btBench.index_available; },
+    btBenchWindow(){ return this.btBench.index_window || {}; },
+    btBenchNote(){ return this.btBench.note || ''; },
+    // 基准下拉：第一项「池内等权」写死在模板里，这里只给指数项（后端返回，避免前端硬编码指数清单）
+    btBenchOptions(){
+      const opts = this.btBench.index_options || [];
+      return opts.filter(o => o.code !== 'pool');
+    },
+    btSegText(){
+      const segs = (this.rep.bt.data && this.rep.bt.data.params && this.rep.bt.data.params.segments) || [];
+      return segs.map(s => s.label).join('；') || '-';
+    },
   },
   mounted(){
     if(this.token){ this.loadMe(); this.loadDash(); this.loadRiskNotice(); }
@@ -4827,7 +5258,7 @@ const app = createApp({
     // 全局自动刷新：默认开启，每 5 秒根据当前页面刷新对应数据
     if(this.autoRefresh) this.startAutoRefresh();
     // ESC 关闭弹窗
-    this._keydown = (e)=>{ if(e.key==='Escape'){ this.showRulesModal=false; if(this.showIdxConfig) this.showIdxConfig=false; else if(this.showIdxDetail) this.showIdxDetail=false; } };
+    this._keydown = (e)=>{ if(e.key==='Escape'){ this.showRulesModal=false; if(this.scoreDetailModal && this.scoreDetailModal.show) this.closeScoreDetail(); if(this.showIdxConfig) this.showIdxConfig=false; else if(this.showIdxDetail) this.showIdxDetail=false; } };
     document.addEventListener('keydown', this._keydown);
   },
   beforeUnmount(){ this.stopAutoRefresh(); if(this._keydown) document.removeEventListener('keydown', this._keydown); },
@@ -5196,7 +5627,15 @@ const app = createApp({
     //   这类行没有 mkt,也没有均量/振幅/换手/资金/A-B-C 任一派生字段,
     //   因此既不能算分(会把「没数据」错算成 0 分),也不该报「数据异常」(那是 qbad 的语义)。
     isLoadingTrack(t){
-      return !!(t && t.loading === true);
+      // 0912批次5: 原判据只看 t.loading —— 漏掉「富化尚未落地」的行(light 静态期 / DB 播种 /
+      //   富化超时中断):这些行 track 里既没有 price 也没有 veto_checks,t.loading 却未必是 true,
+      //   于是弹窗照常打开、veto_checks 为空 → D类否决整块消失,表现为「一会有、一会没有」。
+      //   ⚠ 不并入 mkt.q===0:行情异常要显示红色「数据异常」(行情可信度铁律),不能标成「加载中」。
+      //   ⚠ 停牌股可能无 price 但富化已完成(有 veto_checks)→ 用「两者都没有」判定,不误伤。
+      if(!t) return true;
+      if(t.loading === true) return true;
+      if(t.price == null && !t.veto_checks) return true;
+      return false;
     },
     // v192: 当前生效的评分规则 = 默认规则(含 source/valid/display 函数) ⊕ 用户已保存的纯数据配置。
     //   必须 merge:userScoringRules 来自 localStorage 的 JSON 往返,指标上的函数已全部丢失,
@@ -7235,12 +7674,8 @@ const app = createApp({
     // 数据来自后端落库的时点快照 → **不做历史回填**；早于首次落库日的日期显示
     // 「暂无数据」而不是 0（0 分与「没采到」在复盘里含义完全不同）。
     reportOnEnter(){
-      // 默认区间：近 7 个自然日（覆盖约 5 个交易日，够看一周又不至于一次拉太多）
-      if(!this.rep.start || !this.rep.end){
-        const r = this.reportDefaultRange(7);
-        this.rep.start = r.start; this.rep.end = r.end;
-      }
-      if(!this.rep.rows.length && !this.rep.loading) this.loadReportDaily();
+      // 两个子页签的默认区间不同（明细 7 天 / 回测 30 天），区间与加载都交给 reportEnsureLoaded 统一处理
+      this.reportEnsureLoaded();
       this.loadReportStatus();
     },
     reportDefaultRange(days){
@@ -7466,6 +7901,41 @@ const app = createApp({
       if(c.price != null) parts.push(`当时价 ${(+c.price).toFixed(2)}`);
       return parts.join('，');
     },
+    // ================= 0911批次4: 报表2 回测统计（本段只放「独有」方法 =============
+    //   其余回测方法见下方「报表 2：回测统计（0911批次4）」段。
+    //   ⚠ 不要在本文件里为同一方法写第二份 —— JS 对象里后者静默覆盖前者,
+    //     两份实现一旦漂移(如 basis 口径),排查成本极高。
+    resetBacktestFilters(){
+      const pad = (n)=> String(n).padStart(2,'0');
+      const fmt = (x)=> `${x.getFullYear()}-${pad(x.getMonth()+1)}-${pad(x.getDate())}`;
+      const end = new Date();
+      const start = new Date(end.getTime() - 29 * 86400000);
+      this.rep.bt.start = fmt(start);
+      this.rep.bt.end = fmt(end);
+      this.rep.bt.slots = ['0945','1345'];
+      this.rep.bt.threshold = 60;
+      this.rep.bt.eps = 0.2;
+      this.rep.bt.basis = 'raw';
+      this.rep.bt.bench = 'pool';
+      this.rep.bt.monitorOnly = false;
+      this.rep.bt.err = '';
+    },
+    async loadReportBacktest(){
+      const b = this.rep.bt;
+      if(!(b.slots || []).length){ b.err = '请至少选择一个监控时点。'; return; }
+      if(b.loading) return;                 // 防连点
+      b.loading = true; b.err = '';
+      try{
+        const r = await API('/review/report/backtest?' + this.btParams().toString());
+        b.data = r;
+        if(r && r.params){ b.start = r.params.start || b.start; b.end = r.params.end || b.end; }
+        this.$nextTick(()=>{ this.btDrawCurve(); });   // 等表格渲染完再画曲线
+      }catch(e){
+        b.data = null;
+        b.err = (e && e.message) ? e.message : '回测数据加载失败';
+      }finally{ b.loading = false; }
+    },
+
     exportReportDaily(){
       if(!this.rep.rows.length){ this.showAlert('当前没有可导出的数据。'); return; }
       const p = this.reportParams();
@@ -7477,6 +7947,175 @@ const app = createApp({
         this.rep.msg = '正在导出（含分时明细，需要逐只拉取分时数据，请稍候）…';
       }
       this._downloadExport(p, '复盘明细', '/api/review/report/export?' + p.toString());
+    },
+
+    // ================= 报表 2：回测统计（0911批次4）=================
+    switchReportTab(tab){
+      if(this.rep.tab === tab) return;
+      this.rep.tab = tab;
+      this.reportEnsureLoaded();
+      this.loadReportStatus();
+    },
+    // 按当前子页签加载对应报表（进页面 / 切页签共用，避免两处各写一份导致漏加载）
+    reportEnsureLoaded(){
+      if(this.rep.tab === 'backtest'){
+        if(!this.rep.bt.start || !this.rep.bt.end){
+          const r = this.reportDefaultRange(30);   // 回测要凑样本，默认给 30 天而不是 7 天
+          this.rep.bt.start = r.start; this.rep.bt.end = r.end;
+        }
+        if(!this.rep.bt.data && !this.rep.bt.loading) this.loadReportBacktest();
+      }else{
+        if(!this.rep.start || !this.rep.end){
+          const r = this.reportDefaultRange(7);
+          this.rep.start = r.start; this.rep.end = r.end;
+        }
+        if(!this.rep.rows.length && !this.rep.loading) this.loadReportDaily();
+      }
+    },
+    btQuickRange(days){
+      const r = this.reportDefaultRange(days);
+      this.rep.bt.start = r.start; this.rep.bt.end = r.end;
+      this.loadReportBacktest();
+    },
+    btSlotsDefault(){ this.rep.bt.slots = ['0945','1345']; },
+    btToggleSlot(s){
+      const arr = this.rep.bt.slots || [];
+      const i = arr.indexOf(s);
+      if(i >= 0) arr.splice(i, 1);
+      else arr.push(s);
+      arr.sort();   // 4 位时点串的字典序 == 时间序；排序后页面顺序与「下一段」划分一致
+    },
+    btParams(){
+      const b = this.rep.bt;
+      const p = new URLSearchParams();
+      p.set('start', b.start || '');
+      p.set('end', b.end || '');
+      p.set('slots', (b.slots || []).join(','));
+      p.set('threshold', b.threshold == null ? 60 : b.threshold);
+      p.set('eps', b.eps == null ? 0.2 : b.eps);
+      p.set('basis', b.basis === 'adj' ? 'adj' : 'raw');
+      p.set('bench', b.bench || 'pool');
+      p.set('monitor_only', b.monitorOnly ? '1' : '0');
+      return p;
+    },
+    async loadReportBacktest(){
+      const b = this.rep.bt;
+      if(b.loading) return;                       // 防连点
+      if(!(b.slots || []).length){ b.err = '请至少选择一个监控时点。'; return; }
+      b.loading = true; b.err = '';
+      try{
+        const r = await API('/review/report/backtest?' + this.btParams().toString());
+        b.data = r;
+        // 区间以后端纠正结果为准（后端会翻转颠倒/非法区间），避免界面与数据不符
+        if(r.range){ b.start = r.range.start; b.end = r.range.end; }
+      }catch(e){
+        b.err = e.message || '回测失败';
+        b.data = null;
+      }finally{
+        b.loading = false;
+        // 与分时图同理：canvas 必须在 DOM 里才画得出来，等一帧再画
+        await this.$nextTick();
+        this.btDrawCurve();
+      }
+    },
+    exportReportBacktest(){
+      if(!this.btHasData){ this.showAlert('当前没有可导出的回测结果。'); return; }
+      const p = this.btParams();
+      p.set('kind', 'backtest');
+      this._downloadExport(p, '回测统计', '/api/review/report/export?' + p.toString());
+    },
+    // —— 展示格式化（全部 null 安全：回测里「无数据」与 0 是两回事，绝不能回落成 0）——
+    btPct(v){
+      if(v === null || v === undefined) return '-';
+      const n = +v;
+      return isFinite(n) ? (n * 100).toFixed(1) + '%' : '-';
+    },
+    btNum(v, nd){
+      if(v === null || v === undefined) return '-';
+      const n = +v;
+      return isFinite(n) ? n.toFixed(nd == null ? 2 : nd) : '-';
+    },
+    btSigned(v){
+      if(v === null || v === undefined) return '-';
+      const n = +v;
+      if(!isFinite(n)) return '-';
+      return (n > 0 ? '+' : '') + n.toFixed(2) + '%';
+    },
+    // 0912批次5: 单元格涨红跌绿用的**类名** —— 与 btSigned(显示文本)分开。
+    //   之前模板直接把 btSigned 的结果当 class 用(拿到 "+0.39%" 这种非法类名) → 配色恒不生效。
+    btUpDown(v){
+      const n = +v;
+      if(!isFinite(n) || n === 0) return '';
+      return n > 0 ? 'up' : 'down';
+    },
+    // N<20 灰显：样本太小时命中率波动极大，明确降视觉权重，避免被当成结论
+    btLow(n){
+      if(n === null || n === undefined) return true;
+      const x = +n;
+      return !isFinite(x) || x < 20;
+    },
+    // 命中率配色：≥60% 红（有效）、≤40% 绿（反向有效），40~60 之间不标色（等于抛硬币，别过度解读）
+    btHitClass(v){
+      if(v === null || v === undefined) return '';
+      const n = +v;
+      if(!isFinite(n)) return '';
+      if(n >= 0.6) return 'up';
+      if(n <= 0.4) return 'down';
+      return '';
+    },
+    btDrawCurve(){
+      const cv = this.$refs.btCurve;
+      const rows = this.btByTime;
+      if(!cv || !rows || !rows.length) return;
+      const ctx = cv.getContext('2d');
+      if(!ctx) return;
+      const W = cv.width, H = cv.height;
+      ctx.clearRect(0, 0, W, H);
+      const padL = 44, padR = 16, padT = 14, padB = 26;
+      const N = rows.length;
+      const px = (i) => N < 2 ? padL + (W - padL - padR) / 2 : padL + i / (N - 1) * (W - padL - padR);
+      const py = (v) => padT + (1 - v) * (H - padT - padB);   // 纵轴固定 0~100%，不同日可直接比
+      ctx.font = '11px sans-serif'; ctx.textBaseline = 'middle';
+      for(let r = 0; r <= 4; r++){
+        const y = padT + r / 4 * (H - padT - padB);
+        ctx.strokeStyle = '#f1f5f9'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(W - padR, y); ctx.stroke();
+        ctx.fillStyle = '#9ca3af'; ctx.textAlign = 'right';
+        ctx.fillText((100 - r * 25) + '%', padL - 6, y);
+      }
+      // 50% 抛硬币基准线：没有它，55% 和 95% 在视觉上一样「看起来在中间」
+      ctx.save();
+      ctx.strokeStyle = '#94a3b8'; ctx.lineWidth = 1; ctx.setLineDash([4, 4]);
+      ctx.beginPath(); ctx.moveTo(padL, py(0.5)); ctx.lineTo(W - padR, py(0.5)); ctx.stroke();
+      ctx.restore();
+      ctx.fillStyle = '#94a3b8'; ctx.textAlign = 'left';
+      ctx.fillText('50% 抛硬币', padL + 4, py(0.5) - 9);
+      const series = [['hit', '#2563eb', 2], ['bull_hit', '#dc2626', 1.6], ['bear_hit', '#16a34a', 1.6]];
+      series.forEach(s => {
+        ctx.strokeStyle = s[1]; ctx.lineWidth = s[2];
+        ctx.beginPath();
+        let started = false;
+        rows.forEach((r, i) => {
+          const v = r[s[0]];
+          if(v === null || v === undefined) return;
+          const x = px(i), y = py(Math.max(0, Math.min(1, +v)));
+          if(!started){ ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+        // 点：数据点少时（<10 日）只有线看不出每天的位置
+        ctx.fillStyle = s[1];
+        rows.forEach((r, i) => {
+          const v = r[s[0]];
+          if(v === null || v === undefined) return;
+          ctx.fillRect(px(i) - 1.5, py(Math.max(0, Math.min(1, +v))) - 1.5, 3, 3);
+        });
+      });
+      ctx.fillStyle = '#6b7280'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+      const step = Math.max(1, Math.ceil(N / 8));
+      rows.forEach((r, i) => {
+        if(i % step) return;
+        ctx.fillText(String(r.date).slice(5), px(i), H - padB + 5);
+      });
     },
     async loadMarketRegime(){
       try{ const r = await API('/market/regime'); if(r && r.tier) this.marketRegime = r; }catch(e){ /* 静默：环境缺失不影响列表渲染 */ }
