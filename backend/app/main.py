@@ -12,6 +12,7 @@ from app.models import AccessLog, User, SystemSetting
 from app.security import verify_token
 from app.seed import seed_all
 from app.scheduler import start_scheduler
+from app.services.quote_snapshot import start_collector, stop_collector
 
 import threading
 import datetime as dt
@@ -34,7 +35,17 @@ async def lifespan(app: FastAPI):
         pass  # 列已存在时 SQLite 报错，忽略
     seed_all()
     start_scheduler()
+    # Phase 0：启动行情快照采集线程（后台批量拉取实时盘口写入内存快照，解耦请求与上游）
+    try:
+        start_collector()
+    except Exception:
+        pass
     yield
+    # 关闭时停止采集线程
+    try:
+        stop_collector()
+    except Exception:
+        pass
 
 
 app = FastAPI(title="TR-个人学习版", version="0.1.0", lifespan=lifespan)

@@ -24,9 +24,9 @@
     s.src = './vue.global.prod.js?v=20260909152' + Date.now();
     s.onload = function(){
       if (typeof Vue !== 'undefined' && Vue.createApp) { location.reload(); }
-      else { hint.innerHTML = '重试仍失败,请按 Ctrl+F5 强制刷新<br><span style="font-size:12px;color:#9ca3af">(v20260911148)</span>'; }
+      else { hint.innerHTML = '重试仍失败,请按 Ctrl+F5 强制刷新<br><span style="font-size:12px;color:#9ca3af">(v20260911149)</span>'; }
     };
-    s.onerror = function(){ hint.innerHTML = '重试仍失败,请按 Ctrl+F5 强制刷新<br><span style="font-size:12px;color:#9ca3af">(v20260911148)</span>'; };
+    s.onerror = function(){ hint.innerHTML = '重试仍失败,请按 Ctrl+F5 强制刷新<br><span style="font-size:12px;color:#9ca3af">(v20260911149)</span>'; };
     (document.head || document.documentElement).appendChild(s);
   }catch(e){ /* 兜底若失败也别抛,留给用户 Ctrl+F5 */ }
 })();
@@ -896,7 +896,7 @@
     <header>
       <h1>🧋 TR-个人学习版</h1>
       <span class="sub">个人学习用 · 先控风险再谈收益</span>
-      <span class="version" id="appVersion">v20260911148</span>
+      <span class="version" id="appVersion">v20260911149</span>
       <button class="ghost auto-refresh-btn" :class="{active:autoRefresh}" @click="toggleAutoRefresh" :title="autoRefresh?'自动刷新开启中，每10秒更新当前页面数据':'点击开启每10秒自动刷新'">
         {{autoRefresh?'⏸':'▶'}} 自动 5s
       </button>
@@ -3671,6 +3671,9 @@ const app = createApp({
     poolTab:'manual',  // v152: 短线可投池下仅保留手工筛选;选股/筛选逻辑请到一级 nav「选股模型」
     poolSelected:[],  // 可投池表格当前勾选中的 code
     poolSort:{key:null, dir:null},  // 可投池表格列排序状态：{key, dir} dir=asc|desc；null=按后端原序
+    // Phase 0：可投池行顺序冻结表（id 列表）。自动刷新只增量更新单元格、绝不重排，
+    // 避免"行情跳动导致整行乱跳"。仅用户主动点列头排序、或整页重载时才会刷新此顺序。
+    frozenPoolOrder:[],
     resizedWidths: JSON.parse(localStorage.getItem('poolColWidths')||'{}'),  // 用户拖拽调整后的可投池列宽 {key:px}
     resizeState:null,  // 当前正在拖拽调整列宽的状态 {key,startX,startWidth}
     poolCardOpen:{},  // 可投池卡片展开态 {code:true},默认全部收起只看摘要
@@ -4191,7 +4194,8 @@ const app = createApp({
     })(),
     columnSettingsLoaded: false,   // v186: 服务端列设置是否已拉取(未拉取前的改动不应覆盖服务端)
     autoRefresh: localStorage.getItem('autoRefresh')===null ? true : localStorage.getItem('autoRefresh')==='true',  // 全局自动刷新开关（默认开启，记忆上次选择）
-    autoRefreshTimer:null,  // 全局自动刷新定时器
+    autoRefreshTimer:null,  // 全局自动刷新定时器（5s tick）
+    structTimer:null,  // 可投池整页结构刷新定时器（60s，重算评分/指标）
     toast:{show:false, message:'', timer:null},  // 全局轻量 Toast
     alertModal:{show:false, title:'提示', message:''},  // 通用消息弹窗（替代原生 alert）
     confirmModal:{show:false, title:'请确认', message:'', onConfirm:null, onCancel:null},  // 通用确认弹窗（替代原生 confirm）
@@ -4383,10 +4387,27 @@ const app = createApp({
     },
     // 可投池按当前排序列/方向排序后的列表（不影响后端原序，切换列/方向即重算）
     sortedPool(){
+      const pool = (this.pool||[]);
+      // Phase 0：自动刷新期间冻结行顺序，只在用户点排序或整页重载时更新 frozenPoolOrder，
+      // 从而彻底消除"行情每 5 秒跳动导致整行乱跳"。
+      const order = this.frozenPoolOrder;
+      if(order && order.length){
+        const pos = {};
+        for(let i=0;i<order.length;i++) pos[order[i]] = i;
+        const seen = {};
+        const out = [];
+        for(const id of order){
+          const p = pool.find(x=>x.id===id);
+          if(p){ out.push(p); seen[id]=true; }
+        }
+        // 新加入、尚未进入冻结顺序的行追加在末尾
+        for(const p of pool){ if(!seen[p.id]) out.push(p); }
+        return out;
+      }
       const {key, dir} = this.poolSort || {};
-      if(!key || !dir) return this.pool;  // 未排序：保持后端返回顺序
+      if(!key || !dir) return pool;  // 未排序：保持后端返回顺序
       const get = (p)=> this.getPoolSortValue(p, key);
-      const arr = (this.pool||[]).slice();
+      const arr = pool.slice();
       arr.sort((a,b)=>{
         const va = get(a), vb = get(b);
         // null/undefined 始终置底（不参与升/降序），便于一眼看到"没数据"行
@@ -4826,6 +4847,8 @@ const app = createApp({
       } else {
         this.poolSort = {key:col.key, dir:'asc'};
       }
+      // 同步冻结行顺序：之后自动刷新只增量更新单元格，不再因数值变化而整行乱跳
+      this._applyPoolOrder();
     },
     // 当天实时成交量异常判定：> max(T-1全天, 20日平均) × 10 视为数据错误（明显不合理会误导用户）
     isVolumeAbnormal(t){
@@ -5668,9 +5691,12 @@ const app = createApp({
       this.stopAutoRefresh();
       // 立即刷新一次当前页面，随后每 5 秒刷新当前页面数据
       this.refreshCurrentView();
+      // Phase 0：5s tick 只做「单元格增量更新」（从行情快照读，不重排、不整体替换数组）
       this.autoRefreshTimer = setInterval(()=> this.refreshCurrentView(), 5000);
+      // 可投池每 60s 做一次整页结构刷新（重算评分/指标/排序），与 5s tick 解耦
+      this.structTimer = setInterval(()=>{ if(this.view==='pool') this.loadPool(); }, 60000);
     },
-    stopAutoRefresh(){ if(this.autoRefreshTimer){ clearInterval(this.autoRefreshTimer); this.autoRefreshTimer=null; } },
+    stopAutoRefresh(){ if(this.autoRefreshTimer){ clearInterval(this.autoRefreshTimer); this.autoRefreshTimer=null; } if(this.structTimer){ clearInterval(this.structTimer); this.structTimer=null; } },
     // v186-fix: 「到设置页导出备份」原写成模板内联表达式(document.querySelectorAll),
     //   Vue 3 会把模板里未识别的标识符编译成 _ctx.document → undefined → 抛
     //   "Cannot read properties of undefined (reading 'querySelectorAll')"。
@@ -5705,9 +5731,10 @@ const app = createApp({
         }
       }
       else if(v==='pool'){
-        // v180 性能:静态行已渲染时 tick 只做全量富化(不必重拉静态);首屏空表兜底走完整 loadPool
-        // v182: tick 富化为静默刷新(enrichPool 不带提示开关),不再隔 5s 反复弹「加载中」
-        if(!this.pool.length) this.loadPool(); else this.enrichPool(false);
+        // Phase 0：盘间监控的 5s 自动刷新改为轻量 tick——只增量更新行情单元格（读后端内存快照），
+        // 不再整体重拉 track / 不重排，彻底消除「行情跳动导致整行乱跳」。
+        // 评分/指标等重计算由 60s 的 structTimer 整页刷新承担（见 startAutoRefresh）。
+        if(!this.pool.length) this.loadPool(); else this.tickRefresh();
         this.loadPoolTags();
       }
       else if(v==='t' && this.t.code) this.loadT(true);
@@ -5717,6 +5744,45 @@ const app = createApp({
         this.loadSettings();
         if(this.me.role==='admin'){ this.loadUsers(); this.loadBackups(); this.loadCosStatus(); }
       }
+    },
+
+    // Phase 0：盘间监控 5s 轻量刷新——只增量更新行情单元格，绝不整体替换数组、绝不重排。
+    // 数据来自后端 /api/pool/quotes（内存快照，不触发上游请求），稳定不跳动。
+    async tickRefresh(){
+      if(this.view!=='pool' || !this.pool || !this.pool.length) return;
+      // 有弹窗打开时跳过，避免干扰用户操作
+      if(this.showRulesModal || this.addPoolModal.show || this.tagModal.show || this.batchTagModal.show || this.deleteConfirmModal.show || this.importPoolModal.show || this.editModal.show || this.columnSettingModal.show || this.adviceModal.show || this.showIdxConfig || this.showIdxDetail || this.forcePwModal.show) return;
+      const codes = this.pool.map(p=>p.code).filter(Boolean).join(',');
+      if(!codes) return;
+      try{
+        const j = await API('/pool/quotes?codes=' + encodeURIComponent(codes));
+        const q = (j && j.quotes) || {};
+        if(!Object.keys(q).length) return;
+        // 仅覆盖实时盘口字段，静态字段(MA/箱体/资金流/事件/财务等)原样保留
+        const LIVE = ['price','change','change_pct','pre_close','open','today_high','today_low','realtime_volume','vol_ratio','turnover','amount','avg_price','ts','src'];
+        const map = {};
+        for(const p of this.pool) map[p.code] = p;
+        for(const code in q){
+          const p = map[code]; if(!p) continue;
+          if(!p.track || typeof p.track!=='object') p.track = {};
+          const snap = q[code];
+          for(const k of LIVE) p.track[k] = snap[k];
+          p.track.loading = false;
+          // 保留服务端带来的 mkt.f（资金流），仅补 q/s 为可信（快照来自实时盘口）
+          p.track.mkt = Object.assign({}, p.track.mkt, snap.mkt || {q:1, s:1});
+        }
+        // 局部重算评分（纯前端、便宜），但行顺序由 frozenPoolOrder 冻结，绝不重排
+        try{ this.recomputeAllUserScores(); }catch(e){}
+      }catch(e){ /* tick 失败静默：不影响用户阅读，下个 tick 再试 */ }
+    },
+
+    // Phase 0：根据当前 poolSort（若有）对 this.pool 计算并冻结行顺序到 frozenPoolOrder。
+    // 自动刷新只增量更新单元格、不调用本函数，故行顺序在两次手动排序/整页重载之间保持稳定。
+    _applyPoolOrder(){
+      const saved = this.frozenPoolOrder;
+      this.frozenPoolOrder = null;          // 临时清空，让 sortedPool 按 poolSort 计算
+      const arr = this.sortedPool;
+      this.frozenPoolOrder = arr.map(p=>p.id);
     },
 
     // ===== 宽指快览 v128 =====
@@ -6901,6 +6967,9 @@ const app = createApp({
       else if(this.pool.length && !anyRich){ this.poolEnrich = '⏳ 行情暂不可用，将自动重试…'; }
       else { this.poolEnrich = ''; }
       this._clrErr('poolErr');
+      // Phase 0：整页重载后按当前排序列/方向冻结行顺序（无排序则用后端原序），
+      // 使随后的 5s tick 只增量更新单元格、不重排，消除跳动。
+      this._applyPoolOrder();
     },
     searchPool(){ this.poolPage=1; this.loadPool(); },
     setPoolPageSize(n){ this.poolPageSize = n || 10; this.poolPage = 1; this.loadPool(); },

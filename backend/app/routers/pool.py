@@ -2,6 +2,7 @@
 from __future__ import annotations
 import datetime as dt
 import json
+import time
 import re as _re
 from concurrent.futures import ThreadPoolExecutor, as_completed, wait
 import io
@@ -168,6 +169,22 @@ def _user_pool_q(db, user_id: int):
               .filter(TrackedPool.user_id == user_id,
                       (TrackedPool.status == "active") |
                       ((TrackedPool.status == "archive") & (TrackedPool.position_qty > 0))))
+
+
+@router.get("/quotes")
+def pool_quotes(
+    codes: str = Query("", description="逗号分隔的标的代码列表，如 600519,000001"),
+):
+    """Phase 0：轻量行情快照接口。
+
+    仅从内存快照返回实时盘口（价格/涨跌幅/成交量/换手/量比等），**不触发任何上游请求**，
+    供前端 5s 轮询做「单元格增量更新」，彻底消除整页重拉导致的跳动。
+    快照由后台采集线程(quote_snapshot)按固定节律刷新；缺失的 code 不返回（前端保留原值）。
+    """
+    from app.services.quote_snapshot import get_quotes, market_open
+    code_list = [c.strip() for c in (codes or "").split(",") if c.strip()]
+    quotes = get_quotes(code_list) if code_list else {}
+    return {"quotes": quotes, "market_open": market_open(), "server_ts": int(time.time())}
 
 
 @router.get("")
