@@ -24,9 +24,9 @@
     s.src = './vue.global.prod.js?v=20260909152' + Date.now();
     s.onload = function(){
       if (typeof Vue !== 'undefined' && Vue.createApp) { location.reload(); }
-      else { hint.innerHTML = '重试仍失败,请按 Ctrl+F5 强制刷新<br><span style="font-size:12px;color:#9ca3af">(v20260911147)</span>'; }
+      else { hint.innerHTML = '重试仍失败,请按 Ctrl+F5 强制刷新<br><span style="font-size:12px;color:#9ca3af">(v20260911148)</span>'; }
     };
-    s.onerror = function(){ hint.innerHTML = '重试仍失败,请按 Ctrl+F5 强制刷新<br><span style="font-size:12px;color:#9ca3af">(v20260911147)</span>'; };
+    s.onerror = function(){ hint.innerHTML = '重试仍失败,请按 Ctrl+F5 强制刷新<br><span style="font-size:12px;color:#9ca3af">(v20260911148)</span>'; };
     (document.head || document.documentElement).appendChild(s);
   }catch(e){ /* 兜底若失败也别抛,留给用户 Ctrl+F5 */ }
 })();
@@ -426,6 +426,9 @@
   /* 成交量异常：超过 max(T-1全天, 20日均量) × 10 倍 → 数据错误，红色高亮 + 虚线 */
   .vol-abnormal{color:var(--danger);font-weight:700;background:#fee2e2;padding:1px 6px;border-radius:4px;border:1px dashed var(--danger);text-decoration:line-through wavy rgba(239,68,68,.5)}
   .bad-data{color:#dc2626;font-weight:700;font-size:12px;background:#fee2e2;padding:1px 6px;border-radius:4px;white-space:nowrap;display:inline-block}
+  /* v192: 行情「加载中」态 —— 后端 DB 播种/富化超时的行。不算分、不显示假分,也不误报「数据异常」 */
+  .ldg-badge{color:#64748b;font-size:12px;white-space:nowrap;display:inline-block}
+  .ldg-badge i,.ldg-mini{font-style:normal;font-size:11px;color:#2563eb;background:#eff6ff;border:1px solid #bfdbfe;border-radius:4px;padding:0 5px;margin-left:3px}
   /* 可投池表头列宽拖拽把手 */
   .tracktbl.pool-tbl thead th .resize-handle{position:absolute;right:0;top:0;bottom:0;width:6px;cursor:col-resize;z-index:10;background:transparent;transition:background .15s}
   .tracktbl.pool-tbl thead th .resize-handle:hover{background:rgba(59,130,246,.25)}
@@ -893,7 +896,7 @@
     <header>
       <h1>🧋 TR-个人学习版</h1>
       <span class="sub">个人学习用 · 先控风险再谈收益</span>
-      <span class="version" id="appVersion">v20260911147</span>
+      <span class="version" id="appVersion">v20260911148</span>
       <button class="ghost auto-refresh-btn" :class="{active:autoRefresh}" @click="toggleAutoRefresh" :title="autoRefresh?'自动刷新开启中，每10秒更新当前页面数据':'点击开启每10秒自动刷新'">
         {{autoRefresh?'⏸':'▶'}} 自动 5s
       </button>
@@ -1635,10 +1638,12 @@
             <span v-else class="clickable-link muted" @click.stop="openUnlock(p)">-</span>
           </template>
           <template v-else-if="col.key==='total_score'">
-            <span v-if="mktBad(p.track,'q')" class="bad-data" title="行情读取异常,未评分">数据异常</span>
+            <!-- v192: 行情未富化完的行不算分、不显示 0 分假数据 → '-' + 「加载中」 -->
+            <span v-if="p.user_loading" class="ldg-badge" :title="'行情数据加载中,稍后自动刷新 · ' + (p.name||p.code)">-<i>加载中</i></span>
+            <span v-else-if="mktBad(p.track,'q')" class="bad-data" title="行情读取异常,未评分">数据异常</span>
             <span v-else class="clickable-link"
                   :class="(p.user_score!=null ? p.user_score : (p.track.total_score||0))>=70 ? 'up' : ((p.user_score!=null ? p.user_score : (p.track.total_score||0))<40 ? 'down' : '')"
-                  :title="p.user_vetoed ? '一票否决命中,总分强制为 0(与权重无关) · 点击查看评分详情' : '点击查看评分详情与规则(可调权重/阈值,实时重算) · 当前显示实时重算分'"
+                  :title="p.user_vetoed ? ('一票否决命中:实时原始分 ' + (p.user_raw_score!=null?p.user_raw_score:'-') + ',最终分强制为 0(与权重无关) · 点击查看评分详情') : '点击查看评分详情与规则(可调权重/阈值,实时重算) · 当前显示实时重算分'"
                   @click.stop="openScoreDetail(p)"><b>{{ p.user_score!=null ? p.user_score : (p.track.total_score!=null ? p.track.total_score : '-') }}</b><span v-if="p.user_vetoed" class="sd-veto-tag" title="一票否决命中">否决</span></span>
           </template>
           <template v-else-if="col.key==='position_qty'">{{p.position_qty!=null ? p.position_qty : '-'}}</template>
@@ -1693,8 +1698,9 @@
                 <div><div class="k">MA5 / MA20</div><div v-if="p.track.ma5!=null || p.track.ma20!=null" class="v"><span :class="p.track.above_ma5===true?'up':(p.track.above_ma5===false?'down':'')">{{ui.fmt(p.track.ma5)}}</span>{{p.track.above_ma5===true?'⬆':(p.track.above_ma5===false?'⬇':'—')}} / <span :class="p.track.above_ma20===true?'up':(p.track.above_ma20===false?'down':'')">{{ui.fmt(p.track.ma20)}}</span>{{p.track.above_ma20===true?'⬆':(p.track.above_ma20===false?'⬇':'—')}}</div><div v-else class="v">{{mktBad(p.track,'q')?'数据异常':'—'}}</div></div>
                 <div><div class="k">箱体位置</div><div class="v">{{p.track.box_pos!==undefined ? Math.round(p.track.box_pos*100)+'%' : (mktBad(p.track,'q')?'数据异常':'-')}}</div></div>
                 <div><div class="k">操作建议</div><div class="v"><button v-if="p.track.operation_advice" class="chip pool-card-advice" :class="{alert:p.track.operation_advice.key==='reduce', add:p.track.operation_advice.key==='buy'||p.track.operation_advice.key==='t', reduce:p.track.operation_advice.key==='sell', danger:p.track.operation_advice.key==='wait'}" @click.stop="openAdviceModal(p)" :title="p.track.operation_advice.summary">{{p.track.operation_advice.title}}</button><span v-else-if="mktBad(p.track,'q')" class="bad-data" title="行情读取异常，无法生成建议">数据异常</span><span v-else class="muted">-</span></div></div>
-                <div><div class="k">必看达标</div><div v-if="mktBad(p.track,'q')" class="v bad-data">数据异常</div><div v-else class="v" :class="{'red':(p.track.must_pass_score||0)<4}">{{p.track.must_pass_score||0}}分 · {{formatPass(p.track.must_pass)}}</div></div>
-                <div><div class="k">重要达标</div><div v-if="mktBad(p.track,'q')" class="v bad-data">数据异常</div><div v-else class="v" :class="{'red':(p.track.key_pass_score||0)<3}">{{p.track.key_pass_score||0}}分 · {{formatPass(p.track.key_pass)}}</div></div>
+                <!-- v192: 行情未富化完 → 不算分、不显示「0分」假值 -->
+                <div><div class="k">必看达标</div><div v-if="p.user_loading" class="v muted">-<i class="ldg-mini">加载中</i></div><div v-else-if="mktBad(p.track,'q')" class="v bad-data">数据异常</div><div v-else class="v" :class="{'red':(p.track.must_pass_score||0)<4}">{{p.track.must_pass_score||0}}分 · {{formatPass(p.track.must_pass)}}</div></div>
+                <div><div class="k">重要达标</div><div v-if="p.user_loading" class="v muted">-<i class="ldg-mini">加载中</i></div><div v-else-if="mktBad(p.track,'q')" class="v bad-data">数据异常</div><div v-else class="v" :class="{'red':(p.track.key_pass_score||0)<3}">{{p.track.key_pass_score||0}}分 · {{formatPass(p.track.key_pass)}}</div></div>
                 <div v-if="p.position_qty!=null"><div class="k">持仓 / 成本</div><div class="v">{{p.position_qty}} / {{ui.fmt(p.cost_price)}}</div></div>
               </div>
               <div v-if="p.note" class="pool-card-note">📝 {{p.note}}</div>
@@ -2738,13 +2744,18 @@
                   <b :class="(scoreDetailModal._result && scoreDetailModal._result.officialScore>=70)?'up':(scoreDetailModal._result && scoreDetailModal._result.officialScore<40?'down':'')"
                      style="font-size:18px;color:#1d4ed8">{{ (scoreDetailModal._result && scoreDetailModal._result.officialScore!=null) ? scoreDetailModal._result.officialScore : '-' }}</b>
                 </span>
-                <span><span class="muted">当前实时分</span>
+                <!-- v192: 原始分始终展示真实计算结果 —— 一票否决只归零右侧「最终分」,不动这里 -->
+                <span style="margin-right:14px"><span class="muted">实时原始分</span>
+                  <b :class="(scoreDetailModal._result && scoreDetailModal._result.userRawScore>=70)?'up':(scoreDetailModal._result && scoreDetailModal._result.userRawScore<40?'down':'')"
+                     style="font-size:20px">{{ (scoreDetailModal._result && scoreDetailModal._result.userRawScore!=null) ? scoreDetailModal._result.userRawScore : '-' }}</b>
+                  <span class="sd-grade" v-if="scoreDetailModal._result && scoreDetailModal._result.userRawGrade"
+                        :class="'grade-' + scoreDetailModal._result.userRawGrade">{{ scoreDetailModal._result.userRawGrade }}</span>
+                </span>
+                <span><span class="muted">最终分</span>
                   <b :class="(scoreDetailModal._result && scoreDetailModal._result.userScore>=70)?'up':(scoreDetailModal._result && scoreDetailModal._result.userScore<40?'down':'')"
                      style="font-size:20px">{{ (scoreDetailModal._result && scoreDetailModal._result.userScore!=null) ? scoreDetailModal._result.userScore : '-' }}</b>
                   <span v-if="scoreDetailModal._result && scoreDetailModal._result.vetoed"
-                        class="sd-veto-tag" title="一票否决命中,总分强制为 0,与权重无关">一票否决</span>
-                  <span class="sd-grade" v-if="scoreDetailModal._result && scoreDetailModal._result.userGrade"
-                        :class="'grade-' + scoreDetailModal._result.userGrade">{{ scoreDetailModal._result.userGrade }}</span>
+                        class="sd-veto-tag" title="一票否决命中,最终分强制为 0(原始分照算不受影响,见左侧)">一票否决</span>
                   <span class="sd-grade grade-" v-if="scoreDetailModal._result && scoreDetailModal._result.officialGrade">→后端{{ scoreDetailModal._result.officialGrade }}</span>
                 </span>
               </span>
@@ -3813,6 +3824,9 @@ const app = createApp({
                {label:'中性', min:10, lt:15,  score:6, veto:false},
                {label:'偏冷', min:1,  lt:3,   score:3, veto:false},
                {label:'过热', min:15, lt:null, score:2, veto:false, after:true},
+               // v192: 补「极冷」档 —— 后端对 turnover<1 是显式 +0(见 _calc_pass_scores "换手率<1%(+0)"),
+               //   前端原先缺该档 → 真实的超低换手被判「未命中」并触发权重转移。
+               {label:'极冷', min:0,  lt:1,   score:0, veto:false},
              ]},
             {id:'ma', dim:'B', label:'MA5/MA20 位置', unit:'-', max:15,
             // v185: 改用后端 ma_position 三档口径(连续3日双上 / 仅MA20站上 / 连续3日下跌),
@@ -3863,6 +3877,9 @@ const app = createApp({
                {label:'最优', attr:'red_expand',   score:10, veto:false},
                {label:'次优', attr:'red_shrink',   score:7,  veto:false},
                {label:'中性', attr:'green_shrink', score:4,  veto:false},
+               // v192: 补「零轴附近」档 —— 后端对 neutral 是显式 +0(见 _calc_pass_scores "MACD状态中性(+0)"),
+               //   前端原先没有该档 → 合法的中性被判「未命中」→ 权重转移给 MA/箱体,把 B 类虚高(实测 10→15.17)。
+               {label:'零轴附近', attr:'neutral',  score:0,  veto:false},
                {label:'否决', attr:'green_expand', score:0,  veto:true},
              ]},
             {id:'vol_ratio', dim:'C', label:'量比', unit:'-', max:10,
@@ -3936,6 +3953,53 @@ const app = createApp({
             '日均成交量<5万手', '日内振幅长期<2%', 'MA5/MA20 下方且 MACD 绿柱放大',
           ],
         };
+      },
+      // v192: 把「用户已保存的规则(纯数据,来自 localStorage 的 JSON 往返)」合并到「默认规则(含函数)」上。
+      //   背景:指标上的 source/valid/display 是函数,JSON.stringify 会把它们全部丢掉。
+      //   若直接拿 localStorage 里的规则去 compute,每个指标的 valid 都是 undefined
+      //   → 全部判定「数据无效」→ 同维度命中权重归零 → dimScore A/B/C 全 0 → 实时分恒为 0。
+      //   所以:函数一律取默认规则的;只允许覆盖可序列化的 三维权重 / 档位阈值(min·lt) / 档位分 / 等级阈值。
+      //   指标按 id 对齐 → 后续新增指标自动拿到默认函数与默认档位,不必再靠升 LS key 来重置。
+      mergeRules: function mergeRules(base, saved){
+        var b = base || this.default();
+        if(!saved || typeof saved !== 'object') return b;
+        // 1) 三维度权重
+        if(saved.weights && typeof saved.weights === 'object'){
+          ['A','B','C'].forEach(function(d){
+            var w = saved.weights[d];
+            if(w != null && !isNaN(+w) && +w >= 0) b.weights[d] = +w;
+          });
+        }
+        // 2) 等级阈值
+        if(Array.isArray(saved.grades) && saved.grades.length){
+          b.grades = saved.grades.map(function(g){
+            var m = (g && g.min != null && !isNaN(+g.min)) ? +g.min : 0;
+            return { min: m, grade: (g && g.grade) || 'D' };
+          });
+        }
+        // 3) 指标:按 id 对齐,只覆盖 iw 与各档阈值/分数
+        var byId = {};
+        (b.indicators || []).forEach(function(x){ byId[x.id] = x; });
+        var svList = Array.isArray(saved.indicators) ? saved.indicators : [];
+        svList.forEach(function(s){
+          var t = s && byId[s.id];
+          if(!t) return;                                  // 已删除/未知指标:忽略,不污染默认规则
+          if(s.iw != null && !isNaN(+s.iw) && +s.iw >= 0) t.iw = +s.iw;
+          var sb = s.bands;
+          if(!Array.isArray(sb) || !Array.isArray(t.bands)) return;
+          var n = Math.min(sb.length, t.bands.length);
+          for(var i = 0; i < n; i++){
+            var ss = sb[i] || {}, tb = t.bands[i];
+            if(!tb) continue;
+            if(ss.min === null) tb.min = null;
+            else if(ss.min != null && !isNaN(+ss.min)) tb.min = +ss.min;
+            if(ss.lt === null) tb.lt = null;
+            else if(ss.lt != null && !isNaN(+ss.lt)) tb.lt = +ss.lt;
+            if(ss.score != null && !isNaN(+ss.score)) tb.score = +ss.score;
+            // label / attr / veto 与后端枚举耦合,不允许用户覆盖
+          }
+        });
+        return b;
       },
       scoreInd: function scoreBand(v, ind){
         for(var i=0;i<ind.bands.length;i++){
@@ -4071,7 +4135,12 @@ const app = createApp({
         total = +(total + penalty).toFixed(2);
         if(total < 0) total = 0;
         if(total > 100) total = 100;
-        // v162: 一票否决(后端已判定) → 总分强制为 0,与权重/分项无关
+        // v192: 先固化「原始分」——一票否决只影响最终展示分,绝不能丢掉真实计算结果。
+        //   用户 2026-09-11:「即便触发了否决项,最终显示的应该是 0,也不能影响原始的分数计算」
+        var rawTotal = total;
+        var rawGrade = 'D';
+        for(var gi=0; gi<rules.grades.length; gi++){ if(rawTotal >= rules.grades[gi].min){ rawGrade = rules.grades[gi].grade; break; } }
+        // v162: 一票否决(后端已判定) → 最终分强制为 0,与权重/分项无关
         // v191: 否决项超过 3 条才强制归零(用户 2026-09-11:「否决项超过3条再归0吧,我先观察下」)
         var _vr = (track && track.veto_reasons) || [];
         if(typeof _vr === 'string'){ try{ _vr = JSON.parse(_vr); }catch(e){ _vr = _vr ? [_vr] : []; } }
@@ -4082,7 +4151,7 @@ const app = createApp({
         if(vetoed){
           grade = 'D';
         } else {
-          for(var i=0;i<rules.grades.length;i++){ if(total >= rules.grades[i].min){ grade = rules.grades[i].grade; break; } }
+          grade = rawGrade;
         }
         return {
           officialScore: track && track.total_score != null ? track.total_score : null,
@@ -4091,6 +4160,9 @@ const app = createApp({
           riskChecks: (track && track.veto_checks) || [],
           officialPenalty: track && track.penalty || 0,
           userScore: +total.toFixed(0),
+          // v192: 否决归零前的真实计算分(始终照算,不受一票否决影响),供弹窗展示「原始分」
+          userRawScore: +rawTotal.toFixed(0),
+          userRawGrade: rawGrade,
           vetoed: vetoed,
           vetoReasons: _vr,
           userDimRaw: {A:0,B:0,C:0},  // 兼容旧 UI(无权重时代),保留 key 但不再使用
@@ -4775,13 +4847,33 @@ const app = createApp({
       if(!t || !t.mkt || t.mkt[g]===undefined) return false;
       return t.mkt[g]===0;
     },
+    // v192: 行情「加载中」判定 —— 后端 DB 播种(_seed_from_db)与富化超时的行会带 loading:true。
+    //   这类行没有 mkt,也没有均量/振幅/换手/资金/A-B-C 任一派生字段,
+    //   因此既不能算分(会把「没数据」错算成 0 分),也不该报「数据异常」(那是 qbad 的语义)。
+    isLoadingTrack(t){
+      return !!(t && t.loading === true);
+    },
+    // v192: 当前生效的评分规则 = 默认规则(含 source/valid/display 函数) ⊕ 用户已保存的纯数据配置。
+    //   必须 merge:userScoringRules 来自 localStorage 的 JSON 往返,指标上的函数已全部丢失,
+    //   直接当规则用会让每个指标都判「数据无效」→ 三维度全 0 → 实时分恒为 0。
+    activeRules(){
+      const base = (this.mtscore && this.mtscore.default) ? this.mtscore.default() : null;
+      if(!base) return null;
+      return (this.mtscore && this.mtscore.mergeRules)
+        ? this.mtscore.mergeRules(base, this.userScoringRules) : base;
+    },
     // v148: 综合评分详情 + 规则可调
     async openScoreDetail(p){
+      // v192: 行情还在加载中的行不打开评分详情(所有指标必然「数据无效」,没有诊断价值)
+      if(this.isLoadingTrack(p && p.track)){
+        this.showToast('行情正在加载中,请稍后刷新再查看评分详情');
+        return;
+      }
       this.scoreDetailModal = {
         show:true, code:p.code, name:p.name||p.code,
         track: p.track || {},
-        // 加载用户规则(空则用默认)
-        rules: this.userScoringRules ? JSON.parse(JSON.stringify(this.userScoringRules)) : this.mtscore.default(),
+        // v192: 用 activeRules() 合并默认函数后再计算(原实现直接 JSON 深拷贝用户规则 → 函数丢失 → 全部「数据无效」)
+        rules: this.activeRules(),
         computeTimer: null,
         saving:false,
       };
@@ -4795,18 +4887,26 @@ const app = createApp({
     },
     // v159: 全表批量按当前规则重算 userScore,写入 p.user_score(列表渲染优先用)
     recomputeAllUserScores(){
-      const rules = this.userScoringRules || (this.scoreDetailModal && this.scoreDetailModal.rules) || this.mtscore.default();
+      // v192: 规则一律经 activeRules() 与默认规则 merge —— userScoringRules 来自 localStorage
+      //   (JSON 往返已丢掉指标上的 source/valid/display 函数),直接使用会让全部指标判「数据无效」、实时分恒 0。
+      const rules = this.activeRules();
       if(!rules || !Array.isArray(rules.indicators)) return;
       const pool = this.pool || [];
       for(let i=0;i<pool.length;i++){
         const t = pool[i] && pool[i].track;
+        // v192: 行情尚未富化完的行(后端 DB 播种 / 富化超时 / 富化异常)绝不算分,也不显示假分
+        //   → 展示 '-' + 「加载中」,等下一轮自动刷新拿到全量 track 再算。
+        pool[i].user_loading = this.isLoadingTrack(t);
         // v180: light 静态期 track 无 price,直接置 null 展示 '-' —— 避免对空 track 算出 NaN 分数
-        if(!t || !t.price || t.mkt && t.mkt.q===0) { pool[i].user_score = null; pool[i].user_vetoed = false; continue; }
+        if(!t || !t.price || pool[i].user_loading || (t.mkt && t.mkt.q===0)) {
+          pool[i].user_score = null; pool[i].user_vetoed = false; pool[i].user_raw_score = null; continue;
+        }
         try{
           const r = this.mtscore.compute(t, rules);
           pool[i].user_score = r && r.userScore != null ? r.userScore : null;
+          pool[i].user_raw_score = r && r.userRawScore != null ? r.userRawScore : null;
           pool[i].user_vetoed = !!(r && r.vetoed);
-        }catch(e){ pool[i].user_score = null; pool[i].user_vetoed = false; }
+        }catch(e){ pool[i].user_score = null; pool[i].user_raw_score = null; pool[i].user_vetoed = false; }
       }
     },
     // v155: 给 rules.indicators 补 iw 默认值(每个分类内指标均分 100%)

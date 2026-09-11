@@ -50,6 +50,7 @@ _dl_test.json
 /_*.json
 /_*.py
 /_*.xlsx
+/_crop/
 # 一次性调试响应残留（如 /api/pool 冒烟输出）
 /pool_out.json
 /pool_*.json

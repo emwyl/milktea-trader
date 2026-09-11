@@ -76,6 +76,11 @@ def _seed_from_db(code: str, db) -> dict | None:
             "ma20": round(sum(closes[-20:]) / min(20, len(closes)), 3),
             "ts": int(dt.datetime.now().timestamp()),
             "seed_src": "db",
+            # v192: 显式「加载中」标记。播种 track 只有 DB 日线能算出的字段(价/MA/箱体),
+            #   没有 mkt,也没有均量/振幅/换手/资金/A-B-C 评分等富化字段。
+            #   前端据此展示「- + 加载中」,既不算分也不误报「数据异常」
+            #   (误报会违反「行情异常必须红色告警」铁律的反面——把正常加载中的行当异常)。
+            "loading": True,
         }
         recent = closes[-20:] if len(closes) >= 20 else closes
         out["box_high"] = round(max(recent), 3)
@@ -265,12 +270,15 @@ def list_pool(
                     try:
                         tracks[code] = f.result()
                     except Exception:
-                        tracks[code] = {}
+                        # v192: 富化抛异常时不再用空 track 覆盖 DB 播种 —— 保留播种(带 loading 标记),
+                        #   前端按「加载中」展示;空 track 会让整行行情列全变 '-' 且无任何提示。
+                        tracks.setdefault(code, {})
             # 未完成的任务：取不到就算了(留给缓存/下次刷新)，不阻塞响应
+            # v192: 无播种可保留时给一个带 loading 的占位,让前端显示「加载中」而不是一片空白 '-'
             for f in track_futs:
                 if f not in done:
                     code = track_futs[f]
-                    tracks.setdefault(code, {})
+                    tracks.setdefault(code, {"loading": True})
             for f in name_futs:
                 if f in done:
                     try:
