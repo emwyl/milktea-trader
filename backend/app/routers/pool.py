@@ -20,7 +20,7 @@ from app.schemas import (
 )
 from app.services.data_fetcher import (ensure_stock_name, get_pool_track, _fetch_intraday_fund,
                                         _market_return, _float_shares, _turnover_from_volume,
-                                        prefetch_float_shares)
+                                        prefetch_float_shares, prefetch_t1_fund)
 from app.services.preference import match_scheme
 from app.services.screener import get_screener
 from sqlalchemy import and_, func, or_
@@ -171,7 +171,7 @@ def list_pool(
     note: str = Query("", description="备注模糊查询"),
     tag: str = Query("", description="按标签 ID 筛选(多个用逗号分隔)"),
     page: int = Query(1, ge=1, description="页码，从 1 开始"),
-    page_size: int = Query(15, ge=1, le=100, description="每页条数，默认 15"),
+    page_size: int = Query(10, ge=1, le=100, description="每页条数，默认 10"),
     today: str = Query("", description="v143: 当前日期 YYYY-MM-DD,用于返回 day_view_today 字段;留空=服务器中国时区今日"),
     light: int = Query(0, description="v180: 1=仅返回本地静态字段(代码/名称/标签/行业/日初判断/备注等),不拉行情行情评分,秒回;0=默认全量富化"),
     db: SessionLocal = Depends(get_db),
@@ -1136,6 +1136,8 @@ def add_day_view_log(code: str, body: DayViewLogIn,
         composite_score=cs,
         reference_text=rt[:500],
         reference_metrics_json=rj[:4000],
+        # v191: 录入节点标记(盘前预判=pretrade / 盘中预判=pool)
+        source=(body.source or "pretrade"),
     )
     db.add(row)
     db.commit()
@@ -1149,6 +1151,7 @@ def add_day_view_log(code: str, body: DayViewLogIn,
         composite_score=row.composite_score,
         reference_text=row.reference_text or "",
         reference_metrics_json=row.reference_metrics_json or "",
+        source=row.source or "pretrade",   # v191
     )
 
 
@@ -1158,6 +1161,7 @@ def list_day_view_log(code: str, trade_date: str = Query("", description="可选
                       db: SessionLocal = Depends(get_db), user: User = Depends(get_current_user)):
     """v143: 列出该 code 的所有日初判断历史,按 trade_date desc, operated_at desc。
     v178: 返回中携带 composite_score / reference_text / reference_metrics_json 3 个快照字段。
+    v191: 返回中携带 source(录入节点:pretrade=盘前预判 / pool=盘中预判),用于历史互通查看。
     """
     q = (db.query(DayViewLog)
          .filter(DayViewLog.user_id == user.id, DayViewLog.code == code))
@@ -1173,7 +1177,24 @@ def list_day_view_log(code: str, trade_date: str = Query("", description="可选
         composite_score=r.composite_score,
         reference_text=r.reference_text or "",
         reference_metrics_json=r.reference_metrics_json or "",
+        source=r.source or "pretrade",   # v191
     ).model_dump() for r in rows]
+
+
+@router.delete("/{code}/day-view-log/{log_id}")
+def delete_day_view_log(code: str, log_id: int,
+                        db: SessionLocal = Depends(get_db), user: User = Depends(get_current_user)):
+    """v191: 删除一条日初判断记录(预判历史 / 盯盘日志通用)。
+    仅允许删除当前用户自己的记录;记录不存在或不属于该用户返回 404。
+    """
+    row = (db.query(DayViewLog)
+           .filter(DayViewLog.id == log_id, DayViewLog.user_id == user.id, DayViewLog.code == code)
+           .first())
+    if not row:
+        raise HTTPException(status_code=404, detail="记录不存在或无权删除")
+    db.delete(row)
+    db.commit()
+    return {"ok": True, "deleted": log_id}
 
 
 def _deviation_reason(trend: str, dev: float | None, has_close: bool = True) -> str:
@@ -1586,8 +1607,8 @@ def _t1_static_metrics(db, code: str, trade_date: str) -> dict:
     为什么天然静态：所有输入都来自已定格的日线，不含任何实时行情，
     因此 9:30 之后乃至全天都不会变动 —— 正是盘前预判要的「静态数据」。
 
-    主力净流入/主力信号取自当日日线行上已落库的值（每日富化时写入），
-    今天之前的历史行为 NULL → 返回 None，前端按「-」展示。
+    主力净流入/主力信号：v191 起按「上一交易日(T-1)」口径取 —— 优先用该日线行上已落库的值，
+    为空时用东财日级资金流报表（收盘后落地）补齐并回写；两处都取不到才返回 None（前端显示「-」）。
     """
     try:
         qs = (db.query(DailyQuote)
@@ -1611,8 +1632,10 @@ def _t1_static_metrics(db, code: str, trade_date: str) -> dict:
         "prev_low": round(prev.low, 2) if prev.low else None,
         "prev_turnover": _turnover_of_row(prev),      # v190：0 值用「量÷流通股本」现算
         "prev_volume": round(prev.volume / 1e4, 2) if prev.volume else None,  # 万手(与 5日/20日均量同口径)
-        "main_net_pct": prev.main_net_pct,                                  # 主力净流入%（可能 None）
-        "main_signal": prev.main_signal or "",                              # 主力信号文本
+        # v191：主力信号 / 主力净流入按「上一交易日(T-1)」口径取（与盘间监控的实时口径区分）。
+        # 这里只读 DB 上 T-1 行已落库的值，不打 HTTP；缺失由 _fill_t1_main 在分页后按页补齐。
+        "main_net_pct": prev.main_net_pct,
+        "main_signal": prev.main_signal or "",
     }
     # 振幅 = (最高 − 最低) / 昨收 × 100
     if prev.high and prev.low and prev.pre_close:
@@ -1653,6 +1676,40 @@ def _t1_static_metrics(db, code: str, trade_date: str) -> dict:
     except Exception:
         pass
     return out
+
+
+def _fill_t1_main(db, trade_date: str, items: list[dict]) -> None:
+    """v191：只给「当前页」的行补齐 T-1 主力资金（并发拉取 + 回写日线行）。
+
+    为什么放在分页之后：`_build_pretrade_items` 是一次性组装全表再切片的，
+    若在组装阶段补会把整张表都补一遍（实测百来只 → 首次 40s，远超网关超时）。
+    这里只对当前页（默认 10 只）动手，冷启动约 1~2s，之后命中 DB 仅数毫秒。
+    """
+    need = [it for it in items if it.get("code") and it.get("main_net_pct") is None]
+    if not need:
+        return
+    codes = list(dict.fromkeys(it["code"] for it in need))
+    try:
+        prefetch_t1_fund(trade_date, codes, db)
+    except Exception:
+        return
+    pairs = {(it["code"], str(it.get("prev_date") or "")[:10]) for it in need if it.get("prev_date")}
+    if not pairs:
+        return
+    try:
+        got = {}
+        rows = (db.query(DailyQuote.code, DailyQuote.date,
+                         DailyQuote.main_net_pct, DailyQuote.main_signal)
+                  .filter(DailyQuote.code.in_([c for c, _ in pairs]))
+                  .filter(DailyQuote.date.in_([d for _, d in pairs])).all())
+        for r in rows:
+            got[r.code] = (r.main_net_pct, r.main_signal or "")
+    except Exception:
+        return
+    for it in need:
+        v = got.get(it["code"])
+        if v and v[0] is not None:
+            it["main_net_pct"], it["main_signal"] = v[0], v[1]
 
 
 def _build_pretrade_items(db, user, q, tag, trade_date) -> list[dict]:
@@ -1921,7 +1978,7 @@ def list_pretrade(
     q: str = Query("", description="证券代码或名称模糊查询"),
     tag: str = Query("", description="按标签 ID 筛选(多个用逗号分隔)"),
     page: int = Query(1, ge=1),
-    page_size: int = Query(15, ge=1, le=100),
+    page_size: int = Query(10, ge=1, le=100, description="v191: 每页条数，默认 10"),
     sort: str = Query("", description="排序列 key；留空=按加池顺序"),
     sort_dir: str = Query("asc", description="asc|desc"),
     db: SessionLocal = Depends(get_db),
@@ -1940,8 +1997,10 @@ def list_pretrade(
     total_before = len(items)
     _sort_items(items, (sort or "").strip(), (sort_dir or "asc").lower() == "desc")
     start = (page - 1) * page_size
+    page_items = items[start:start + page_size]
+    _fill_t1_main(db, trade_date, page_items)   # v191：只补当前页的 T-1 主力资金
     return {
-        "items": items[start:start + page_size],
+        "items": page_items,
         "total": total_before, "page": page, "page_size": page_size,
         "trade_date": trade_date,
         "available_dates": _recent_trade_dates(db, user.id),
@@ -1955,7 +2014,7 @@ def list_review(
     q: str = Query("", description="证券代码或名称模糊查询"),
     tag: str = Query("", description="按标签 ID 筛选(多个用逗号分隔)"),
     page: int = Query(1, ge=1),
-    page_size: int = Query(15, ge=1, le=100),
+    page_size: int = Query(10, ge=1, le=100, description="v191: 每页条数，默认 10"),
     sort: str = Query("", description="排序列 key；留空=按加池顺序"),
     sort_dir: str = Query("asc", description="asc|desc"),
     db: SessionLocal = Depends(get_db),

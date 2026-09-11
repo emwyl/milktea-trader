@@ -199,6 +199,142 @@ def _persist_float_shares(mapping: dict[str, float]) -> None:
                 pass
 
 
+# ===== v191: T-1(上一交易日) 主力资金 =====
+# 背景：`main_net_pct` 原本只在【盘中实时】链路写入「当日」日线行（见 _fetch_capital_flow
+# 调用点），历史日线行基本永远是 NULL → 盘前预判的「主力信号 / 主力净流入」两列全空。
+# 用户 2026-09-11 要求：这两列改成「按前一个交易日的口径取」（与盘间监控的实时口径区分开）。
+# 数据源用东财【日级】资金流报表（收盘后落地，天然就是 T-1 口径），并用 T-1 成交额算占比。
+_T1F_MEM: dict[tuple[str, str], tuple[float, float, str]] = {}   # (code,date) -> (ts, pct, text)
+_T1F_MISS: set[tuple[str, str]] = set()                          # 取不到的(不重复打 HTTP)
+_T1F_TTL = 6 * 3600.0
+
+
+def _t1_fund_signal(pct: float, net: float) -> str:
+    """与盘中链路同一套阈值（口径一致，避免同指标两套算法漂移）。"""
+    if pct > 3 and net > 0:
+        return "主力大幅流入"
+    if pct > 0:
+        return "主力流入"
+    if pct < -3 and net < 0:
+        return "主力大幅流出"
+    if pct < 0:
+        return "主力流出"
+    return "主力均衡"
+
+
+def _t1_fund_one(code: str, date: str, amount: float, volume: float, close: float):
+    """单只 T-1 主力资金 → (pct, signal_text)，取不到返回 None（前端显示「-」，不编造）。
+
+    严格校验报表 trade_date == 目标 T-1 日期：报表尚未更新到该日时宁可留空，
+    绝不拿别的交易日冒充（v116 教训：跨日混用会算出量级全错的占比）。
+    """
+    key = (code, date)
+    if not code or not date:
+        return None
+    now = time.time()
+    hit = _T1F_MEM.get(key)
+    if hit and now - hit[0] < _T1F_TTL:
+        return (hit[1], hit[2])
+    if key in _T1F_MISS:
+        return None
+    try:
+        cf = _fetch_capital_flow(code)
+    except Exception:
+        cf = None
+    if not cf or cf.get("main_net") is None or str(cf.get("trade_date") or "")[:10] != date:
+        _T1F_MISS.add(key)
+        return None
+    net = float(cf["main_net"])
+    amt = float(amount or 0)
+    if amt <= 0:      # 成交额缺失 → 用「量(手)×100×收盘」兜底（与 _pct_of_amount 同口径）
+        amt = float(volume or 0) * 100.0 * float(close or 0)
+    if amt <= 0:
+        return None
+    pct = round(net / amt * 100, 2)
+    txt = _t1_fund_signal(pct, net)
+    _T1F_MEM[key] = (now, pct, txt)
+    return (pct, txt)
+
+
+def prefetch_t1_fund(trade_date: str, codes: list[str], db=None,
+                     deadline_s: float | None = 4.0) -> int:
+    """批量预热「上一交易日」主力资金，并回写到对应日线行。返回本次回写条数。
+
+    并发拉取（单只一次 HTTP）；只补 main_net_pct 为空的行，已有值不覆盖。
+    回写后 `_t1_static_metrics` 直接命中 DB，后续加载不再打 HTTP。
+    db 传入调用方已有 session 时复用它（避免多 session 争抢 SQLite 写锁）。
+    deadline_s：总耗时上限。到点即返回已拿到的部分，未完成的留给下次加载再补
+      （已完成的结果会留在内存缓存里，下次是毫秒级），避免请求被外源拖过网关超时。
+    """
+    todo_codes = [c for c in dict.fromkeys(codes or []) if c]
+    if not todo_codes or not trade_date:
+        return 0
+    own_db = db is None
+    try:
+        if own_db:
+            db = SessionLocal()
+        # 每只票在 trade_date 之前最近的一根日线 = 「昨日」
+        sub = (db.query(DailyQuote.code.label("code"),
+                        func.max(DailyQuote.date).label("d"))
+                 .filter(DailyQuote.code.in_(todo_codes), DailyQuote.date < trade_date)
+                 .group_by(DailyQuote.code).all())
+        pairs = [(r.code, str(r.d)[:10]) for r in sub if r.d]
+        if not pairs:
+            return 0
+        want = set(pairs)
+        rows = (db.query(DailyQuote)
+                  .filter(DailyQuote.code.in_([c for c, _ in pairs]))
+                  .filter(DailyQuote.date.in_([d for _, d in pairs])).all())
+        rows = [r for r in rows if (r.code, str(r.date)[:10]) in want]
+        pending = [r for r in rows if r.main_net_pct is None]
+        if not pending:
+            return 0
+
+        def _work(r):
+            return r, _t1_fund_one(r.code, str(r.date)[:10],
+                                   r.amount or 0, r.volume or 0, r.close or 0)
+
+        results = []
+        try:
+            from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FTimeout
+            ex = ThreadPoolExecutor(max_workers=min(16, max(2, len(pending))))
+            futs = {ex.submit(_work, r): r for r in pending}
+            try:
+                for fut in as_completed(futs, timeout=deadline_s):
+                    try:
+                        results.append(fut.result())
+                    except Exception:
+                        pass
+            except FTimeout:
+                pass               # 到点先返回；未完成的留在内存缓存，下次补
+            finally:
+                ex.shutdown(wait=False)
+        except Exception:
+            results = [_work(r) for r in pending]
+        written = 0
+        for r, got in results:
+            if not got:
+                continue
+            r.main_net_pct, r.main_signal = got[0], got[1]
+            written += 1
+        if written:
+            db.commit()
+        return written
+    except Exception:
+        try:
+            if own_db and db is not None:
+                db.rollback()   # 复用调用方 session 时不 rollback，以免丢掉它的未决改动
+        except Exception:
+            pass
+        return 0
+    finally:
+        if own_db and db is not None:
+            try:
+                db.close()
+            except Exception:
+                pass
+
+
 def prefetch_float_shares(codes: list[str]) -> dict[str, float]:
     """批量预热流通股本（可投池一页 15~50 只时先调一次，避免逐只打 HTTP）。
 
@@ -2224,7 +2360,9 @@ def _calc_pass_scores(code: str, out: dict, quotes: list[Quote], spot: dict | No
 
     # ===== 汇总 =====
     total = score_a + score_b + score_c - penalty
-    if veto_reasons:
+    # v191: 否决项超过 3 条才强制归零(用户 2026-09-11:「否决项超过3条再归0吧,我先观察下」)。
+    #   1~3 条否决不再归零,保留真实评分;仅当否决项 >3 时总分强制为 0、评级 D。
+    if len(veto_reasons) > 3:
         total = 0
 
     # 向后兼容:保留旧的 must/key/aux 字段,但值按新规则映射

@@ -315,6 +315,8 @@ def run_migrations(engine):
                 # v185: 日初预判目标价位拆分为「目标买入 / 目标卖出」两端(旧 target_price 保留兼容)
                 ("target_buy", "ALTER TABLE day_view_log ADD COLUMN target_buy FLOAT"),
                 ("target_sell", "ALTER TABLE day_view_log ADD COLUMN target_sell FLOAT"),
+                # v191: 录入节点标记(盘前预判=pretrade / 盘中预判=pool),存量行默认 'pretrade'
+                ("source", "ALTER TABLE day_view_log ADD COLUMN source VARCHAR(16) DEFAULT 'pretrade'"),
             ):
                 try:
                     if not _has_col(conn, "day_view_log", col):

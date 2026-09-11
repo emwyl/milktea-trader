@@ -24,9 +24,9 @@
     s.src = './vue.global.prod.js?v=20260909152' + Date.now();
     s.onload = function(){
       if (typeof Vue !== 'undefined' && Vue.createApp) { location.reload(); }
-      else { hint.innerHTML = '重试仍失败,请按 Ctrl+F5 强制刷新<br><span style="font-size:12px;color:#9ca3af">(v20260911146)</span>'; }
+      else { hint.innerHTML = '重试仍失败,请按 Ctrl+F5 强制刷新<br><span style="font-size:12px;color:#9ca3af">(v20260911147)</span>'; }
     };
-    s.onerror = function(){ hint.innerHTML = '重试仍失败,请按 Ctrl+F5 强制刷新<br><span style="font-size:12px;color:#9ca3af">(v20260911146)</span>'; };
+    s.onerror = function(){ hint.innerHTML = '重试仍失败,请按 Ctrl+F5 强制刷新<br><span style="font-size:12px;color:#9ca3af">(v20260911147)</span>'; };
     (document.head || document.documentElement).appendChild(s);
   }catch(e){ /* 兜底若失败也别抛,留给用户 Ctrl+F5 */ }
 })();
@@ -670,6 +670,10 @@
   .tracktbl th.col-editable .th-label{color:var(--tea-d);font-weight:600}
   .pt-log-badge{display:inline-block;min-width:16px;padding:0 4px;margin-left:3px;border-radius:8px;
     background:var(--tea);color:#fff;font-size:11px;line-height:16px;text-align:center;font-weight:600}
+  .mon-badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:12px;font-weight:600;line-height:18px}
+  .mon-badge.mon-on{background:#dcfce7;color:#15803d;border:1px solid #86efac}
+  .mon-badge.mon-off{background:#f3f4f6;color:#6b7280;border:1px solid #d1d5db}
+  .hist-note{max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .pt-select{width:100%;max-width:132px;padding:4px 6px;border:1px solid var(--line);border-radius:6px;font-size:12px;background:#fff;color:#374151}
   .pt-input{width:100%;max-width:132px;padding:4px 6px;border:1px solid var(--line);border-radius:6px;font-size:12px}
   tr.pt-editing > td{background:#fffbeb !important}
@@ -729,6 +733,9 @@
   .sd-grade{display:inline-block;padding:2px 8px;border-radius:10px;font-weight:700;font-size:13px;margin-left:6px}
   .grade-A{background:#16a34a;color:#fff}.grade-B{background:#3b82f6;color:#fff}.grade-C{background:#f59e0b;color:#fff}.grade-D{background:#dc2626;color:#fff}.grade-{background:#94a3b8;color:#fff}
   .sd-veto-box{background:#fef2f2;border:1px solid #fecaca;border-left:4px solid #dc2626;padding:10px 14px;border-radius:6px;margin-bottom:14px}
+  .sd-veto-box.sd-veto-soft{background:#fffbeb;border-color:#fde68a;border-left-color:#d97706}
+  .sd-veto-box.sd-veto-soft b{color:#92700a}
+  .sd-veto-box.sd-veto-soft li{color:#92700a}
   .sd-veto-box ul{margin:6px 0 0 18px}
   .sd-veto-box li{color:#dc2626;margin:2px 0;font-size:13px}
   /* v188: D类 基本面/合规否决 三态展示(后端算好,前端仅展示) */
@@ -886,7 +893,7 @@
     <header>
       <h1>🧋 TR-个人学习版</h1>
       <span class="sub">个人学习用 · 先控风险再谈收益</span>
-      <span class="version" id="appVersion">v20260911146</span>
+      <span class="version" id="appVersion">v20260911147</span>
       <button class="ghost auto-refresh-btn" :class="{active:autoRefresh}" @click="toggleAutoRefresh" :title="autoRefresh?'自动刷新开启中，每10秒更新当前页面数据':'点击开启每10秒自动刷新'">
         {{autoRefresh?'⏸':'▶'}} 自动 5s
       </button>
@@ -1179,9 +1186,6 @@
 
       <!-- ============ v186 盘前预判 ============ -->
       <div v-if="view==='pretrade'">
-        <div class="row" style="margin-bottom:10px">
-          <button class="pooltab-label" type="button">盘前预判</button>
-        </div>
         <div :class="['hintbar-cell', hintOpen==='pretrade'?'is-open':'']" style="margin-bottom:10px">
           <button class="hintbar-toggle" @click.stop="hintOpen = (hintOpen==='pretrade'?'':'pretrade')">{{hintOpen==='pretrade'?'收起说明':'提示说明'}}</button>
           <div class="hintbar">盘前预判 = <b>开盘前把「今天准备怎么干」先写下来</b>：逐只填<b>涨跌趋势 / 目标买入 / 目标卖出 / 目标依据</b>，行内改完点该行「保存」即可（一天可改多次，每次都留痕）。盘前就想清楚，盘中才不会被分时带着走。</div>
@@ -1211,6 +1215,7 @@
               <input type="file" ref="poolImportFile" style="display:none" accept=".xlsx,.xls,.csv" @change="onImportPoolFile" />
               <button class="ghost" :disabled="!pretradeSelected.length" @click="batchDeletePool" style="color:var(--danger);border-color:var(--danger)">删除</button>
               <button class="ghost" :disabled="!pretradeSelected.length" @click="batchMonitor" title="把勾选的证券加入监控，之后会出现在「盘间监控」和「复盘管理」">批量加入监控</button>
+              <button class="ghost" :disabled="!pretradeSelected.length" @click="batchCancelMonitor" title="把勾选且已监控的证券移出监控，仅保留在盘前预判">批量取消监控</button>
               <button class="ghost" @click="exportPretrade">导出</button>
               <button class="ghost" :disabled="!pretradeSelected.length" @click="openBatchTagModal">打标签</button>
               <button class="ghost" @click="openTagManager">标签配置</button>
@@ -1248,6 +1253,10 @@
                       <div class="clickable-link" style="font-size:11px" @click.stop="openAnalysis(p.code)">{{p.code}}</div>
                     </template>
                     <template v-else-if="col.key==='industry'">{{p.industry||'-'}}</template>
+                    <template v-else-if="col.key==='monitor_status'">
+                      <span v-if="p.monitored" class="mon-badge mon-on">已监控</span>
+                      <span v-else class="mon-badge mon-off">未监控</span>
+                    </template>
                     <!-- 盘前静态行情（T-1）：全部来自已定格日线，9:30 后也不变；无数据显示 - -->
                     <template v-else-if="['prev_open','prev_close','prev_high','prev_low','ma5','ma20','prev_volume','avg_vol5','avg_vol20'].includes(col.key)">
                       <span v-if="p[col.key]!=null">{{p[col.key]}}</span><span v-else class="muted">-</span>
@@ -1305,11 +1314,12 @@
                         </template>
                         <template v-else>
                           <button class="ghost btn-sm" @click.stop="startPretradeEdit(p)" title="维护该行的涨跌趋势 / 目标买入 / 目标卖出 / 目标依据">新增</button>
-                          <button v-if="p.log_count>0" class="ghost btn-sm" @click.stop="openDayViewModal({code:p.code,name:p.name})"
-                            :title="'查看当天保存的 '+p.log_count+' 条预判历史'">历史<span class="pt-log-badge">{{p.log_count}}</span></button>
+                          <button v-if="p.log_count>0" class="ghost btn-sm" @click.stop="openHistoryModal(p)"
+                            :title="'查看 '+p.name+' 的盘前/盘中预判历史(只读,可删除)'">历史<span class="pt-log-badge">{{p.log_count}}</span></button>
                           <button v-if="!p.monitored" class="ghost btn-sm" @click.stop="monitorOne(p)"
                             title="加入监控后，该股会出现在「盘间监控」和「复盘管理」">加入监控</button>
-                          <button v-else class="ghost btn-sm" disabled title="已在监控中">已监控</button>
+                          <button v-else class="ghost btn-sm" @click.stop="cancelMonitor(p)"
+                            title="取消后该股仅在盘前预判可见，移出「盘间监控」与「复盘管理」">取消监控</button>
                         </template>
                       </div>
                     </template>
@@ -1333,9 +1343,6 @@
 
       <!-- 短线可投池 -->
       <div v-if="view==='pool'">
-        <div class="row" style="margin-bottom:10px">
-          <button class="pooltab-label" type="button">手工筛选</button>
-        </div>
 
         <!-- 手工筛选 -->
         <div v-if="poolTab==='manual'">
@@ -1719,9 +1726,6 @@
 
       <!-- ============ v186 复盘管理 ============ -->
       <div v-if="view==='review'">
-        <div class="row" style="margin-bottom:10px">
-          <button class="pooltab-label" type="button">复盘管理</button>
-        </div>
         <div :class="['hintbar-cell', hintOpen==='review'?'is-open':'']" style="margin-bottom:10px">
           <button class="hintbar-toggle" @click.stop="hintOpen = (hintOpen==='review'?'':'review')">{{hintOpen==='review'?'收起说明':'提示说明'}}</button>
           <div class="hintbar">复盘管理 = <b>收盘后拿结果对照盘前预判</b>：选一个交易日，看每只票的<b>开盘/收盘/最高/最低</b>与你盘前写的<b>趋势、目标买卖价</b>差多少（偏离度），把<b>偏离原因和当日思考</b>写进复盘，沉淀成下次操作的依据。</div>
@@ -2545,6 +2549,50 @@
         </div>
       </div>
 
+      <!-- v191: 预判历史弹窗(只读,合并盘前预判+盘中预判两个节点;允许删除单条) -->
+      <div v-if="historyModal.show" class="modal" @click.self="closeHistoryModal">
+        <div class="modal-box" style="max-width:960px">
+          <div class="modal-head">
+            <h3>预判历史 — {{ historyModal.name }} {{ historyModal.code }} <span class="muted" style="font-size:12px;font-weight:400">(只读 · 盘前/盘中合并)</span></h3>
+            <button type="button" class="close-x" @click="closeHistoryModal" aria-label="关闭">×</button>
+          </div>
+          <div class="modal-body" style="max-height:70vh;overflow-y:auto">
+            <div v-if="historyModal.loading" class="hintbar" style="background:#eef2ff;border-left-color:#6366f1;color:#3730a3">加载中，请稍候…</div>
+            <div v-else-if="historyModal.error" class="data-err">⚠ {{ historyModal.error }}</div>
+            <div v-else-if="!historyModal.logs.length" class="muted" style="padding:18px 0;text-align:center">暂无预判记录</div>
+            <table v-else class="tracktbl" style="table-layout:auto;width:100%">
+              <thead><tr>
+                <th style="width:96px">节点</th>
+                <th style="width:110px">交易日</th>
+                <th style="width:80px">趋势</th>
+                <th style="width:100px">目标买入</th>
+                <th style="width:100px">目标卖出</th>
+                <th style="width:200px">目标依据</th>
+                <th style="width:90px">综合评分</th>
+                <th style="width:160px">操作时间</th>
+                <th style="width:80px">操作</th>
+              </tr></thead>
+              <tbody>
+                <tr v-for="h in historyModal.logs" :key="h.id">
+                  <td><span class="mon-badge" :class="h.source==='pool' ? 'mon-on' : 'mon-off'">{{ h.source==='pool' ? '盘中预判' : '盘前预判' }}</span></td>
+                  <td>{{ h.trade_date }}</td>
+                  <td>{{ h.trend }}</td>
+                  <td>{{ h.target_buy!=null ? h.target_buy : '-' }}</td>
+                  <td>{{ h.target_sell!=null ? h.target_sell : '-' }}</td>
+                  <td class="hist-note" :title="h.target_note">{{ h.target_note || '-' }}</td>
+                  <td>{{ h.composite_score!=null ? h.composite_score : '-' }}</td>
+                  <td class="muted" style="font-size:11px">{{ h.operated_at }}</td>
+                  <td><button class="ghost btn-sm" @click="deleteHistoryLog(h.id)">删除</button></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="modal-foot">
+            <button type="button" class="ghost" @click="closeHistoryModal">关闭</button>
+          </div>
+        </div>
+      </div>
+
       <!-- v143: 盯盘日志弹窗 — 该股所有交易日复盘,行可展开当日多次修改明细 -->
       <!-- v178: 表格扩到 12 列(综合评分/预判参考信息 + 用户录入 5 字段),max-width 提到 1280 防止横向溢出 -->
       <!-- v184: 用户要求再拉宽 1.5 倍 → 1280×1.5=1920(仍受 width:100% + 视口约束,不会溢出屏幕) -->
@@ -2706,17 +2754,18 @@
 
           <div class="modal-body" style="max-height:70vh;overflow-y:auto">
             <!-- 一票否决提示(后端已算好,直接展示) -->
-            <div v-if="scoreDetailModal._result && scoreDetailModal._result.officialVetos && scoreDetailModal._result.officialVetos.length" class="sd-veto-box">
-              <b>⚠ 一票否决命中(总分强制为 0):</b>
+            <div v-if="scoreDetailModal._result && scoreDetailModal._result.officialVetos && scoreDetailModal._result.officialVetos.length" class="sd-veto-box" :class="{'sd-veto-soft': scoreDetailModal._result.officialVetos.length <= 3}">
+              <b v-if="scoreDetailModal._result.officialVetos.length > 3">⚠ 否决项命中 {{ scoreDetailModal._result.officialVetos.length }} 条(>3,总分强制为 0):</b>
+              <b v-else>⚠ 命中否决项 {{ scoreDetailModal._result.officialVetos.length }} 条(≤3,暂不强制归零):</b>
               <ul><li v-for="(v,vi) in scoreDetailModal._result.officialVetos" :key="vi">{{ v }}</li></ul>
-              <div class="muted" style="margin-top:4px;font-size:11px">否决项命中后总分强制为 0,下方分项得分仅作诊断参考,不再参与总分计算</div>
+              <div class="muted" style="margin-top:4px;font-size:11px">否决项 >3 条时总分强制为 0,下方分项得分仅作诊断参考;当前 ≤3 条,保留真实评分(用户 2026-09-11 调整:「否决项超过3条再归0吧,我先观察下」)。</div>
             </div>
 
-            <!-- v188: D类 基本面/合规否决(6条,独立于一票否决技术面项;命中任意一条总分强制0) -->
+            <!-- v188: D类 基本面/合规否决(6条,独立于一票否决技术面项;合并统计,累计 >3 条总分强制0) -->
             <div v-if="scoreDetailModal._result && scoreDetailModal._result.riskChecks && scoreDetailModal._result.riskChecks.length" class="sd-rc-box">
               <div class="sd-rc-head">
                 <b>🛡 D类 基本面/合规否决</b>
-                <span class="muted">独立于一票否决技术面项 · 命中任意一条 → 总分强制 0(与权重/分项无关)</span>
+                <span class="muted">与一票否决技术面项合并统计 · 累计命中 >3 条 → 总分强制 0(≤3 保留真实评分,与权重/分项无关)</span>
               </div>
               <div class="sd-rc-list">
                 <div class="sd-rc-row" v-for="rc in scoreDetailModal._result.riskChecks" :key="rc.id">
@@ -3573,7 +3622,7 @@ const app = createApp({
     t:{code:'',data:null,pos:{qty:'',cost:''},cfg:{custom_support:'',custom_pressure:'',risk_note:''},saveMsg:''},
     ext:{data:null},  // 个股分析日线走势+引擎信号数据
     screens:[], schemeTypes:[], screenResult:[], screenSelected:[], showSchemeTypes:false, ns:{name:'',scheme:'steady'},
-    screenPage:1, screenPageSize:15,   // v189: 选股结果也统一 15 行/页 + 15/30/50 切换
+    screenPage:1, screenPageSize:10,   // v191: 统一默认 10 行/页(可选 10/15/30/50)
     // 选股模型「引导式建模」状态
     build:{scheme:'steady', name:'稳健型', risk:'低', riskJson:{max_position_pct:15,stop_loss_pct:3,max_total_pct:40},
       params:{price_max:30, amplitude_avg_min:2, amplitude_avg_max:4, industries:[],
@@ -3583,19 +3632,19 @@ const app = createApp({
     building:false, seeding:false, stocksCount:0, cachedCount:0, warmup:{running:false,done:0,total:0,errors:0,msg:''}, warmupTimer:null,
     industries:[],  // 申万一级行业列表(后端返回,前端 chip 多选)
     seedingInd:false,  // 行业补全按钮 loading
-    pool:[], poolFilter:{q:'',tag:''}, poolPage:1, poolPageSize:15, poolTotal:0, rules:[], nr:{name:'',scope:'all',action:'reduce',conditions:'{"logic":"AND","conditions":[{"type":"below_ma","ma":20,"days":3}]}',risk:'重要',notice:'',enabled:true},
+    pool:[], poolFilter:{q:'',tag:''}, poolPage:1, poolPageSize:10, poolTotal:0, rules:[], nr:{name:'',scope:'all',action:'reduce',conditions:'{"logic":"AND","conditions":[{"type":"below_ma","ma":20,"days":3}]}',risk:'重要',notice:'',enabled:true},
     // v180 性能:可投池「静态秒开 + 全量富化」状态
     poolEnrich:'',        // v183: 顶部轻提示——仅「行情暂不可用/获取失败,将自动重试」等静态期稳定态显示;不随每次刷新闪烁
     poolLoading:false,    // v182:仅「首次行情富化」预计超过 1s 时,页面居中显示「加载中」;定时刷新静默不再反复提示
     _poolLoadTimer:null,  // 1s 计时器句柄(仅 loadPool→首次富化链路使用,enrichPool 静默刷新不触发)
     _poolSeq:0,           // loadPool 请求序号:翻页/筛选竞态时丢弃过期响应
     // ===== v186: 盘前预判 / 复盘管理（两个新页面，各自独立状态，不改动盘间监控）=====
-    pretrade:[], pretradeFilter:{q:'',tag:'',date:''}, pretradePage:1, pretradePageSize:15,
+    pretrade:[], pretradeFilter:{q:'',tag:'',date:''}, pretradePage:1, pretradePageSize:10,
     pretradeTotal:0, pretradeLoading:false, pretradeErr:null, pretradeSort:{key:'',dir:'desc'},
     pretradeDates:[], _pretradeSeq:0,
     // v189: 盘前预判行勾选(用于批量加入监控/删除/打标签)
-    pretradeSelected:[], pageSizeOptions:[15,30,50],
-    review:[], reviewFilter:{q:'',tag:'',date:''}, reviewPage:1, reviewPageSize:15,
+    pretradeSelected:[], pageSizeOptions:[10,15,30,50],
+    review:[], reviewFilter:{q:'',tag:'',date:''}, reviewPage:1, reviewPageSize:10,
     reviewTotal:0, reviewLoading:false, reviewErr:null, reviewSort:{key:'',dir:'desc'},
     reviewDates:[], _reviewSeq:0, reviewSelected:[],   // v189: 复盘管理行勾选
     // v186: 日初判断趋势枚举（与日初弹窗、后端校验保持一致：看涨/看跌/风险/-）
@@ -3657,6 +3706,8 @@ const app = createApp({
                    _referenceText:'', _referenceMetricsJson:''},
     // v143: 盯盘日志弹窗(每日复盘 + 行可展开当日多次修改)
     watchLogModal:{show:false, code:'', name:'', items:[], loading:false, saving:false, dirtyCount:0, _dirtyAlerted:false, justSaved:false, justSavedCount:0, _justSavedTimer:null},
+    // v191: 预判历史弹窗(只读,合并盘前预判+盘中预判两个节点;允许删除单条)
+    historyModal:{show:false, code:'', name:'', loading:false, error:'', logs:[]},
     // v148: 综合评分详情+规则可调弹窗(用户实时调整权重/阈值,前端实时重算 user_score)
     scoreDetailModal:{show:false, code:'', name:'', track:{}, loading:false, saving:false},
     // v148: 用户自定义评分规则(阈值/权重),启动时从 localStorage 读,默认走现行 9 项指标(后端 _calc_pass_scores 一致)
@@ -4021,10 +4072,11 @@ const app = createApp({
         if(total < 0) total = 0;
         if(total > 100) total = 100;
         // v162: 一票否决(后端已判定) → 总分强制为 0,与权重/分项无关
+        // v191: 否决项超过 3 条才强制归零(用户 2026-09-11:「否决项超过3条再归0吧,我先观察下」)
         var _vr = (track && track.veto_reasons) || [];
         if(typeof _vr === 'string'){ try{ _vr = JSON.parse(_vr); }catch(e){ _vr = _vr ? [_vr] : []; } }
         if(!Array.isArray(_vr)) _vr = [];
-        var vetoed = _vr.length > 0;
+        var vetoed = _vr.length > 3;
         if(vetoed) total = 0;
         var grade = 'D';
         if(vetoed){
@@ -4136,10 +4188,10 @@ const app = createApp({
     // 选股模型运行结果中,尚未加入可投池的 code(用于"一键全部加入"按钮)
     pendingCodes(){ return (this.screenResult||[]).filter(c=>!this.poolCodes.includes(c.code)).map(c=>c.code); },
     // v189: 选股结果分页（客户端分页，与池子表格统一 15 行/页）
-    screenTotalPages(){ return Math.max(1, Math.ceil((this.screenResult||[]).length / (this.screenPageSize||15))); },
+    screenTotalPages(){ return Math.max(1, Math.ceil((this.screenResult||[]).length / (this.screenPageSize||10))); },
     pagedScreenResult(){
       const arr = this.screenResult||[];
-      const ps = this.screenPageSize||15;
+      const ps = this.screenPageSize||10;
       // 页码越界(切行数/重跑后)自动收敛到最后一页
       const maxPage = Math.max(1, Math.ceil(arr.length/ps));
       if(this.screenPage > maxPage) this.screenPage = maxPage;
@@ -4417,6 +4469,7 @@ const app = createApp({
           {key:'idx',              label:'序号',         width:60,  visible:true, frozen:true,  sortable:false},
           {key:'code_name',        label:'代码/名称',     width:144, visible:true, frozen:true,  sortable:true},
           {key:'industry',         label:'行业',         width:120, visible:true, frozen:false, sortable:true},
+          {key:'monitor_status',    label:'监控状态',      width:120, visible:true, frozen:false, sortable:false, hideable:false, help:'已监控=该股已加入盘间监控与复盘管理；未监控=仅盘前预判可见。未监控显示「加入监控」，已监控显示「取消监控」'},
           // —— 盘前静态行情：全部取上一交易日(T-1)已定格日线，9:30 后乃至全天都不再变动 ——
           {key:'prev_open',        label:'昨日\n开盘价',   width:92,  visible:true, frozen:false, sortable:true},
           {key:'prev_close',       label:'昨日\n收盘价',   width:92,  visible:true, frozen:false, sortable:true},
@@ -4973,6 +5026,44 @@ const app = createApp({
         console.warn('load day-view-log failed', e);
       }
     },
+    // v191: 打开预判历史弹窗(只读,合并盘前预判+盘中预判两个节点)
+    async openHistoryModal(p){
+      if(!p) return;
+      this.historyModal = {show:true, code:p.code, name:p.name||p.code, loading:true, error:'', logs:[]};
+      await this.loadHistory(p.code);
+    },
+    async loadHistory(code){
+      const m = this.historyModal;
+      if(!m || !m.show) return;
+      m.loading = true; m.error = '';
+      try{
+        // 不传 trade_date → 取该 code 全部历史(盘前+盘中节点合并返回)
+        const list = await API(`/pool/${code}/day-view-log?limit=500`);
+        m.logs = Array.isArray(list) ? list : [];
+      }catch(e){
+        m.error = '加载预判历史失败：' + ((e&&e.message)||'网络错误');
+        m.logs = [];
+      }finally{
+        m.loading = false;
+      }
+    },
+    closeHistoryModal(){
+      this.historyModal.show = false;
+    },
+    // v191: 删除单条预判历史(盘前/盘中通用),删除后原地刷新
+    async deleteHistoryLog(id){
+      if(id == null) return;
+      if(!confirm('确认删除这条预判记录？删除后不可恢复。')) return;
+      try{
+        await API(`/pool/${this.historyModal.code}/day-view-log/${id}`, {method:'DELETE'});
+        this.showToast('已删除一条预判记录');
+        await this.loadHistory(this.historyModal.code);
+        // 列表里的 log_count 同步回读
+        if(this.view==='pretrade') this.loadPretrade();
+      }catch(e){
+        this.showToast('删除失败：'+((e&&e.message)||'网络错误'));
+      }
+    },
     async submitDayViewLog(){
       const m = this.dayViewModal;
       if(!m.trade_date || !/^\d{4}-\d{2}-\d{2}$/.test(m.trade_date)){
@@ -4998,6 +5089,7 @@ const app = createApp({
           composite_score: (m._compositeScore==null || m._compositeScore==='') ? null : (+m._compositeScore),
           reference_text: m._referenceText || '',
           reference_metrics_json: m._referenceMetricsJson || '',
+          source: 'pool',   // v191: 标记为盘中预判节点录入,历史互通查看时区分来源
         })});
         // 成功:刷新当日历史 + 刷新列表(让 day_view_today / count 同步)
         await this.loadDayViewLog(m.code, m.trade_date);
@@ -6343,7 +6435,7 @@ const app = createApp({
       if(allOn) this.screenSelected = this.screenSelected.filter(c=>!page.includes(c));
       else this.screenSelected = Array.from(new Set(this.screenSelected.concat(page)));
     },
-    setScreenPageSize(n){ this.screenPageSize = n || 15; this.screenPage = 1; },
+    setScreenPageSize(n){ this.screenPageSize = n || 10; this.screenPage = 1; },
     async addSelectedToPool(){
       const codes=this.screenSelected.slice();
       if(!codes.length){ this.showAlert('请先勾选要加入的标的'); return; }
@@ -6367,7 +6459,7 @@ const app = createApp({
         if(this.pretradeFilter.tag) p.append('tag', this.pretradeFilter.tag);
         if(this.pretradeFilter.date) p.append('trade_date', this.pretradeFilter.date);
         p.append('page', this.pretradePage || 1);
-        p.append('page_size', this.pretradePageSize || 15);
+        p.append('page_size', this.pretradePageSize || 10);
         const r = await API('/pool/pretrade?' + p.toString());
         if(seq !== this._pretradeSeq) return;   // 竞态:丢弃过期响应
         this.pretrade = (r.items||[]).map(x=>this._normPretradeRow(x));
@@ -6458,8 +6550,33 @@ const app = createApp({
         this.showToast('批量加入监控失败：'+((e&&e.message)||'网络错误'));
       }
     },
+    // 单只取消监控(已监控 → 取消)
+    async cancelMonitor(p){
+      if(!p || !p.monitored) return;
+      try{
+        await API('/pool/'+p.code+'/monitor?monitored=false', {method:'POST'});
+        p.monitored = false;
+        this.showToast(p.code+' 已取消监控，仅在「盘前预判」可见');
+      }catch(e){
+        this.showToast('取消监控失败：'+((e&&e.message)||'网络错误'));
+      }
+    },
+    // 批量取消监控(已勾选且已监控的券 → 取消)
+    async batchCancelMonitor(){
+      const codes = (this.pretradeSelected||[]).slice();
+      if(!codes.length){ this.showToast('请先勾选要取消监控的证券'); return; }
+      try{
+        const r = await API('/pool/batch-monitor?monitored=false&codes='+encodeURIComponent(codes.join(',')), {method:'POST'});
+        const n = (r && r.updated!=null) ? r.updated : codes.length;
+        this.showToast('已取消监控 '+n+' 只');
+        this.pretradeSelected = [];
+        this.loadPretrade();
+      }catch(e){
+        this.showToast('批量取消监控失败：'+((e&&e.message)||'网络错误'));
+      }
+    },
     setPretradePageSize(n){
-      this.pretradePageSize = n || 15;
+      this.pretradePageSize = n || 10;
       this.pretradePage = 1;
       this.loadPretrade();
     },
@@ -6477,6 +6594,7 @@ const app = createApp({
           target_note: (p._d.target_note || '').slice(0, 20),
           composite_score: (p.composite_score!=null ? Number(p.composite_score) : null),
           reference_text: p.reference_text || '',
+          source: 'pretrade',   // v191: 标记为盘前预判节点录入,历史互通查看时区分来源
         };
         await API('/pool/'+p.code+'/day-view-log', {method:'POST', body: JSON.stringify(body)});
         p._dirty = false;
@@ -6523,7 +6641,7 @@ const app = createApp({
         if(this.reviewFilter.tag) p.append('tag', this.reviewFilter.tag);
         if(this.reviewFilter.date) p.append('trade_date', this.reviewFilter.date);
         p.append('page', this.reviewPage || 1);
-        p.append('page_size', this.reviewPageSize || 15);
+        p.append('page_size', this.reviewPageSize || 10);
         const r = await API('/pool/review?' + p.toString());
         if(seq !== this._reviewSeq) return;
         this.review = (r.items||[]).map(x=>this._normReviewRow(x));
@@ -6561,7 +6679,7 @@ const app = createApp({
     },
     searchReview(){ this.reviewPage=1; this.loadReview(); },
     resetReviewFilter(){ this.reviewFilter = {q:'', tag:'', date:this.reviewFilter.date}; this.reviewPage=1; this.loadReview(); },
-    setReviewPageSize(n){ this.reviewPageSize = n || 15; this.reviewPage = 1; this.loadReview(); },
+    setReviewPageSize(n){ this.reviewPageSize = n || 10; this.reviewPage = 1; this.loadReview(); },
     toggleReviewSelect(code, on){
       const i = this.reviewSelected.indexOf(code);
       if(on && i < 0) this.reviewSelected.push(code);
@@ -6618,7 +6736,7 @@ const app = createApp({
       if(this.poolFilter.q) p.append('q', this.poolFilter.q.trim());
       if(this.poolFilter.tag) p.append('tag', this.poolFilter.tag);
       p.append('page', this.poolPage || 1);
-      p.append('page_size', this.poolPageSize || 15);
+      p.append('page_size', this.poolPageSize || 10);
       return p;
     },
     // v183: 全量富化统一入口(不带 light,一次拉行情+评分覆盖当前页);防重入;失败静默(静态行仍在,自动重试)
@@ -6685,7 +6803,7 @@ const app = createApp({
       this._clrErr('poolErr');
     },
     searchPool(){ this.poolPage=1; this.loadPool(); },
-    setPoolPageSize(n){ this.poolPageSize = n || 15; this.poolPage = 1; this.loadPool(); },
+    setPoolPageSize(n){ this.poolPageSize = n || 10; this.poolPage = 1; this.loadPool(); },
     async loadPoolTags(){ try{ this.poolTags=await API('/pool/tags'); this._clrErr('tagsErr'); }catch(e){ this._setErr('tagsErr','标签加载失败：'+(e.message||'网络错误')+'，点击重试', ()=>this.loadPoolTags()); } },
     openTagManager(){ this.tagModal={show:true, id:null, name:'', color:'#3b82f6', saving:false}; },
     closeTagManager(){ this.tagModal={show:false, id:null, name:'', color:'#3b82f6', saving:false}; },

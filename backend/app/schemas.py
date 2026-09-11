@@ -150,11 +150,14 @@ class DayViewLogIn(BaseModel):
     composite_score: Optional[float] = None  # 综合评分(0-100),None 表示不入快照
     reference_text: str = ""  # 预判参考信息文本(如 "量比:1.0、换手:3.01%、…")
     reference_metrics_json: str = ""  # 结构化指标 JSON(后端写库时再验,默认空)
+    # v191: 录入节点(pretrade=盘前预判 / pool=盘中预判),默认盘前
+    source: str = "pretrade"
 
 
 class DayViewLogOut(BaseModel):
     """v143：日初判断修改记录返回。v178 加 3 个快照字段。
-    v185 加 target_buy / target_sell(目标买入 / 目标卖出)。"""
+    v185 加 target_buy / target_sell(目标买入 / 目标卖出)。
+    v191 加 source(录入节点,用于历史互通查看时区分盘前/盘中)。"""
     id: int
     code: str
     trade_date: str
@@ -169,6 +172,8 @@ class DayViewLogOut(BaseModel):
     composite_score: Optional[float] = None
     reference_text: str = ""
     reference_metrics_json: str = ""
+    # v191
+    source: str = "pretrade"
 
 
 class MetricsSummaryOut(BaseModel):

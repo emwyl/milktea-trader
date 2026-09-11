@@ -175,6 +175,9 @@ class DayViewLog(Base):
     composite_score: Mapped[float | None] = mapped_column(Float, nullable=True)  # 综合评分(0-100),None=未录入/旧数据
     reference_text: Mapped[str] = mapped_column(Text, default="")  # 预判参考信息(默认组装文本,如"量比:1.0、换手:3.01%…")
     reference_metrics_json: Mapped[str] = mapped_column(Text, default="")  # 同一时刻的结构化指标(JSON),便于后续做准确率聚合
+    # v191: 录入节点标记(盘前预判=pretrade / 盘中预判=pool),用于历史互通查看时区分来源
+    source: Mapped[str] = mapped_column(String(16), default="pretrade")
+
 
 
 class DayViewRecap(Base):
