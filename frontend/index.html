@@ -9,6 +9,11 @@
 <title>TR-个人学习版</title>
 <script src="./vue.global.prod.js?v=20260909152"></script>
 <script>
+// 版本号常量：仅供「后端不可达时」的兜底展示。
+// 正常运行时会用 /api/health 返回的**后端版本**覆盖它 —— 因为部署包 publish/ 同时含
+// frontend/ 与 backend/ 两份副本，只看前端硬编码的版本无法发现「后端副本忘记同步」。
+// 唯一权威来源是 backend/app/version.py；改版本请用 scripts/version_bump.py --bump。
+var FRONTEND_VERSION = 'v20260911150';
 // v166 网关偶发 502 历史教训:vue.global.prod.js 加载失败会直接导致下方主脚本 `const {createApp}=Vue` 抛
 // ReferenceError,整页{{}}占位符/弹窗默认可见——表现就是"登录闪一下又回登录界面但 Vue 没渲染"。
 // v168 实施兜底:检测到 Vue 未定义时,提示用户并自动注入新 <script> 重试一次,成功后整页 reload 跑完整流程。
@@ -24,9 +29,9 @@
     s.src = './vue.global.prod.js?v=20260909152' + Date.now();
     s.onload = function(){
       if (typeof Vue !== 'undefined' && Vue.createApp) { location.reload(); }
-      else { hint.innerHTML = '重试仍失败,请按 Ctrl+F5 强制刷新<br><span style="font-size:12px;color:#9ca3af">(v20260911149)</span>'; }
+      else { hint.innerHTML = '重试仍失败,请按 Ctrl+F5 强制刷新<br><span style="font-size:12px;color:#9ca3af">(' + FRONTEND_VERSION + ')</span>'; }
     };
-    s.onerror = function(){ hint.innerHTML = '重试仍失败,请按 Ctrl+F5 强制刷新<br><span style="font-size:12px;color:#9ca3af">(v20260911149)</span>'; };
+    s.onerror = function(){ hint.innerHTML = '重试仍失败,请按 Ctrl+F5 强制刷新<br><span style="font-size:12px;color:#9ca3af">(' + FRONTEND_VERSION + ')</span>'; };
     (document.head || document.documentElement).appendChild(s);
   }catch(e){ /* 兜底若失败也别抛,留给用户 Ctrl+F5 */ }
 })();
@@ -78,6 +83,33 @@
   header .auto-refresh-btn{display:inline-flex;align-items:center;gap:4px}
   header .auto-refresh-btn.active{background:#fff;color:var(--tea-d);font-weight:700;box-shadow:0 0 0 2px rgba(255,255,255,.55)}
   header .version{margin-left:auto;font-size:12px;opacity:.95;background:rgba(255,255,255,.18);padding:2px 8px;border-radius:6px;white-space:nowrap}
+  /* 前后端版本不一致 = 发布包两份副本没同步，必须刺眼（这是静默故障，不报会误判功能已上线） */
+  header .version.version-mismatch{background:#dc2626;color:#fff;font-weight:700;box-shadow:0 0 0 2px rgba(255,255,255,.6)}
+  header .version.version-mismatch b{font-weight:700}
+  /* ===== 0911批次4: 定期复盘报告（报表1 个股日度明细）===== */
+  .rep-tbl{width:100%;border-collapse:collapse;font-size:12px;white-space:nowrap}
+  .rep-tbl th{background:#f8fafc;border:1px solid var(--line);padding:5px 6px;font-weight:600;text-align:center;position:sticky;top:0;z-index:2}
+  .rep-tbl td{border:1px solid var(--line);padding:4px 6px;text-align:center}
+  .rep-tbl tbody tr:hover{background:#f8fbff}
+  .rep-tbl tr.rep-open{background:#eef4ff}
+  /* 注：曾尝试给「日期/代码/名称」三列加 position:sticky 左侧吸附（横向滚动时保持标的可见）。
+     实测在 border-collapse:collapse 的表格里，sticky 单元格的背景**无法可靠遮盖**被滚过的
+     兄弟单元格 → 边界处漏出「监」「15」这类列碎片，比不吸附更乱。
+     要修必须把整表改成 border-collapse:separate 并重画边框，改动面大于收益，故放弃。
+     若日后确实需要，可考虑：① 改 separate + 仅画右/下边框；② 表格左侧独立冻结列。 */
+  .rep-scroll{overflow:auto;max-height:64vh;border:1px solid var(--line);border-radius:8px}
+  .rep-sem{display:inline-block;min-width:34px;padding:1px 4px;border-radius:4px;font-size:11px;font-weight:600}
+  .rep-sem-up{background:#fee2e2;color:#b91c1c}
+  .rep-sem-dn{background:#dcfce7;color:#15803d}
+  .rep-sem-flat{background:#f1f5f9;color:#64748b}
+  .rep-sem-na{background:transparent;color:#cbd5e1}
+  .rep-mon{background:#dbeafe;color:#1d4ed8;border-radius:4px;padding:1px 5px;font-size:11px}
+  .rep-picker{margin-top:8px;border:1px solid var(--line);border-radius:8px;padding:10px;background:#fbfdff}
+  .rep-grid{display:flex;flex-wrap:wrap;gap:6px;max-height:190px;overflow:auto;margin-top:8px}
+  .rep-chip{border:1px solid var(--line);background:#fff;border-radius:14px;padding:3px 9px;font-size:12px;cursor:pointer;white-space:nowrap}
+  .rep-chip.on{background:var(--tea);color:#fff;border-color:var(--tea)}
+  .rep-chart-wrap{padding:10px;background:#fbfdff;text-align:center}
+  .rep-note{font-size:12px;color:#64748b;margin-top:6px;line-height:1.6}
   nav{display:flex;gap:6px;padding:8px 16px;background:#fff;border-bottom:1px solid var(--line);flex-wrap:wrap}
   nav a{padding:6px 12px;border-radius:8px;cursor:pointer;font-size:14px;color:var(--ink);text-decoration:none}
   nav a.active{background:var(--tea);color:#fff}
@@ -676,6 +708,22 @@
   .mon-badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:12px;font-weight:600;line-height:18px}
   .mon-badge.mon-on{background:#dcfce7;color:#15803d;border:1px solid #86efac}
   .mon-badge.mon-off{background:#f3f4f6;color:#6b7280;border:1px solid #d1d5db}
+  /* 0911批次4: 市场环境因子（大盘档位 M / 个股风格 / 前置过滤标记） */
+  .env-badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:12px;font-weight:600;line-height:18px;border:1px solid}
+  .env-badge.env-healthy{background:#fef2f2;color:#b91c1c;border-color:#fecaca}
+  .env-badge.env-weak{background:#fffbeb;color:#b45309;border-color:#fde68a}
+  .env-badge.env-collapse{background:#ecfdf5;color:#15803d;border-color:#a7f3d0}
+  .sem-chip{display:inline-block;padding:1px 6px;margin-left:4px;border-radius:8px;font-size:11px;font-weight:600;line-height:15px}
+  .sem-chip.sem-up{background:#fef2f2;color:#b91c1c}
+  .sem-chip.sem-flat{background:#f3f4f6;color:#6b7280}
+  .sem-chip.sem-down{background:#ecfdf5;color:#15803d}
+  .attr-chip{display:inline-block;padding:1px 6px;margin:1px 2px 1px 0;border-radius:8px;font-size:11px;line-height:15px;background:#f1f5f9;color:#334155;border:1px solid #e2e8f0}
+  .attr-chip.defense{background:#eff6ff;color:#1d4ed8;border-color:#bfdbfe}
+  .attr-chip.offense{background:#fef2f2;color:#b91c1c;border-color:#fecaca}
+  .flag-chip{display:inline-block;padding:1px 6px;margin:1px 2px 1px 0;border-radius:8px;font-size:11px;line-height:15px;font-weight:600}
+  .flag-chip.flag-block{background:#fef2f2;color:#991b1b;border:1px solid #fecaca}
+  .flag-chip.flag-pulse{background:#fffbeb;color:#92400e;border:1px solid #fde68a}
+  .env-banner{display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:12px;line-height:1.6}
   .hist-note{max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .pt-select{width:100%;max-width:132px;padding:4px 6px;border:1px solid var(--line);border-radius:6px;font-size:12px;background:#fff;color:#374151}
   .pt-input{width:100%;max-width:132px;padding:4px 6px;border:1px solid var(--line);border-radius:6px;font-size:12px}
@@ -896,7 +944,14 @@
     <header>
       <h1>🧋 TR-个人学习版</h1>
       <span class="sub">个人学习用 · 先控风险再谈收益</span>
-      <span class="version" id="appVersion">v20260911149</span>
+      <!-- 版本号显示的是**后端 /api/health 自报的版本**（而非前端硬编码），
+           因为部署包 publish/ 同时含 frontend/ 与 backend/ 两份副本，只显示前端版本
+           无法发现「后端副本忘记同步」。若前后端版本不一致 → 红色告警，一眼可见。 -->
+      <span class="version" id="appVersion"
+            :class="{'version-mismatch': verMismatch}"
+            :title="verMismatch
+              ? ('⚠️ 前后端版本不一致！前端 ' + feVersion + ' / 后端 ' + (appVersion||'未知') + ' —— 说明发布包的两份副本没同步(publish/backend 或 publish/frontend 只更新了一份)，请勿据此判断功能是否已上线')
+              : ('当前运行版本（后端自报）：' + (appVersion || feVersion) + (appVersion ? '' : ' · 后端未响应,显示前端兜底值'))">{{ appVersion || feVersion }}<b v-if="verMismatch"> ⚠ 前后端不一致</b></span>
       <button class="ghost auto-refresh-btn" :class="{active:autoRefresh}" @click="toggleAutoRefresh" :title="autoRefresh?'自动刷新开启中，每10秒更新当前页面数据':'点击开启每10秒自动刷新'">
         {{autoRefresh?'⏸':'▶'}} 自动 5s
       </button>
@@ -928,6 +983,7 @@
       <button :class="view==='pool'?'active':'ghost'" @click="go('pool')">盘间监控</button>
       <button :class="view==='review'?'active':'ghost'" @click="go('review')">复盘管理</button>
       <button :class="view==='t'?'active':'ghost'" @click="go('t')">个股分析</button>
+      <button :class="view==='report'?'active':'ghost'" @click="go('report')">定期复盘报告</button>
     </div>
     <main>
       <!-- 看板总览 -->
@@ -1347,6 +1403,16 @@
       <!-- 短线可投池 -->
       <div v-if="view==='pool'">
 
+        <!-- 0911批次4: 市场环境横幅（大盘恐慌分 M 档位 + 阈值/规则说明） -->
+        <div v-if="marketRegime" class="card" style="padding:8px 12px;margin-bottom:10px">
+          <div class="env-banner">
+            <span>市场环境</span>
+            <span class="env-badge" :class="'env-'+(marketRegime.tier||'weak')">{{marketRegime.label||'-'}}</span>
+            <span class="muted">恐慌分 M = {{marketRegime.m!=null?marketRegime.m:'-'}}/100（越高越健康）· 看涨阈值 {{marketRegime.tier==='healthy'?60:(marketRegime.tier==='collapse'?72:65)}}</span>
+            <span class="muted">弱势市：进攻/题材降权、防御加权；崩坏市：一律屏蔽新开仓（仅防御观察）</span>
+          </div>
+        </div>
+
         <!-- 手工筛选 -->
         <div v-if="poolTab==='manual'">
         <div :class="['hintbar-cell', hintOpen==='pool'?'is-open':'']" style="margin-bottom:10px">
@@ -1642,9 +1708,29 @@
             <span v-if="p.user_loading" class="ldg-badge" :title="'行情数据加载中,稍后自动刷新 · ' + (p.name||p.code)">-<i>加载中</i></span>
             <span v-else-if="mktBad(p.track,'q')" class="bad-data" title="行情读取异常,未评分">数据异常</span>
             <span v-else class="clickable-link"
-                  :class="(p.user_score!=null ? p.user_score : (p.track.total_score||0))>=70 ? 'up' : ((p.user_score!=null ? p.user_score : (p.track.total_score||0))<40 ? 'down' : '')"
-                  :title="p.user_vetoed ? ('一票否决命中:实时原始分 ' + (p.user_raw_score!=null?p.user_raw_score:'-') + ',最终分强制为 0(与权重无关) · 点击查看评分详情') : '点击查看评分详情与规则(可调权重/阈值,实时重算) · 当前显示实时重算分'"
-                  @click.stop="openScoreDetail(p)"><b>{{ p.user_score!=null ? p.user_score : (p.track.total_score!=null ? p.track.total_score : '-') }}</b><span v-if="p.user_vetoed" class="sd-veto-tag" title="一票否决命中">否决</span></span>
+                  :class="(+p.user_adj_score||+p.user_score||+p.track.total_score||0)>=70 ? 'up' : ((+p.user_adj_score||+p.user_score||+p.track.total_score||0)<40 ? 'down' : '')"
+                  :title="p.user_vetoed ? ('一票否决命中:实时原始分 ' + (p.user_raw_score!=null?p.user_raw_score:'-') + ',最终分强制为 0(与权重无关) · 点击查看评分详情') : ('点击查看评分详情与规则 · ' + (p.user_adj_score!=null && p.user_score!=null && p.user_adj_score!==p.user_score ? ('环境调节分(原始分 ' + p.user_score + ' × 环境系数 ' + ((p.user_adj_score/(p.user_score||1)).toFixed(2)) + ')') : '当前显示实时重算分'))"
+                  @click.stop="openScoreDetail(p)"><b>{{ p.user_adj_score!=null ? p.user_adj_score : (p.user_score!=null ? p.user_score : (p.track.total_score!=null ? p.track.total_score : '-')) }}</b><span v-if="p.user_vetoed" class="sd-veto-tag" title="一票否决命中">否决</span><span v-if="p.user_semantic" class="sem-chip" :class="p.user_semantic==='看涨'?'sem-up':(p.user_semantic==='看跌'?'sem-down':'sem-flat')">{{p.user_semantic}}</span></span>
+          </template>
+          <template v-else-if="col.key==='env_signal'">
+            <span v-if="p.user_loading" class="muted">-</span>
+            <template v-else>
+              <span class="env-badge" :class="'env-'+((p.market_regime&&p.market_regime.tier)||'weak')" :title="'大盘环境：'+((p.market_regime&&p.market_regime.label)||'未知')+'（恐慌分 '+((p.market_regime&&p.market_regime.m!=null)?p.market_regime.m:'-')+'）'">{{(p.market_regime&&p.market_regime.label)||'-'}}</span>
+              <span v-for="(f,fi) in (p.regime_flags||[])" :key="fi" class="flag-chip" :class="/屏蔽|环境崩坏/.test(f)?'flag-block':'flag-pulse'">{{f}}</span>
+              <span v-if="p.sector_regime&&p.sector_regime.tier==='collapse'" class="flag-chip flag-block">板块崩坏</span>
+            </template>
+          </template>
+          <template v-else-if="col.key==='style_tag'">
+            <span v-if="p.style_tag" class="attr-chip" :class="p.style_tag==='防御'?'defense':(p.style_tag==='进攻'?'offense':'')" :title="'风格标签：'+p.style_tag">{{p.style_tag}}</span>
+            <span v-else class="muted">-</span>
+          </template>
+          <template v-else-if="col.key==='mv_tier'">
+            <span v-if="p.mv_tier" class="attr-chip">{{p.mv_tier}}</span>
+            <span v-else class="muted">-</span>
+          </template>
+          <template v-else-if="col.key==='beta'">
+            <span v-if="p.beta!=null" :title="'vs 沪深300 近60日Beta'+(p.relative_strength!=null?(' · 20日相对强度 '+p.relative_strength+'%'):'')">{{p.beta}}</span>
+            <span v-else class="muted">-</span>
           </template>
           <template v-else-if="col.key==='position_qty'">{{p.position_qty!=null ? p.position_qty : '-'}}</template>
               <template v-else-if="col.key==='cost_price'">{{p.cost_price!=null ? ui.fmt(p.cost_price) : '-'}}</template>
@@ -3536,6 +3622,159 @@
 
         </div>
       </div>
+
+      <!-- ===== 0911批次4: 定期复盘报告 · 报表1 个股日度明细 =====
+           数据来自后端后台采集器落库的时点评分快照（pool_score_snapshot）——
+           历史时点评分**无法事后重建**（原行情层只在内存留最新盘口），所以本报表
+           只覆盖首次落库日之后；更早日期显示「无数据」而不是编造数字。 -->
+      <div v-if="view==='report'">
+        <div class="hintbar" style="margin-bottom:10px">
+          定期复盘报告 = 把盘间监控沉淀下来的<b>时点静态综合评分</b>做成可导出明细：
+          每个交易日在池个股的<b>开高低收 / 涨跌幅 / 振幅 / 换手</b>，加上
+          <b>11 个时点的评分</b>与当时的方向判定（看涨/观望/看跌），点「分时」可展开当日走势图。
+          <b>说明：</b>时点快照自采集器上线当日起逐日积累，<b>不做历史回填</b>；
+          分时走势图仅近约 7 个交易日可回溯（上游限制）。
+        </div>
+
+        <div class="card">
+          <!-- 筛选条件行（按项目约定：查询/重置相邻，操作按钮单独成行） -->
+          <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
+            <span class="muted">日期</span>
+            <input type="date" v-model="rep.start" style="width:150px">
+            <span class="muted">~</span>
+            <input type="date" v-model="rep.end" style="width:150px">
+            <button @click="reportQuickRange(7)">近7日</button>
+            <button class="ghost" @click="reportQuickRange(30)">近30日</button>
+            <label style="display:flex;align-items:center;gap:4px;margin-left:6px">
+              <input type="checkbox" v-model="rep.monitorOnly"> 仅看监控池
+            </label>
+            <span class="muted">评分口径</span>
+            <select v-model="rep.scoreBasis" style="width:210px">
+              <option value="raw">原始分（跨日可比·复盘首选）</option>
+              <option value="score">调整后分（与盘间监控一致）</option>
+            </select>
+            <button @click="loadReportDaily">查询</button>
+            <button class="ghost" @click="resetReportFilters">重置</button>
+          </div>
+          <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid #e5e7eb">
+            <button class="ghost" @click="rep.pickerOpen = !rep.pickerOpen">
+              {{ rep.pickerOpen ? '收起股票选择' : '选择股票' }}（{{ rep.codes.length ? rep.codes.length + ' 只已选' : '全部' }}）
+            </button>
+            <button class="ghost" @click="exportReportDaily" :disabled="rep.loading || !rep.rows.length">导出 Excel</button>
+            <label style="display:flex;align-items:center;gap:4px">
+              <input type="checkbox" v-model="rep.withIntraday"> 导出含分时明细
+            </label>
+            <span class="muted">{{ rep.statusText }}</span>
+          </div>
+
+          <!-- 股票多选（内联面板，不用模态里的原生 select —— 会被遮罩挡住点不动） -->
+          <div v-if="rep.pickerOpen" class="rep-picker">
+            <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center;margin:0">
+              <input v-model="rep.codeSearch" placeholder="搜索代码或名称" style="width:180px">
+              <button class="ghost" @click="repSelectAll">全选</button>
+              <button class="ghost" @click="repSelectMonitored">仅监控池</button>
+              <button class="ghost" @click="rep.codes = []">清空（=全部）</button>
+              <span class="muted">已选 {{ rep.codes.length ? rep.codes.length : rep.codesAll.length }} / {{ rep.codesAll.length }}</span>
+            </div>
+            <div class="rep-grid">
+              <button v-for="c in repPickList" :key="c.code" class="rep-chip"
+                      :class="{'on': !rep.codes.length || rep.codes.indexOf(c.code) >= 0}"
+                      @click="repToggleCode(c.code)">{{ c.code }} {{ c.name }}</button>
+            </div>
+          </div>
+
+          <div v-if="rep.err" class="data-err">⚠ {{ rep.err }} <button @click="loadReportDaily">重试</button></div>
+          <div v-if="rep.msg" class="hintbar" style="background:#eef2ff;border-left-color:#6366f1;color:#3730a3">{{ rep.msg }}</div>
+
+          <div v-if="rep.loading" class="pool-loading-mask">
+            <div class="pool-loading-box"><span class="pool-loading-spin"></span>正在读取复盘数据…</div>
+          </div>
+
+          <!-- 明细表 -->
+          <div v-if="rep.rows.length" class="rep-note" style="margin:0 0 8px">
+            <b>{{ rep.slots.length }} 个时点</b> ·
+            评分口径 <b>{{ rep.scoreBasis==='raw' ? '原始分（跨日/跨风格可比，复盘首选）' : '调整后分（= 原始分 × 环境系数，与盘间监控页一致）' }}</b>
+            · 颜色 = 当时的操作方向（<span class="rep-sem rep-sem-up">看涨</span>
+            <span class="rep-sem rep-sem-dn">看跌</span>
+            <span class="rep-sem rep-sem-flat">观望</span>），悬停单元格可同时看到两套分值与各自档位。
+          </div>
+          <div v-if="rep.rows.length" class="rep-scroll">
+            <table class="rep-tbl">
+              <thead>
+                <tr>
+                  <th>日期</th><th>代码</th><th>名称</th><th>监控池</th>
+                  <th>开盘</th><th>最高</th><th>最低</th><th>收盘</th><th>昨收</th>
+                  <th>涨跌幅</th><th>振幅</th><th>换手%</th><th>数据源</th>
+                  <th v-for="s in rep.slots" :key="s">{{ reportSlotLabel(s) }}</th>
+                  <th>分时</th>
+                </tr>
+              </thead>
+              <tbody>
+                <template v-for="(row,ri) in rep.rows" :key="row.date + '|' + row.code">
+                  <tr :class="{'rep-open': rep.expandKey === (row.date + '|' + row.code)}">
+                    <td>{{ row.date }}</td>
+                    <td>{{ row.code }}</td>
+                    <td style="text-align:left">{{ row.name || '-' }}</td>
+                    <td><span v-if="row.in_monitor" class="rep-mon">监控</span><span v-else class="muted">-</span></td>
+                    <td>{{ reportNum(row.open) }}</td>
+                    <td>{{ reportNum(row.high) }}</td>
+                    <td>{{ reportNum(row.low) }}</td>
+                    <td><b>{{ reportNum(row.close) }}</b></td>
+                    <td>{{ reportNum(row.pre_close) }}</td>
+                    <td :class="(row.change_pct||0) > 0 ? 'up' : ((row.change_pct||0) < 0 ? 'down' : '')">
+                      {{ row.change_pct!=null ? (row.change_pct>0?'+':'') + row.change_pct.toFixed(2) + '%' : '-' }}
+                    </td>
+                    <td>{{ row.amplitude_pct!=null ? row.amplitude_pct.toFixed(2) + '%' : '-' }}</td>
+                    <td>{{ row.turnover!=null ? row.turnover.toFixed(2) : '-' }}</td>
+                    <td :title="row.ohlc_src==='daily'
+                          ? '日线（daily_quotes 已落库）：开/高/低/收均为该交易日的真实日线值'
+                          : '快照兜底：该日尚无可用的日线行，收盘取该日最后一个有有效价的时点快照价，昨收由「收盘 ÷ (1+涨跌幅)」反推 → 开/高/低无从得知，故为「-」'">
+                      <span v-if="row.ohlc_src==='daily'" class="muted">日线</span>
+                      <span v-else style="color:#b45309;font-weight:600">快照兜底</span>
+                    </td>
+                    <td v-for="s in rep.slots" :key="s" :title="reportSlotTitle(row, s)">
+                      <span v-if="reportHasScore(row.scores[s])" class="rep-sem"
+                            :class="reportSemClass((row.scores[s]||{}).semantic)">{{ reportScoreText(row.scores[s]) }}</span>
+                      <span v-else class="rep-sem rep-sem-na" :title="reportSlotTitle(row, s)">-</span>
+                    </td>
+                    <td><button class="ghost" style="padding:1px 6px;font-size:11px"
+                                @click="toggleReportChart(row, ri)">{{ rep.expandKey === (row.date+'|'+row.code) ? '收起' : '查看' }}</button></td>
+                  </tr>
+                  <tr v-if="rep.expandKey === (row.date + '|' + row.code)">
+                    <td :colspan="14 + rep.slots.length" style="padding:0">
+                      <div class="rep-chart-wrap">
+                        <div v-if="rep.chartLoading" class="muted">分时数据加载中…</div>
+                        <div v-else-if="rep.chart && !rep.chart.available" class="data-err" style="margin:8px auto;max-width:760px;text-align:left">
+                          ⚠ {{ rep.chart.reason || '该日无分时数据' }}
+                        </div>
+                        <div v-else-if="rep.chart && rep.chart.available">
+                          <div class="muted" style="margin-bottom:6px">
+                            {{ row.code }} {{ row.name }} · {{ row.date }} 分时走势
+                            （基准=昨收 {{ reportNum(rep.chart.pre_close) }}；
+                            价格线相对昨收<b class="up">涨红</b>/<b class="down">跌绿</b>，
+                            <span style="color:#d97706">橙=均价</span>）
+                          </div>
+                          <canvas ref="repChart" width="1000" height="300" style="width:100%;max-width:1000px;height:300px"></canvas>
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
+          </div>
+          <div v-else-if="!rep.loading" class="rep-note">
+            <b>本区间暂无数据。</b>
+            {{ rep.meta && rep.meta.note ? rep.meta.note : '' }}
+            <br v-if="rep.statusText"><b>采集器：</b>{{ rep.statusText }}
+          </div>
+
+          <div v-if="rep.meta && !rep.meta.empty" class="rep-note">
+            {{ rep.meta.note }}
+            <br>口径：时点评分来自后端落库快照（默认权重口径，保证整段时间可比）；「观望」= 市场环境崩坏或弱势市题材股逆势涨，只守不攻、不给方向。
+          </div>
+        </div>
+      </div>
     </main>
     <div class="fixfoot">⚠️ 本工具仅用于个人学习与研究，所有行情、信号、回测与策略均为辅助参考，不构成任何投资建议。</div>
   </div>
@@ -3621,6 +3860,29 @@ const app = createApp({
     token:localStorage.getItem('tk')||'', me:{username:'',role:'',is_guest:false}, view:'dash', err:'',
     authMode:'login', reg:{u:'',p:'',p2:''}, users:[], adminTab:'users', accessLogs:[], accessPage:1, accessTotal:0, accessPageSize:10, accessLoading:false,
     poolErr:null, tagsErr:null, accessErr:null,  // 各数据视图的加载错误（null 或 {msg,retry}），绝不允许静默空白
+    marketRegime:null,  // 0911批次4: 大盘市场环境快照 {m,tier,label}（/api/market/regime）
+    // ===== 版本号：以后端 /api/health 自报的为准 =====
+    //   只显示前端硬编码版本会掩盖「发布包只同步了前端、后端副本仍旧」的静默故障
+    //   （publish/ 同时含 frontend/ 与 backend/ 两份副本）。UI 侧只做展示与告警，不改判定逻辑。
+    //   注意：feVersion 必须挂到实例上才能在模板里访问 —— Vue 模板只解析组件实例上的属性
+    //   和 Math/Date 等白名单全局，**不会解析裸的全局 var**（直接写 FRONTEND_VERSION 会渲染成空）。
+    appVersion:'',      // 后端自报版本（''=尚未取到/后端未响应）
+    feVersion: (typeof FRONTEND_VERSION !== 'undefined' ? FRONTEND_VERSION : ''),  // 前端兜底版本常量
+    verMismatch:false,  // 前后端版本不一致 → 页头红色告警
+    // ===== 0911批次4: 定期复盘报告（报表1 个股日度明细）=====
+    //   数据源=后端落库的时点快照，**不做历史回填**；早于首次落库日显示「无数据」而非 0。
+    //   codes 为空数组 == 全部（不用 null，避免模板里 0/空判断两套口径）。
+    rep:{
+      start:'', end:'', monitorOnly:false,
+      pickerOpen:false, codeSearch:'', codes:[], codesAll:[],
+      rows:[], slots:[], meta:null, range:null,
+      err:'', msg:'', statusText:'', loading:false,
+      expandKey:'', chartLoading:false, chart:null,
+      // 评分口径：'raw'=原始分（跨日/跨风格可比，复盘首选）、'score'=环境调整后分（与盘间监控页一致）。
+      // 两者都在同一份响应里，切换只影响展示，不需要重新请求。
+      scoreBasis:'raw',
+      withIntraday:false   // 导出时是否附「分时明细」sheet（需逐只拉分时，勾选后导出会慢一些）
+    },
     login:{u:'',p:''}, dash:{market_env:{}, recent_signals:[]}, dashMsg:'',
     ui:{ // 格式化/样式工具(避免与个股分析状态 t 冲突)
       fmt(v){ return (v===undefined||v===null)?'-':(+v).toFixed(3); },
@@ -4156,6 +4418,32 @@ const app = createApp({
         } else {
           grade = rawGrade;
         }
+        // ===== v2 市场环境因子：输出层调节（原始分 × 环境系数）=====
+        // 原始分 rawTotal 永远保留;这里只基于环境系数派生 adjScore 与语义,绝不污染原始计算。
+        var reg = (track && track.regime_adj) || null;
+        var mreg = (track && track.market_regime) || null;
+        var styleTag = (track && track.style_tag) || null;
+        var mDiscount = 1.0, styleMult = 1.0, adjFactor = 1.0;
+        var blockNewLong = false, pulseRebound = false, regimeFlags = [], regimeTier = 'healthy', regimeThresh = 60;
+        if (reg) {
+          mDiscount = reg.m_discount != null ? reg.m_discount : 1.0;
+          styleMult = reg.style_mult != null ? reg.style_mult : 1.0;
+          adjFactor = reg.adj_factor != null ? reg.adj_factor : 1.0;
+          blockNewLong = !!reg.block_new_long;
+          pulseRebound = !!reg.pulse_rebound;
+          regimeFlags = reg.flags || [];
+          regimeThresh = reg.threshold || 60;
+        }
+        if (mreg && mreg.tier) regimeTier = mreg.tier;
+        var adjScore = vetoed ? 0 : Math.max(0, Math.min(100, Math.round(rawTotal * adjFactor)));
+        var adjGrade = 'D';
+        for (var agi = 0; agi < rules.grades.length; agi++) { if (adjScore >= rules.grades[agi].min) { adjGrade = rules.grades[agi].grade; break; } }
+        // 语义：崩坏市一律观望(只守不攻);弱势+题材逆势涨=脉冲反弹(观望);否则按档位阈值判看涨/看跌
+        var semantic = '看跌';
+        if (blockNewLong) semantic = '观望';
+        else if (pulseRebound) semantic = '观望';
+        else if (adjScore >= regimeThresh) semantic = '看涨';
+        else semantic = '看跌';
         return {
           officialScore: track && track.total_score != null ? track.total_score : null,
           officialGrade: track && track.ai_grade || null,
@@ -4173,6 +4461,20 @@ const app = createApp({
           userDimScore: dimScore,
           userPenalty: penalty,
           userGrade: grade,
+          // v2 市场环境因子输出
+          userAdjScore: adjScore,
+          userAdjGrade: adjGrade,
+          userSemantic: semantic,
+          regimeTier: regimeTier,
+          regimeFlags: regimeFlags,
+          mDiscount: mDiscount,
+          styleMult: styleMult,
+          styleTag: styleTag,
+          beta: (track && track.beta != null) ? track.beta : null,
+          mvTier: (track && track.mv_tier) || null,
+          rs: (track && track.relative_strength != null) ? track.relative_strength : null,
+          marketRegime: mreg,
+          sectorRegime: (track && track.sector_regime) || null,
           indicators: indResults,
           dimIwNorm: dimIwNorm,
           indIwEff: indIwEff,
@@ -4299,7 +4601,10 @@ const app = createApp({
       const v=this.view;
       if(v==='dash') return 'dash';
       if(v==='pref'||v==='screens') return 'smart';
-      if(v==='pool'||v==='t'||v==='pretrade'||v==='review') return 'pool';
+      // 'report'（定期复盘报告）也是「可投池追踪」下的二级页签，必须归到 pool，
+      // 否则 view='report' 时 topMenu 返回 '' → 二级导航整条消失、顶部也无高亮，
+      // 用户点进报告页后就找不到回去的路（E2E 实测踩到）。
+      if(v==='pool'||v==='t'||v==='pretrade'||v==='review'||v==='report') return 'pool';
       if(v==='settings') return 'settings';
       return '';
     },
@@ -4498,11 +4803,23 @@ const app = createApp({
       if(!ready) return '加载中…';
       return ready + '/' + this.indexes.length + ' 已就绪';
     },
+    // 0911批次4: 复盘报告股票选择面板的候选列表（按代码/名称过滤）。
+    //   返回**全量候选**、选中态由模板用 rep.codes 判断渲染 —— 不把已选项从列表里剔除，
+    //   否则点一下该项就消失、用户无法反选。
+    repPickList(){
+      const kw = (this.rep.codeSearch||'').trim().toLowerCase();
+      const all = this.rep.codesAll || [];
+      if(!kw) return all;
+      return all.filter(c => (c.code||'').toLowerCase().indexOf(kw)>=0
+                          || (c.name||'').toLowerCase().indexOf(kw)>=0);
+    },
   },
   mounted(){
     if(this.token){ this.loadMe(); this.loadDash(); this.loadRiskNotice(); }
     // v186: 无论是否登录都先拉「游客功能开关」——登录页需据它决定是否显示游客入口
     this.loadSysGuestEnabled();
+    // 版本一致性校验：登录页/主界面都要，且不依赖 token → 无条件拉
+    this.loadAppVersion();
     // v180 性能:宽指行情不再登录即拉(v128 曾立即 loadIdxQuotes + loadIdxKlines,与 dashboard 抢外部接口、
     //   拖慢首屏),改为「宽指快览默认等待自动刷新」——首个自动刷新 tick 拉快照,成功后再后台补一次 60 日线。
     // 显式上报一次页面访问，解决静态首页 GET 无法带 token 导致 access_logs 大量 username=NULL 的问题
@@ -4646,7 +4963,12 @@ const app = createApp({
           {key:'goodwill', label:'商誉\n(亿)', width:99, visible:true, frozen:false, sortable:true, help:'商誉账面价值(亿元)。高商誉占净资产比大=减值风险。点击查看财报明细'},
           {key:'next_ratio', label:'解禁\n占比%', width:105, visible:true, frozen:false, sortable:true, help:'未来最近一次解禁股数占流通股比例(%)。>5%关注抛压。点击看解禁明细'},
           {key:'next_date', label:'解禁\n日期', width:120, visible:true, frozen:false, sortable:true, help:'未来最近一次解禁日期。点击看解禁明细(数量/占比)'},
-          {key:'total_score', label:'综合\n评分', width:99, visible:true, frozen:false, sortable:true, help:'AI选股综合评分(满分100)。越高越优'},
+          {key:'total_score', label:'综合\n评分', width:99, visible:true, frozen:false, sortable:true, help:'环境调节后的综合评分(满分100)。健康市=原始分;弱势/崩坏市按环境折扣与风格乘数调整。越高越优。点击查看评分详情与原始分'},
+          // 0911批次4: 市场环境因子列（大盘档位/方向语义/前置过滤标记 + 个股风格/市值/Beta）
+          {key:'env_signal', label:'环境\n信号', width:150, visible:true, frozen:false, sortable:true, help:'市场环境因子：当前大盘档位(健康/弱势/崩坏) + 该股在该环境下的方向判断(看涨/观望/看跌，按档位动态阈值) + 前置过滤标记(如「环境崩坏·屏蔽」「脉冲反弹·不做开仓依据」)'},
+          {key:'style_tag', label:'风格', width:96, visible:true, frozen:false, sortable:true, help:'个股风格标签：防御/护盘权重/均衡/进攻。弱势/崩坏市下不同风格应用乘数不同(防御×1.15 / 护盘×0.95 / 均衡×1.0 / 进攻×0.65)。市值/风格是「风格属性」不直接加减分，仅作环境分类校验'},
+          {key:'mv_tier', label:'市值\n等级', width:96, visible:true, frozen:false, sortable:true, help:'总市值分档：小盘(<100亿) / 中盘(100-500亿) / 大盘蓝筹(≥500亿)'},
+          {key:'beta', label:'Beta', width:81, visible:true, frozen:false, sortable:true, help:'个股 vs 沪深300 近60日贝塔：>1.2 高弹性(大盘跌时跌更猛、反弹弹性大)；<0.7 低弹性(抗跌、弱势易获避险资金)。弱势环境下低β逆势涨可信度高于高β小盘'},
           {key:'event_risk_tags', label:'事件\n风险', width:156, visible:true, frozen:false, sortable:false, help:'近期事件风险标签(业绩亏损/大额减持/股东增持/股价异动公告/商誉高/解禁临近/预亏/ST风险/监管问询/股东质押高)'},
           {key:'finance_risk', label:'财报\n风险', width:120, visible:true, frozen:false, sortable:false, help:'财报风险快速标记，点击查看近5日相关大事/新闻(利好红/利空绿/中性灰)'},
           {key:'operation_advice', label:'操作\n建议', width:138, visible:true, frozen:false, sortable:true, help:'基于实时盘口、箱体、量能、技术信号生成的简要操作建议，点击查看完整结论'},
@@ -4922,11 +5244,24 @@ const app = createApp({
         pool[i].user_loading = this.isLoadingTrack(t);
         // v180: light 静态期 track 无 price,直接置 null 展示 '-' —— 避免对空 track 算出 NaN 分数
         if(!t || !t.price || pool[i].user_loading || (t.mkt && t.mkt.q===0)) {
-          pool[i].user_score = null; pool[i].user_vetoed = false; pool[i].user_raw_score = null; continue;
+          pool[i].user_score = null; pool[i].user_vetoed = false; pool[i].user_raw_score = null;
+          pool[i].user_adj_score = null; pool[i].user_semantic = null; pool[i].regime_flags = [];
+          pool[i].style_tag = null; pool[i].mv_tier = null; pool[i].beta = null;
+          pool[i].relative_strength = null; pool[i].market_regime = null; pool[i].sector_regime = null;
+          continue;
         }
         try{
           const r = this.mtscore.compute(t, rules);
           pool[i].user_score = r && r.userScore != null ? r.userScore : null;
+          pool[i].user_adj_score = r && r.userAdjScore != null ? r.userAdjScore : null;
+          pool[i].user_semantic = r && r.userSemantic ? r.userSemantic : null;
+          pool[i].regime_flags = r && r.regimeFlags ? r.regimeFlags : [];
+          pool[i].style_tag = r && r.styleTag ? r.styleTag : null;
+          pool[i].mv_tier = r && r.mvTier ? r.mvTier : null;
+          pool[i].beta = r && r.beta != null ? r.beta : null;
+          pool[i].relative_strength = r && r.rs != null ? r.rs : null;
+          pool[i].market_regime = r && r.marketRegime ? r.marketRegime : null;
+          pool[i].sector_regime = r && r.sectorRegime ? r.sectorRegime : null;
           pool[i].user_raw_score = r && r.userRawScore != null ? r.userRawScore : null;
           pool[i].user_vetoed = !!(r && r.vetoed);
         }catch(e){ pool[i].user_score = null; pool[i].user_raw_score = null; pool[i].user_vetoed = false; }
@@ -4980,6 +5315,9 @@ const app = createApp({
         const p = (this.pool||[]).find(x => x && x.code === m.code);
         if(p){
           p.user_score = result && result.userScore != null ? result.userScore : null;
+          p.user_adj_score = result && result.userAdjScore != null ? result.userAdjScore : null;
+          p.user_semantic = result && result.userSemantic ? result.userSemantic : null;
+          p.regime_flags = result && result.regimeFlags ? result.regimeFlags : [];
           p.user_vetoed = !!(result && result.vetoed);
         }
       }, 80);
@@ -5711,7 +6049,7 @@ const app = createApp({
     go(v){
       if(v!=='pool' && this.view==='pool') this._clearPoolLoading();   // v183: 离开可投池 → 清掉可能残留的「加载中」
       // v186: 可投池追踪下拆成 盘前预判 / 盘间监控 / 复盘管理 三个页签,各自独立取数
-      this.view=v; if(v==='dash'){this.loadDash(); this.loadRiskNotice();} if(v==='screens'){this.loadScreens();this.loadIndustries();this.refreshCounts();this.checkWarmup();this.loadPref();} if(v==='pool'){this.loadPool(); this.loadPoolTags();} if(v==='pretrade'){this.loadPretrade(); this.loadPoolTags();} if(v==='review'){this.loadReview(); this.loadPoolTags();} if(v==='pref')this.loadPref(); if(v==='settings'){this.loadSettings(); if(this.me.role==='admin'){this.loadUsers(); this.loadBackups(); this.loadCosStatus();}} if(v==='t')this.loadT(); },
+      this.view=v; if(v==='dash'){this.loadDash(); this.loadRiskNotice();} if(v==='screens'){this.loadScreens();this.loadIndustries();this.refreshCounts();this.checkWarmup();this.loadPref();} if(v==='pool'){this.loadPool(); this.loadPoolTags();} if(v==='pretrade'){this.loadPretrade(); this.loadPoolTags();} if(v==='review'){this.loadReview(); this.loadPoolTags();} if(v==='report'){this.reportOnEnter();} if(v==='pref')this.loadPref(); if(v==='settings'){this.loadSettings(); if(this.me.role==='admin'){this.loadUsers(); this.loadBackups(); this.loadCosStatus();}} if(v==='t')this.loadT(); },
     refreshCurrentView(){
       if(!this.token) return;
       // 有弹窗打开时跳过本次刷新，避免干扰用户当前操作
@@ -6877,7 +7215,274 @@ const app = createApp({
       this._downloadExport(p, '复盘管理');
     },
 
+    // 0911批次4: 读取大盘市场环境快照（盘间监控横幅 + 评分语义用；失败静默，不阻塞列表）
+    // ===== 版本一致性：以后端 /api/health 自报的版本为准 =====
+    //   为什么必须这样：部署包 publish/ 同时含 frontend/ 与 backend/ 两份副本，
+    //   只显示前端硬编码版本无法发现「后端副本忘记同步」——页面会显示新版本号，
+    //   但线上后端跑的还是旧代码（新接口 404 / 新字段缺失，且多被「失败静默」吞掉，极难察觉）。
+    //   这里取后端自报 version 与前端常量比对，不一致就在页头红字告警。
+    async loadAppVersion(){
+      try{
+        const r = await API('/health');
+        if(r && r.version){
+          this.appVersion = r.version;
+          this.verMismatch = !!this.feVersion && (r.version !== this.feVersion);
+        }
+      }catch(e){ /* 静默：后端未响应时展示前端兜底值，不打断登录/首屏流程 */ }
+    },
+
+    // ================= 0911批次4: 定期复盘报告（报表1 个股日度明细）=================
+    // 数据来自后端落库的时点快照 → **不做历史回填**；早于首次落库日的日期显示
+    // 「暂无数据」而不是 0（0 分与「没采到」在复盘里含义完全不同）。
+    reportOnEnter(){
+      // 默认区间：近 7 个自然日（覆盖约 5 个交易日，够看一周又不至于一次拉太多）
+      if(!this.rep.start || !this.rep.end){
+        const r = this.reportDefaultRange(7);
+        this.rep.start = r.start; this.rep.end = r.end;
+      }
+      if(!this.rep.rows.length && !this.rep.loading) this.loadReportDaily();
+      this.loadReportStatus();
+    },
+    reportDefaultRange(days){
+      // 用**本地日期**而不是 UTC：东八区在 00:00~08:00 之间 UTC 还停在前一天，
+      // 直接 toISOString() 会让默认区间整体差一天。
+      const pad = (n)=> String(n).padStart(2,'0');
+      const fmt = (d)=> `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+      const end = new Date();
+      const start = new Date(end.getTime() - (Math.max(1,days)-1) * 86400000);
+      return {start: fmt(start), end: fmt(end)};
+    },
+    reportQuickRange(days){
+      const r = this.reportDefaultRange(days);
+      this.rep.start = r.start; this.rep.end = r.end;
+      this.loadReportDaily();
+    },
+    resetReportFilters(){
+      const r = this.reportDefaultRange(7);
+      this.rep.start = r.start; this.rep.end = r.end;
+      this.rep.monitorOnly = false;
+      this.rep.codes = []; this.rep.codeSearch = '';
+      this.rep.err = ''; this.rep.msg = '';
+      this.rep.expandKey = ''; this.rep.chart = null;
+      this.loadReportDaily();
+    },
+    reportParams(){
+      const p = new URLSearchParams();
+      p.set('start', this.rep.start || '');
+      p.set('end', this.rep.end || '');
+      // codes 为空 = 全部 → 不传该参数（后端把缺省视为全量）
+      if(this.rep.codes.length) p.set('codes', this.rep.codes.join(','));
+      p.set('monitor_only', this.rep.monitorOnly ? '1' : '0');
+      return p;
+    },
+    async loadReportDaily(){
+      if(this.rep.loading) return;   // 防连点：查询/切口径期间不重复打接口
+      this.rep.loading = true;
+      this.rep.err = ''; this.rep.msg = '';
+      this.rep.expandKey = ''; this.rep.chart = null;
+      try{
+        const r = await API('/review/report/daily?' + this.reportParams().toString());
+        this.rep.rows = r.rows || [];
+        this.rep.slots = r.slots || [];
+        this.rep.meta = r.meta || null;
+        this.rep.range = r.range || null;
+        this.rep.codesAll = r.codes || [];
+        // 区间以后端纠正结果为准（后端会把颠倒/非法的区间翻转过来），避免界面显示与数据不符
+        if(r.range){ this.rep.start = r.range.start; this.rep.end = r.range.end; }
+        // 换区间后原先选中的股票可能在本区间没有数据 → 剔除，避免「选了却查不到」的困惑
+        if(this.rep.codes.length){
+          const ok = new Set(this.rep.codesAll.map(c=>c.code));
+          const kept = this.rep.codes.filter(c=> ok.has(c));
+          if(kept.length !== this.rep.codes.length){
+            this.rep.codes = kept;
+            this.rep.msg = '已自动移除本区间无数据的已选股票。';
+          }
+        }
+      }catch(e){
+        this.rep.err = e.message || '读取复盘数据失败';
+        this.rep.rows = [];
+      }finally{
+        this.rep.loading = false;
+      }
+    },
+    async loadReportStatus(){
+      // 采集器是「看不见的后台任务」，必须给它一个可见的落库确认，否则静默失效无人察觉
+      try{
+        const r = await API('/review/report/status');
+        const c = r.collector || {}, t = r.today || {}, st = r.storage || {};
+        const parts = [c.running ? '采集器运行中' : '采集器未运行'];
+        if(t.date) parts.push(`今日(${t.date})已采 ${t.slots_done||0}/${t.slots_total||0} 个时点`);
+        if(st.total_rows!=null) parts.push(`累计落库 ${st.total_rows} 行`);
+        const rec = (r.recent || [])[0];
+        if(rec) parts.push(`最近有数据 ${rec.date}（${rec.rows} 行）`);
+        this.rep.statusText = parts.join(' · ');
+      }catch(e){ /* 静默：状态取不到不影响明细展示 */ }
+    },
+    repToggleCode(code){
+      if(!this.rep.codes.length){
+        // codes 为空 = 「全部」：第一次点选先把全量具化、再摘掉被点的那只。
+        // 若直接置成 [code]，会从「全部」突然塌缩成「只剩这一只」，与点击意图相反。
+        this.rep.codes = this.rep.codesAll.map(c=>c.code).filter(c=> c !== code);
+      }else{
+        const i = this.rep.codes.indexOf(code);
+        if(i >= 0) this.rep.codes.splice(i,1); else this.rep.codes.push(code);
+      }
+      // 全部取消 → 回到「全部」语义（与上方「全部」计数显示保持一致），明确提示避免误以为漏选
+      this.rep.msg = this.rep.codes.length ? ''
+        : '已取消全部勾选 → 按「全部标的」处理（如需只看少数，可先点「清空」再用搜索定位）。';
+    },
+    repSelectAll(){ this.rep.codes = []; this.rep.msg = ''; },
+    repSelectMonitored(){
+      const mono = this.rep.codesAll.filter(c=> c.monitored).map(c=> c.code);
+      if(!mono.length){ this.rep.msg = '本区间没有监控池标的。'; return; }
+      this.rep.codes = mono; this.rep.msg = '';
+    },
+    async toggleReportChart(row){
+      const k = row.date + '|' + row.code;
+      if(this.rep.expandKey === k){ this.rep.expandKey = ''; this.rep.chart = null; return; }
+      this.rep.expandKey = k; this.rep.chart = null; this.rep.chartLoading = true;
+      try{
+        const r = await API(`/review/report/intraday?code=${encodeURIComponent(row.code)}&date=${encodeURIComponent(row.date)}`);
+        if(this.rep.expandKey !== k) return;   // 期间已切行/收起 → 丢弃过期响应
+        this.rep.chart = r;
+      }catch(e){
+        if(this.rep.expandKey !== k) return;
+        this.rep.chart = {available:false, reason: e.message || '分时数据读取失败'};
+      }finally{
+        if(this.rep.expandKey === k) this.rep.chartLoading = false;
+      }
+      if(this.rep.expandKey !== k) return;
+      // 关键顺序：canvas 挂在 `v-else-if="rep.chart && rep.chart.available"` 上、
+      // 且被 `v-if="rep.chartLoading"` 挡在前面 —— loading 没关掉之前 canvas 根本不在 DOM 里，
+      // 此时 $refs 取不到、画出来是空白。必须「先关 loading → 等 DOM 刷新 → 再画」。
+      await this.$nextTick();
+      this.repDrawChart();
+    },
+    repDrawChart(){
+      // canvas 写在 v-for 内 → Vue 可能把 ref 收敛成数组；两种形态都兼容
+      const rf = this.$refs.repChart;
+      const cv = Array.isArray(rf) ? rf[0] : rf;
+      const ch = this.rep.chart;
+      if(!cv || !ch || !ch.available) return;
+      const pts = (ch.points || []).filter(p=> p.price != null);
+      if(pts.length < 2) return;
+      const ctx = cv.getContext('2d');
+      const W = cv.width, H = cv.height;
+      ctx.clearRect(0,0,W,H);
+      const base = ch.pre_close;   // 基准=昨收；分时的强弱全相对它
+      const padL=46, padR=54, padT=16, padB=22;
+      const vals = pts.map(p=>p.price).concat(pts.map(p=>p.avg).filter(v=> v!=null));
+      if(base != null && base > 0) vals.push(base);
+      const mn = Math.min.apply(null, vals), mx = Math.max.apply(null, vals);
+      const pad = (mx-mn)*0.08 || Math.max(0.01, Math.abs(mx||1)*0.002);
+      const lo = mn-pad, hi = mx+pad;
+      const N = pts.length;
+      const px = (i)=> padL + (N<2 ? 0 : i/(N-1)) * (W-padL-padR);
+      const py = (v)=> padT + (hi-v)/((hi-lo)||1) * (H-padT-padB);
+      let hm2 = (hm)=> (hm==null) ? '' : `${String(Math.floor(hm/100)).padStart(2,'0')}:${String(hm%100).padStart(2,'0')}`;
+      // 网格 + 右轴价格
+      ctx.font='11px sans-serif'; ctx.textBaseline='middle';
+      for(let r=0;r<=4;r++){
+        const y = padT + r/4*(H-padT-padB);
+        ctx.strokeStyle='#f1f5f9'; ctx.lineWidth=1;
+        ctx.beginPath(); ctx.moveTo(padL,y); ctx.lineTo(W-padR,y); ctx.stroke();
+        ctx.fillStyle='#9ca3af'; ctx.textAlign='left';
+        ctx.fillText((hi - r/4*(hi-lo)).toFixed(2), W-padR+4, y);
+      }
+      // 昨收基准线（虚线）：不画出来用户无法判断当日是强是弱
+      if(base != null && base > 0){
+        const yb = py(base);
+        ctx.save();
+        ctx.strokeStyle='#94a3b8'; ctx.lineWidth=1; ctx.setLineDash([4,4]);
+        ctx.beginPath(); ctx.moveTo(padL,yb); ctx.lineTo(W-padR,yb); ctx.stroke();
+        ctx.restore();
+        ctx.fillStyle='#94a3b8'; ctx.textAlign='left';
+        ctx.fillText('昨收', padL+2, yb-9);
+      }
+      // 价格线：相对昨收涨=红、跌=绿（A股配色约定）
+      const last = pts[N-1].price;
+      const up = (base != null && base > 0) ? (last >= base) : true;
+      ctx.strokeStyle = up ? '#dc2626' : '#16a34a';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      pts.forEach((p,i)=> i ? ctx.lineTo(px(i),py(p.price)) : ctx.moveTo(px(i),py(p.price)));
+      ctx.stroke();
+      // 均价线（上游 ma_price5 近似；缺值段直接跳过）
+      ctx.strokeStyle='#d97706'; ctx.lineWidth=1.2;
+      ctx.beginPath();
+      let started = false;
+      pts.forEach((p,i)=>{
+        if(p.avg == null) return;
+        if(!started){ ctx.moveTo(px(i),py(p.avg)); started = true; }
+        else ctx.lineTo(px(i),py(p.avg));
+      });
+      ctx.stroke();
+      // 最新价标注
+      ctx.fillStyle = up ? '#dc2626' : '#16a34a';
+      ctx.font='bold 12px sans-serif'; ctx.textAlign='left';
+      ctx.fillText(last.toFixed(2), W-padR+4, py(last));
+      // X 轴时间（6 个等距刻度）
+      ctx.fillStyle='#6b7280'; ctx.font='11px sans-serif';
+      ctx.textAlign='center'; ctx.textBaseline='top';
+      const ticks = 6;
+      for(let t=0;t<ticks;t++){
+        const i = Math.round(t/(ticks-1)*(N-1));
+        ctx.fillText(hm2(pts[i].hm), px(i), H-padB+4);
+      }
+    },
+    reportNum(v){
+      if(v===null || v===undefined || v==='') return '-';
+      const n = +v;
+      return isFinite(n) ? n.toFixed(2) : '-';
+    },
+    reportSlotLabel(s){
+      return (typeof s==='string' && s.length===4) ? (s.slice(0,2) + ':' + s.slice(2)) : s;
+    },
+    reportSemClass(sem){
+      return sem==='看涨' ? 'rep-sem-up' : sem==='看跌' ? 'rep-sem-dn'
+                       : sem==='观望' ? 'rep-sem-flat' : 'rep-sem-na';
+    },
+    // 评分单元格按「评分口径」取值：'raw'=原始分 / 'score'=调整后分（同一份响应里都有，切换不重新请求）
+    reportHasScore(cell){
+      return !!cell && cell[this.rep.scoreBasis] != null;
+    },
+    reportScoreText(cell){
+      if(!cell) return '-';
+      const v = cell[this.rep.scoreBasis];
+      return v == null ? '-' : (+v).toFixed(1);
+    },
+    reportSlotTitle(row, s){
+      const c = (row.scores || {})[s] || {};
+      const lb = this.reportSlotLabel(s);
+      if(c.raw == null && c.score == null){
+        return `${lb} 该时点无有效评分（未采集成功，或行情异常 —— 按契约写空、不是 0 分）`;
+      }
+      const parts = [`${lb} 时点评分`];
+      parts.push(`原始分 ${c.raw==null?'-':(+c.raw).toFixed(1)}（档位 ${c.grade_raw||'-'}）`);
+      parts.push(`调整后分 ${c.score==null?'-':(+c.score).toFixed(1)}（档位 ${c.grade||'-'}）`);
+      if(c.factor != null) parts.push(`环境系数 ×${(+c.factor).toFixed(3)}`);
+      parts.push(`方向判定 ${c.semantic||'-'}`);
+      if(c.vetoed) parts.push(`否决 ${c.vetoed} 条（最终分已归零）`);
+      if(c.price != null) parts.push(`当时价 ${(+c.price).toFixed(2)}`);
+      return parts.join('，');
+    },
+    exportReportDaily(){
+      if(!this.rep.rows.length){ this.showAlert('当前没有可导出的数据。'); return; }
+      const p = this.reportParams();
+      p.set('kind', 'daily');
+      // 导出与页面同口径（所见即所得）；另一口径会作为对照 sheet 一并写入
+      p.set('basis', this.rep.scoreBasis === 'score' ? 'adj' : 'raw');
+      p.set('with_intraday', this.rep.withIntraday ? '1' : '0');
+      if(this.rep.withIntraday){
+        this.rep.msg = '正在导出（含分时明细，需要逐只拉取分时数据，请稍候）…';
+      }
+      this._downloadExport(p, '复盘明细', '/api/review/report/export?' + p.toString());
+    },
+    async loadMarketRegime(){
+      try{ const r = await API('/market/regime'); if(r && r.tier) this.marketRegime = r; }catch(e){ /* 静默：环境缺失不影响列表渲染 */ }
+    },
     async loadPool(){
+      this.loadMarketRegime();   // 0911批次4: 与列表并行发起，不 await（横幅异步补上）
       const seq = ++this._poolSeq;
       const hasRich = this.pool.length && this.pool.some(p=>p.track && p.track.price!=null);
       if(hasRich){ this._enrichOrQueue({hint:false}); return; }   // v183: 有行情 → 静默全量刷新,不清数据不提示
@@ -7167,10 +7772,12 @@ const app = createApp({
     closeBatchTagModal(){ this.batchTagModal={show:false, tag_ids:[], saving:false}; },
     // v186: 通用导出下载（可投池 / 盘前预判 / 复盘管理 共用同一套下载与错误处理）
     //   文件名带年月日时分秒，多次导出不互相覆盖；只导出当前可见列(去掉 select/ops)。
-    _downloadExport(params, fileLabel){
+    //   0911批次4: 增加可选 url —— 不同接口的导出只有路径不同，下载/报错/文件名逻辑共用一份，
+    //   避免各页面各写一遍（曾因两份实现漂移导致中文文件名在某个页面报 header 错误）。
+    _downloadExport(params, fileLabel, url){
       const token = localStorage.getItem('tk') || '';
-      const url = '/api/pool/export?' + params.toString();
-      fetch(url, {headers: token ? {Authorization: `Bearer ${token}`,'X-Auth-Token':token} : {}})
+      const target = url || ('/api/pool/export?' + params.toString());
+      fetch(target, {headers: token ? {Authorization: `Bearer ${token}`,'X-Auth-Token':token} : {}})
         .then(async r => {
           if(!r.ok){
             const text = await r.text().catch(()=>'');

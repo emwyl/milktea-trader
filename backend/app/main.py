@@ -12,7 +12,10 @@ from app.models import AccessLog, User, SystemSetting
 from app.security import verify_token
 from app.seed import seed_all
 from app.scheduler import start_scheduler
+from app.version import APP_VERSION
 from app.services.quote_snapshot import start_collector, stop_collector
+from app.services.market_regime import start_collector as mr_start_collector, stop_collector as mr_stop_collector
+from app.services.score_snapshot import start_collector as ss_start_collector, stop_collector as ss_stop_collector
 
 import threading
 import datetime as dt
@@ -20,6 +23,7 @@ import datetime as dt
 from app.routers import auth, stocks, screens, pool, rules, analysis, preference, notify, settings, t_analysis, market, system as system_router
 from app.routers import engine as engine_router
 from app.routers import data as data_router
+from app.routers import review as review_router
 
 
 @asynccontextmanager
@@ -40,10 +44,30 @@ async def lifespan(app: FastAPI):
         start_collector()
     except Exception:
         pass
+    # 市场环境因子 v2：启动大盘恐慌分 M 后台采集线程（60s 刷新内存快照）
+    try:
+        mr_start_collector()
+    except Exception:
+        pass
+    # 0911批次4 定期复盘报告 Phase A：启动时点评分快照采集线程。
+    #   背景：行情层只在内存保留最新盘口，无分钟级历史 → 历史时点评分无法事后重建，
+    #   必须在此主动落库（pool_score_snapshot）。越早启动越早开始积累复盘样本。
+    try:
+        ss_start_collector()
+    except Exception:
+        pass
     yield
     # 关闭时停止采集线程
     try:
         stop_collector()
+    except Exception:
+        pass
+    try:
+        mr_stop_collector()
+    except Exception:
+        pass
+    try:
+        ss_stop_collector()
     except Exception:
         pass
 
@@ -106,12 +130,18 @@ def _write_access_log(path, method, ip, ua, username, event_type):
         db.close()
 
 
-for r in (auth, stocks, screens, pool, rules, engine_router, analysis, preference, notify, settings, t_analysis, data_router, market, system_router):
+for r in (auth, stocks, screens, pool, rules, engine_router, analysis, preference, notify, settings, t_analysis, data_router, market, system_router, review_router):
     app.include_router(r.router)
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "name": "TR-个人学习版"}
+    """健康检查 + **自报版本**。
+
+    版本由后端下发（而非前端硬编码），这是刻意的设计 —— 部署包 publish/ 同时含
+    frontend/ 与 backend/ 两份副本，只有后端自报版本才能暴露「后端副本忘记同步」
+    这类静默故障（详见 app/version.py 说明）。
+    """
+    return {"ok": True, "name": "TR-个人学习版", "version": APP_VERSION}
 
 
 # 托管前端（D 盘 frontend 目录）。StaticFiles 挂在最后，/api 路由优先匹配。

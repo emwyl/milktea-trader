@@ -3,9 +3,9 @@
 """
 发版后冒烟自检：登录线上，核对核心数据接口非空，杜绝"发版后空白"被发现太晚。
 
-用法：
-    python tools/deploy_smoke.py
-    MT_BASE_URL=https://xxx MT_USER=admin MT_PASS=baofu123 python tools/deploy_smoke.py
+用法（口令**必须**经环境变量传入，脚本内不留任何明文口令）：
+    MT_PASS='<口令>' python tools/deploy_smoke.py
+    MT_BASE_URL=https://xxx MT_USER=admin MT_PASS='<口令>' python tools/deploy_smoke.py
 
 退出码：全部通过 0，任一失败 1。
 """
@@ -15,9 +15,12 @@ import sys
 import urllib.request
 import urllib.error
 
-BASE = os.getenv("MT_BASE_URL", "https://d7f0dc809c4b4df981cd233488ed8876.app.workbuddy.link")
+BASE = os.getenv("MT_BASE_URL", "https://d7f0dc809c4b4df981cd233488ed8876.app.workbuddy.host")
 USER = os.getenv("MT_USER", "admin")
-PASS = os.getenv("MT_PASS", "baofu123")
+PASS = os.getenv("MT_PASS", "")
+if not PASS:
+    # 铁律：上线自检脚本禁止内置明文口令（脚本会被提交、会被看到）。缺变量就明确报错。
+    sys.exit("缺少 MT_PASS 环境变量：口令请通过环境变量传入，不要写进脚本。")
 
 TIMEOUT = 25
 
@@ -45,7 +48,23 @@ def main():
     print("BASE =", BASE)
     print("=" * 60)
 
-    # 1) 登录
+    checks = []
+
+    # 1) 后端版本自报 —— 双副本（publish/frontend 与 publish/backend）不同步时，
+    #    页面版本号仍会显示最新，只有直接问后端才能发现「后端还是旧的」。
+    expect = os.getenv("MT_EXPECT_VERSION", "")
+    try:
+        url = BASE + "/api/health"
+        with urllib.request.urlopen(urllib.request.Request(url), timeout=TIMEOUT) as r:
+            h = json.loads(r.read().decode("utf-8"))
+        ver = h.get("version") or "(无 version 字段)"
+        ok_v = bool(h.get("version")) and (not expect or h["version"] == expect)
+        checks.append(("后端版本 /api/health", ok_v,
+                       "version=%s%s" % (ver, "" if not expect else "（期望 %s）" % expect)))
+    except Exception as e:
+        checks.append(("后端版本 /api/health", False, "ERR %s" % e))
+
+    # 2) 登录
     try:
         login = _post("/api/auth/login", {"username": USER, "password": PASS})
     except Exception as e:
@@ -56,8 +75,6 @@ def main():
         print("✗ 登录未返回 token：", login)
         return 1
     print("✓ 登录成功 (role=%s)" % login.get("user", {}).get("role", "?"))
-
-    checks = []
 
     # 2) 可投池
     try:
@@ -82,6 +99,25 @@ def main():
         checks.append(("访客记录 /api/auth/access-logs", total >= 1, "total=%s" % total))
     except Exception as e:
         checks.append(("访客记录 /api/auth/access-logs", False, "ERR %s" % e))
+
+    # 5) 定期复盘报告 · 采集器状态（0911批次4 新增页面的后端）
+    try:
+        d = _get("/api/review/report/status", token)
+        c = d.get("collector") or {}
+        checks.append(("复盘采集器 /report/status", bool(c.get("slots")),
+                       "running=%s slots=%s" % (c.get("running"), len(c.get("slots") or []))))
+    except Exception as e:
+        checks.append(("复盘采集器 /report/status", False, "ERR %s" % e))
+
+    # 6) 定期复盘报告 · 报表1
+    try:
+        d = _get("/api/review/report/daily", token)
+        checks.append(("复盘报表1 /report/daily", "rows" in d,
+                       "rows=%s codes=%s empty=%s"
+                       % (len(d.get("rows") or []), len(d.get("codes") or []),
+                          (d.get("meta") or {}).get("empty"))))
+    except Exception as e:
+        checks.append(("复盘报表1 /report/daily", False, "ERR %s" % e))
 
     print("-" * 60)
     ok = True

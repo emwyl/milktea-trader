@@ -1354,6 +1354,73 @@ def _fetch_sina_minute_range(code: str, days_back: int = 10) -> list[tuple[str, 
     return None
 
 
+# 分时趋势图专用缓存：历史分钟数据不会再变，缓存可长一点（5 分钟）。
+_SINA_MIN_OHLC_CACHE: dict[str, tuple[float, list]] = {}
+_SINA_MIN_OHLC_TTL = 300.0
+
+
+def _fetch_sina_minute_ohlc(code: str, datalen: int = 1800) -> list[dict] | None:
+    """新浪 1 分钟 K 线的**完整字段**版本（含每分钟开高低收），供「定期复盘报告」画分时趋势图。
+
+    与 `_fetch_sina_minute_range` 的区别：后者只需要「累计成交额/成交量」，
+    解析时把 `open/high/low/close` 全部丢掉了；而画分时图必须要**每分钟价格**。
+    本函数保留 `close`（该分钟价格）与 `ma_price5`（可作分时均价线的近似）。
+
+    返回 [{date, hm, open, high, low, close, vol_hand, amount, ma_price5}, ...] 或 None。
+
+    ⚠️ 可回溯窗口：新浪 datalen 硬上限 1800 根 ≈ **7.5 个交易日**（实测 2000 直接返回
+    "=(null);"）。更早的日期拿不到分钟级数据，因此报表对超出窗口的日期只能不给分时图。
+
+    缓存：_SINA_MIN_OHLC_CACHE（300s，历史数据不会变；仅当日数据最多滞后 5 分钟）。
+    """
+    key = f"{code}:{datalen}"
+    cached = _SINA_MIN_OHLC_CACHE.get(key)
+    now = time.time()
+    if cached and (now - cached[0]) < _SINA_MIN_OHLC_TTL:
+        return cached[1]
+    datalen = min(int(datalen), 1800)          # 硬上限，超过会被上游拒绝
+    mkt = _market_of(code)
+    url = (
+        f"https://quotes.sina.cn/cn/api/jsonp_v2.php/="
+        f"/CN_MarketDataService.getKLineData?symbol={mkt}{code}&scale=1&datalen={datalen}"
+    )
+    txt = _http_get(url, headers={"Referer": "https://quotes.sina.cn/"})
+    if not txt:
+        return None
+    try:
+        import json as _json, re as _re
+        s = txt.strip()
+        if s.startswith("=("):
+            body = s[2:-2] if s.endswith(");") else s[2:]
+        else:
+            m = _re.search(r"=\(\[", s)
+            body = s[m.end() - 1:-2] if m else s
+        arr = _json.loads(body)
+        if not isinstance(arr, list) or not arr:
+            return None
+        out: list[dict] = []
+        for a in arr:
+            day = str(a.get("day", ""))
+            if len(day) < 16:
+                continue
+            out.append({
+                "date": day[:10],
+                "hm": int(day[11:13]) * 100 + int(day[14:16]),
+                "open": _as_float(a.get("open")), "high": _as_float(a.get("high")),
+                "low": _as_float(a.get("low")), "close": _as_float(a.get("close")),
+                # 新浪 volume 单位=股 → 折算成「手」，与项目其它口径统一
+                "vol_hand": round(_as_float(a.get("volume")) / 100.0),
+                "amount": _as_float(a.get("amount")),
+                "ma_price5": _as_float(a.get("ma_price5")),
+            })
+        if not out:
+            return None
+        _SINA_MIN_OHLC_CACHE[key] = (now, out)
+        return out
+    except Exception:
+        return None
+
+
 def _yesterday_amount_at_time(code: str) -> float | None:
     """[兼容保留] 取前一交易日「同样 30 分钟整数点」的累计成交额（元）。
 
@@ -3602,6 +3669,14 @@ def get_pool_track(code: str, db, position: dict | None = None, deadline: float 
         #     保留空 try 占位以避免破坏既有「块 9 / 10 / 11」编号惯例；不在此重复赋值。
         try:
             pass
+        except Exception:
+            pass
+
+        # ===== 市场环境因子 v2 融合（大盘M/板块S/个股属性/Beta/RS/市值/风格 + 前置过滤）=====
+        # 仅追加字段，绝不改动任何既有字段；任何异常都不影响主 track 返回。
+        try:
+            from app.services import market_regime as _mr
+            _mr.enrich_track(out, code, position, db, quotes, _dl)
         except Exception:
             pass
 

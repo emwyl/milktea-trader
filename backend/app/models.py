@@ -195,6 +195,64 @@ class DayViewRecap(Base):
     updated_at: Mapped[str] = mapped_column(String(32), default=_now)  # 最后一次复盘更新时间
 
 
+class PoolScoreSnapshot(Base):
+    """0911批次4：时点评分快照（定期复盘报告的数据底座）。
+
+    背景：定期复盘报告需要「某交易日某时点的静态综合评分」与「趋势判断回测样本」。
+    但原系统只在内存里保留每只票的**最新**盘口（`quote_snapshot.py`），一刷新就覆盖，
+    没有任何分钟级历史 → 历史时点评分**无法事后重建**。因此必须由后台采集线程在固定
+    时点把评分落库；不落库 = 永远出不了这两张报表。
+
+    口径说明（重要，避免与前端显示不一致时被误判为 bug）：
+      - `score_raw` 用后端 `_calc_pass_scores` 的**默认权重**口径。前端列表可自定义权重，
+        因此同一时刻两者可能略有差异；复盘报告统一采用后端序列，保证整段时间内可比、
+        且不受用户中途改权重影响。
+      - `metrics_json` 存全量指标明细（score_a/b/c、penalty、veto_checks、箱体/均线/
+        振幅/资金流等），保证任何时点的评分都可复算、可审计——这是复盘可信度的根基。
+      - 只增不改、不做历史回填（用户 2026-09-11 决策：只信真实采集、报表从落库日起）。
+
+    体量：全池 ~120 只 × 11 时点 × 250 交易日 ≈ 33 万行/年，SQLite 无压力。
+    """
+    __tablename__ = "pool_score_snapshot"
+    __table_args__ = (
+        UniqueConstraint("user_id", "code", "trade_date", "slot", name="uq_pss_user_code_date_slot"),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    code: Mapped[str] = mapped_column(String(16), index=True)
+    trade_date: Mapped[str] = mapped_column(String(10), index=True)   # 'YYYY-MM-DD'
+    slot: Mapped[str] = mapped_column(String(5))                      # '0925'/'0930'/'0945'/'1100'/'1130'/'1315'/'1330'/'1400'/'1445'/'1500'/'1345'
+    captured_at: Mapped[str] = mapped_column(String(32), default=_now)  # 实际采集时刻(ISO8601 UTC)，供审计
+    in_monitor: Mapped[int] = mapped_column(Integer, default=0)       # 1=在盘间监控池(monitored=1)，0=仅在全池
+    # —— 盘口快照（来自时点冻结的批量快照，全池同一时刻，避免逐只拉取导致的价差）——
+    price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    pre_close: Mapped[float | None] = mapped_column(Float, nullable=True)
+    open: Mapped[float | None] = mapped_column(Float, nullable=True)
+    high: Mapped[float | None] = mapped_column(Float, nullable=True)
+    low: Mapped[float | None] = mapped_column(Float, nullable=True)
+    change_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    amplitude_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    turnover: Mapped[float | None] = mapped_column(Float, nullable=True)
+    vol_ratio: Mapped[float | None] = mapped_column(Float, nullable=True)
+    amount: Mapped[float | None] = mapped_column(Float, nullable=True)      # 成交额(元)
+    volume: Mapped[float | None] = mapped_column(Float, nullable=True)      # 成交量(万手)
+    # —— 评分结果 ——
+    score: Mapped[float | None] = mapped_column(Float, nullable=True)       # 环境调节后最终分 raw×adj_factor
+    score_raw: Mapped[float | None] = mapped_column(Float, nullable=True)   # 原始分(未乘环境系数，v192 分离口径)
+    grade: Mapped[str] = mapped_column(String(4), default="")               # 最终分对应等级 A/B/C/D
+    vetoed: Mapped[int] = mapped_column(Integer, default=0)                 # 1=一票否决命中
+    semantic: Mapped[str] = mapped_column(String(8), default="")            # 看涨/观望/看跌（按档位动态阈值）
+    # —— 环境/属性层（与 market-regime 联动，供分环境/分风格透视）——
+    market_regime: Mapped[str] = mapped_column(String(16), default="")      # healthy/weak/collapse
+    sector_regime: Mapped[str] = mapped_column(String(16), default="")
+    style_tag: Mapped[str] = mapped_column(String(16), default="")          # 防御/护盘权重/均衡/进攻
+    mv_tier: Mapped[str] = mapped_column(String(16), default="")            # 小盘/中盘/大盘蓝筹
+    beta: Mapped[float | None] = mapped_column(Float, nullable=True)
+    rs: Mapped[float | None] = mapped_column(Float, nullable=True)          # 相对强度
+    adj_factor: Mapped[float | None] = mapped_column(Float, nullable=True)  # 环境系数(M折扣×风格乘数)，供复算
+    metrics_json: Mapped[str] = mapped_column(Text, default="{}")           # 全量指标明细(审计/复算)
+
+
 class PositionRule(Base):
     """加减仓规则（SignalEngine 接口的参数化实例）。"""
     __tablename__ = "position_rules"

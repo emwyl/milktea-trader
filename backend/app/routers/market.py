@@ -16,6 +16,7 @@ from fastapi import APIRouter, Depends
 
 from app.deps import get_current_user
 from app.models import User
+from app.services.market_regime import get_market_regime
 
 router = APIRouter(prefix="/api/market", tags=["market"])
 
@@ -138,6 +139,12 @@ def _fetch(codes: List[str]) -> Dict[str, dict]:
 def futures_presets(user: User = Depends(get_current_user)):
     """返回可选的期货清单（供前端配置弹窗使用）。"""
     return {"items": FUTURES_PRESETS}
+
+
+@router.get("/regime")
+def market_regime_snapshot(user: User = Depends(get_current_user)):
+    """当前大盘恐慌分快照：{m, tier(healthy/weak/collapse), label, ts, stale}。"""
+    return get_market_regime()
 
 
 @router.get("/futures")

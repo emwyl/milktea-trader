@@ -355,3 +355,46 @@ def run_migrations(engine):
                 conn.execute(text("ALTER TABLE position_rules ADD COLUMN risk_notice TEXT DEFAULT ''"))
             except Exception:
                 pass
+
+        # 0911批次4：时点评分快照表（定期复盘报告的数据底座）。
+        #   原系统只在内存保留每只票的最新盘口，无任何分钟级历史 → 历史时点评分无法事后重建，
+        #   必须由后台采集线程在固定时点（09:25~15:00 共 11 个）把评分落库。
+        #   UNIQUE(user_id, code, trade_date, slot) 是幂等根基：INSERT OR REPLACE 可安全重跑。
+        if not _has_table(conn, "pool_score_snapshot"):
+            try:
+                conn.execute(text("""
+                    CREATE TABLE pool_score_snapshot (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        user_id INTEGER,
+                        code VARCHAR(16),
+                        trade_date VARCHAR(10),
+                        slot VARCHAR(5),
+                        captured_at VARCHAR(32) DEFAULT '',
+                        in_monitor INTEGER DEFAULT 0,
+                        price FLOAT, pre_close FLOAT, "open" FLOAT, high FLOAT, low FLOAT,
+                        change_pct FLOAT, amplitude_pct FLOAT, turnover FLOAT, vol_ratio FLOAT,
+                        amount FLOAT, volume FLOAT,
+                        score FLOAT, score_raw FLOAT, grade VARCHAR(4) DEFAULT '',
+                        vetoed INTEGER DEFAULT 0, semantic VARCHAR(8) DEFAULT '',
+                        market_regime VARCHAR(16) DEFAULT '', sector_regime VARCHAR(16) DEFAULT '',
+                        style_tag VARCHAR(16) DEFAULT '', mv_tier VARCHAR(16) DEFAULT '',
+                        beta FLOAT, rs FLOAT, adj_factor FLOAT,
+                        metrics_json TEXT DEFAULT '{}',
+                        FOREIGN KEY(user_id) REFERENCES users(id)
+                    )
+                """))
+                conn.execute(text("CREATE UNIQUE INDEX uq_pss_user_code_date_slot ON pool_score_snapshot(user_id, code, trade_date, slot)"))
+            except Exception:
+                pass
+        # 索引独立于建表，兼容「表已存在但索引缺失」的中间态。
+        for _idx, _ddl in (
+            ("ix_pss_date", "CREATE INDEX IF NOT EXISTS ix_pss_date ON pool_score_snapshot(trade_date)"),
+            ("ix_pss_code", "CREATE INDEX IF NOT EXISTS ix_pss_code ON pool_score_snapshot(code)"),
+            ("ix_pss_lookup", "CREATE INDEX IF NOT EXISTS ix_pss_lookup ON pool_score_snapshot(user_id, trade_date, slot)"),
+            ("ix_pss_user_id", "CREATE INDEX IF NOT EXISTS ix_pss_user_id ON pool_score_snapshot(user_id)"),
+        ):
+            try:
+                if _has_table(conn, "pool_score_snapshot"):
+                    conn.execute(text(_ddl))
+            except Exception:
+                pass
